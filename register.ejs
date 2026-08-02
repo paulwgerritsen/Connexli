@@ -1,0 +1,70 @@
+<%- include('partials/head') %>
+<div class="narrow">
+  <h1>Create your account</h1>
+  <p class="sub">Free for homeowners. Professionals are verified before they can submit proposals.</p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+  <div class="card">
+    <form method="POST" action="/register">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <label>I am a…</label>
+      <div class="optgrid cols">
+        <label class="opt">
+          <input type="radio" name="role" value="seller" <%= form.role !== 'agent' ? 'checked' : '' %> onchange="toggleAgent()">
+          <span class="tile"><span><b>Homeowner</b><span class="desc">I want professionals to compete for my listing.</span></span></span>
+        </label>
+        <label class="opt">
+          <input type="radio" name="role" value="agent" <%= form.role === 'agent' ? 'checked' : '' %> onchange="toggleAgent()">
+          <span class="tile"><span><b>Real estate professional</b><span class="desc">I want to win new clients on Connexli.</span></span></span>
+        </label>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label for="name">Full name</label>
+          <input type="text" id="name" name="name" value="<%= form.name || '' %>" autocomplete="name" required>
+        </div>
+        <div>
+          <label for="phone">Phone <span class="hint">(shared only when you connect)</span></label>
+          <input type="text" id="phone" name="phone" value="<%= form.phone || '' %>" autocomplete="tel">
+        </div>
+      </div>
+      <div class="grid2">
+        <div>
+          <label for="email">Email address</label>
+          <input type="email" id="email" name="email" value="<%= form.email || '' %>" autocomplete="email" required>
+        </div>
+        <div>
+          <label for="password">Password <span class="hint">(8+ characters)</span></label>
+          <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+        </div>
+      </div>
+
+      <div id="agentFields" style="display:none;">
+        <div class="grid2">
+          <div>
+            <label for="license_number">Real estate license number</label>
+            <input type="text" id="license_number" name="license_number" value="<%= form.license_number || '' %>" placeholder="e.g. 9876543-SA00">
+          </div>
+          <div>
+            <label for="brokerage">Brokerage</label>
+            <input type="text" id="brokerage" name="brokerage" value="<%= form.brokerage || '' %>">
+          </div>
+        </div>
+        <p class="note">Utah pilot: your license is checked against the Utah Division of Real Estate registry before your account is activated. By registering you confirm your brokerage authorizes you to offer pricing and services on Connexli.</p>
+      </div>
+
+      <button class="btn full" type="submit" style="margin-top:18px;">Create account</button>
+    </form>
+  </div>
+  <p class="note">Already have an account? <a href="/login">Log in</a>.</p>
+</div>
+<script>
+function toggleAgent(){
+  var isAgent = document.querySelector('input[name="role"][value="agent"]').checked;
+  document.getElementById('agentFields').style.display = isAgent ? 'block' : 'none';
+  document.getElementById('license_number').required = isAgent;
+  document.getElementById('brokerage').required = isAgent;
+}
+toggleAgent();
+</script>
+<%- include('partials/foot') %>

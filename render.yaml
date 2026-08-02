@@ -1,0 +1,27 @@
+# Render Blueprint: provisions the Connexli web app AND its Postgres database together.
+# In Render: New → Blueprint → select this repository → Apply.
+services:
+  - type: web
+    name: connexli-app
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false   # Render will prompt you to type this in
+      - key: ADMIN_PASSWORD
+        sync: false   # Render will prompt you to type this in — use a long, unique password
+      - key: DATABASE_URL
+        fromDatabase:
+          name: connexli-db
+          property: connectionString
+
+databases:
+  - name: connexli-db
+    plan: basic-256mb

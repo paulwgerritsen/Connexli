@@ -1,0 +1,79 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:640px;">
+  <h1>Tell us about the home you may sell</h1>
+  <p class="sub">Professionals see only a general opportunity. Your name, exact address, and contact info stay hidden until you choose to connect.</p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+  <form method="POST" action="/requests/new">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+    <div class="card">
+      <h2>The property</h2>
+      <label>What are you selling?</label>
+      <div class="optgrid cols">
+        <% H.PROPERTY_TYPES.forEach(t => { %>
+          <label class="opt"><input type="radio" name="property_type" value="<%= t %>" <%= form.property_type === t ? 'checked' : '' %> required>
+          <span class="tile"><b><%= t %></b></span></label>
+        <% }) %>
+      </div>
+      <div class="grid2">
+        <div><label for="zip">ZIP code</label><input type="text" id="zip" name="zip" inputmode="numeric" pattern="\d{5}" value="<%= form.zip || '' %>" required></div>
+        <div><label for="city">City</label><input type="text" id="city" name="city" value="<%= form.city || '' %>" required></div>
+      </div>
+      <label for="neighborhood">Approximate neighborhood <span class="hint">(optional — address stays private)</span></label>
+      <input type="text" id="neighborhood" name="neighborhood" value="<%= form.neighborhood || '' %>">
+      <div class="grid2">
+        <div><label for="beds">Bedrooms</label><select id="beds" name="beds"><% H.BEDS.forEach(v => { %><option <%= form.beds === v ? 'selected' : '' %>><%= v %></option><% }) %></select></div>
+        <div><label for="baths">Bathrooms</label><select id="baths" name="baths"><% H.BATHS.forEach(v => { %><option <%= form.baths === v ? 'selected' : '' %>><%= v %></option><% }) %></select></div>
+        <div><label for="sqft_range">Square feet</label><select id="sqft_range" name="sqft_range"><% H.SQFT.forEach(v => { %><option <%= (form.sqft_range || '2,500–3,000') === v ? 'selected' : '' %>><%= v %></option><% }) %></select></div>
+        <div><label for="year_built">Year built</label><select id="year_built" name="year_built"><% H.YEARS.forEach(v => { %><option <%= (form.year_built || '2000–2009') === v ? 'selected' : '' %>><%= v %></option><% }) %></select></div>
+        <div><label for="hoa">HOA</label><select id="hoa" name="hoa"><option <%= form.hoa === 'No' ? 'selected' : '' %>>No</option><option <%= form.hoa === 'Yes' ? 'selected' : '' %>>Yes</option></select></div>
+        <div><label for="condition">Condition</label><select id="condition" name="condition"><% H.CONDITIONS.forEach(v => { %><option <%= (form.condition || 'Updated') === v ? 'selected' : '' %>><%= v %></option><% }) %></select></div>
+      </div>
+      <label for="price_range">Desired price range</label>
+      <select id="price_range" name="price_range" required>
+        <option value="" disabled <%= form.price_range ? '' : 'selected' %>>Choose a range</option>
+        <% Object.keys(H.PRICE_RANGES).forEach(v => { %><option <%= form.price_range === v ? 'selected' : '' %>><%= v %></option><% }) %>
+      </select>
+    </div>
+
+    <div class="card">
+      <h2>What matters most?</h2>
+      <p class="sub">Pick up to two. Professionals tailor their proposals to your priorities.</p>
+      <div class="optgrid cols">
+        <% H.PRIORITIES.forEach(p => { %>
+          <label class="opt"><input type="checkbox" name="priorities" value="<%= p %>" <%= (form.priorities || []).includes(p) ? 'checked' : '' %>>
+          <span class="tile"><b><%= p %></b></span></label>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Choose your proposal window</h2>
+      <p class="sub">Proposals stay sealed until the window closes. Then you see everything at once.</p>
+      <div class="optgrid">
+        <% H.WINDOWS.forEach(w => { %>
+          <label class="opt">
+            <input type="radio" name="window_hours" value="<%= w.hours %>" <%= w.hours === 72 ? 'checked' : '' %>>
+            <span class="tile"><span>
+              <% if (w.hours === 72) { %><span class="rec">RECOMMENDED</span><% } %>
+              <b><%= w.label %> · <%= w.tag %></b>
+              <span class="desc"><%= w.desc %></span>
+            </span></span>
+          </label>
+        <% }) %>
+      </div>
+      <button class="btn full" type="submit" style="margin-top:18px;">Launch my request</button>
+      <p class="note">Free for homeowners. No obligation at any point.</p>
+    </div>
+  </form>
+</div>
+<script>
+// Limit priorities to two
+var boxes = document.querySelectorAll('input[name="priorities"]');
+boxes.forEach(function(b){ b.addEventListener('change', function(){
+  var checked = document.querySelectorAll('input[name="priorities"]:checked');
+  if (checked.length > 2) b.checked = false;
+});});
+</script>
+<%- include('../partials/foot') %>

@@ -1,0 +1,83 @@
+<%- include('../partials/head') %>
+<a href="/agent" style="font-size:14px;">‹ Back to opportunities</a>
+<div class="narrow" style="max-width:720px; margin:0;">
+  <h1 style="margin-top:8px;"><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %></h1>
+  <p class="sub" data-closes="<%= new Date(request.closes_at).toISOString() %>" id="closesLine">Window status…</p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+  <div class="card">
+    <div class="sumrow"><span>Size</span><span><%= request.sqft_range %> sq ft · <%= request.beds %> bd · <%= request.baths %> ba</span></div>
+    <div class="sumrow"><span>Built</span><span><%= request.year_built %> · <%= request.condition %> · HOA: <%= request.hoa %></span></div>
+    <div class="sumrow"><span>Price range</span><span><%= request.price_range %></span></div>
+    <div class="sumrow"><span>Seller priorities</span><span><%= request.priorities || 'Balanced' %></span></div>
+    <% if (request.neighborhood) { %><div class="sumrow"><span>Area</span><span><%= request.neighborhood %></span></div><% } %>
+  </div>
+
+  <% if (request.status !== 'open') { %>
+    <div class="sealed" style="margin-top:14px;">⏱ <span>This window has closed. <% if (proposal) { %>Your proposal was delivered sealed and is now visible to the homeowner alongside the others. You'll see "Shortlisted" or "Won" on your dashboard if they pick you.<% } else { %>Proposals can no longer be submitted.<% } %></span></div>
+  <% } else { %>
+    <div class="card">
+      <h2><%= proposal ? 'Edit your sealed proposal' : 'Your sealed proposal' %></h2>
+      <form method="POST" action="/agent/opportunities/<%= request.id %>/propose">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <label>Compensation type</label>
+        <div class="optgrid cols">
+          <label class="opt"><input type="radio" name="fee_type" value="pct" <%= (!proposal || proposal.fee_type === 'pct') ? 'checked' : '' %> onchange="feeLbl()"><span class="tile"><b>% of sale price</b></span></label>
+          <label class="opt"><input type="radio" name="fee_type" value="flat" <%= (proposal && proposal.fee_type === 'flat') ? 'checked' : '' %> onchange="feeLbl()"><span class="tile"><b>Flat fee ($)</b></span></label>
+        </div>
+        <label for="fee_amount" id="feeAmtLbl">Listing fee</label>
+        <input type="text" id="fee_amount" name="fee_amount" inputmode="decimal" value="<%= proposal ? parseFloat(proposal.fee_amount) : '' %>" placeholder="e.g. 1.25" required>
+        <p class="note" id="feePrev"></p>
+
+        <label>Included services</label>
+        <div class="optgrid cols">
+          <% H.SERVICES.forEach(s => { %>
+            <label class="opt"><input type="checkbox" name="services" value="<%= s %>" <%= (proposal && (proposal.services || '').includes(s)) ? 'checked' : '' %>><span class="tile"><b style="font-weight:500;"><%= s %></b></span></label>
+          <% }) %>
+        </div>
+
+        <label for="marketing_plan">Marketing plan <span class="hint">(the homeowner sees this)</span></label>
+        <textarea id="marketing_plan" name="marketing_plan" rows="3" maxlength="1000"><%= proposal ? proposal.marketing_plan : '' %></textarea>
+
+        <label for="cancellation_terms">Cancellation terms</label>
+        <select id="cancellation_terms" name="cancellation_terms">
+          <% H.CANCELLATION.forEach(c => { %><option <%= (proposal && proposal.cancellation_terms === c) ? 'selected' : '' %>><%= c %></option><% }) %>
+        </select>
+
+        <button class="btn full" type="submit" style="margin-top:18px;"><%= proposal ? 'Update sealed proposal 🔒' : 'Submit sealed proposal 🔒' %></button>
+        <p class="note">Sealed until the window closes. No other professional can see your pricing. By submitting you confirm your brokerage authorizes these terms; the final fee is set in the listing agreement.</p>
+      </form>
+      <% if (proposal) { %>
+        <form method="POST" action="/agent/opportunities/<%= request.id %>/withdraw" onsubmit="return confirm('Withdraw your proposal from this opportunity?');" style="margin-top:10px;">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn danger full" type="submit">Withdraw my proposal</button>
+        </form>
+      <% } %>
+    </div>
+  <% } %>
+</div>
+<script>
+var MID = <%= H.midPrice(request.price_range) %>;
+function feeLbl(){
+  var pct = document.querySelector('input[name="fee_type"][value="pct"]').checked;
+  document.getElementById('feeAmtLbl').textContent = pct ? 'Listing fee (%)' : 'Flat fee ($)';
+  prev();
+}
+function prev(){
+  var pct = document.querySelector('input[name="fee_type"][value="pct"]').checked;
+  var v = parseFloat(String(document.getElementById('fee_amount').value).replace(/[^0-9.]/g,'')) || 0;
+  var est = pct ? Math.round(MID * v / 100) : Math.round(v);
+  document.getElementById('feePrev').textContent = v > 0
+    ? 'The homeowner sees: ' + (pct ? v + '%' : '$' + est.toLocaleString() + ' flat') + ' · estimated $' + est.toLocaleString() + ' on a $' + MID.toLocaleString() + ' sale'
+    : 'Estimated fee preview appears as you type.';
+}
+document.getElementById('fee_amount').addEventListener('input', prev);
+feeLbl();
+var line = document.getElementById('closesLine');
+var left = new Date(line.dataset.closes).getTime() - Date.now();
+if (left > 0) {
+  var d = Math.floor(left/86400000), h = Math.floor(left%86400000/3600000), m = Math.floor(left%3600000/60000);
+  line.textContent = 'Sealed window closes in ' + (d > 0 ? d + ' days ' + h + ' hrs' : h + ' hrs ' + m + ' min');
+} else { line.textContent = 'This window has closed.'; }
+</script>
+<%- include('../partials/foot') %>

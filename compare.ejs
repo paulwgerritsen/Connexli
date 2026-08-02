@@ -1,0 +1,29 @@
+<%- include('../partials/head') %>
+<a href="/requests/<%= request.id %>" style="font-size:14px;">‹ Back to proposals</a>
+<h1 style="margin-top:8px;"><%= usingShortlist ? 'Your shortlist, side by side' : 'All proposals, side by side' %></h1>
+<p class="sub">Estimated fees assume a <%= H.money(H.midPrice(request.price_range)) %> sale (the middle of your range). Scroll sideways on smaller screens.</p>
+
+<% const has = (p, kw) => (p.services || '').toLowerCase().includes(kw); %>
+<div class="tblwrap">
+  <table>
+    <tr><th></th><% proposals.forEach(p => { %><th><%= p.agent_name %></th><% }) %></tr>
+    <tr><td>Brokerage</td><% proposals.forEach(p => { %><td><%= p.brokerage %></td><% }) %></tr>
+    <tr><td>Commission</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.feeLabel(p) %></b></td><% }) %></tr>
+    <tr><td>Est. fee</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.money(H.estFee(p, request.price_range)) %></b></td><% }) %></tr>
+    <tr><td>Photos</td><% proposals.forEach(p => { %><td><%- has(p,'photo') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Drone</td><% proposals.forEach(p => { %><td><%- has(p,'drone') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Open house</td><% proposals.forEach(p => { %><td><%- has(p,'open house') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>3D tour</td><% proposals.forEach(p => { %><td><%- has(p,'3d') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Staging</td><% proposals.forEach(p => { %><td><%- has(p,'staging') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Cancellation</td><% proposals.forEach(p => { %><td><%= p.cancellation_terms %></td><% }) %></tr>
+    <tr><td></td><% proposals.forEach(p => { %>
+      <td>
+        <form method="POST" action="/requests/<%= request.id %>/connect/<%= p.id %>" onsubmit="return confirm('Release your contact info to <%= p.agent_name %>?');">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn sm" type="submit">Choose</button>
+        </form>
+      </td>
+    <% }) %></tr>
+  </table>
+</div>
+<%- include('../partials/foot') %>
