@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexli. Real Connections. Better Decisions.</title>
+<meta name="description" content="Connexli connects homeowners with verified real estate professionals who compete for your business. Compare sealed proposals side by side. Launching soon in Utah.">
+<meta property="og:title" content="Connexli. Real Connections. Better Decisions.">
+<meta property="og:description" content="Verified real estate professionals compete for your business. Compare sealed proposals side by side. Launching soon in Utah.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://connexli.com">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0A1B33; --navy-2:#0F2749; --navy-3:#132F57;
+    --blue:#1565FF; --blue-dark:#0E4FD1; --sky:#42B6FF; --lightblue:#B3D6FF;
+    --paper:#F7F9FC; --card:#FFFFFF; --ink:#16233A; --muted:#5A6779;
+    --line:#E1E7F0; --good:#1E8E5A;
+    --r-card:16px; --r-input:10px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto;} }
+  body{
+    font-family:'Poppins',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); background:var(--paper); line-height:1.6;
+  }
+  .wrap{max-width:1160px; margin:0 auto; padding:0 24px;}
+  h1,h2,h3{color:var(--navy); letter-spacing:-.02em; line-height:1.18;}
+  a{color:inherit;}
+
+  /* ===== buttons: pill system ===== */
+  .btn{
+    display:inline-block; border:none; cursor:pointer; text-decoration:none; text-align:center;
+    background:var(--blue); color:#fff; font-family:inherit; font-size:15.5px; font-weight:600;
+    padding:13px 28px; border-radius:999px; transition:background .18s ease, transform .12s ease;
+  }
+  .btn:hover{background:var(--blue-dark);}
+  .btn:active{transform:translateY(1px);}
+  .btn:focus-visible{outline:3px solid var(--sky); outline-offset:2px;}
+  .btn.light{background:#fff; color:var(--navy);}
+  .btn.light:hover{background:var(--lightblue);}
+  .btn.ghost{background:transparent; color:#fff; border:1.5px solid rgba(255,255,255,.4);}
+  .btn.ghost:hover{border-color:#fff; background:rgba(255,255,255,.06);}
+
+  /* ===== nav ===== */
+  header{
+    position:sticky; top:0; z-index:40; background:rgba(10,27,51,.92);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }
+  .nav{height:68px; display:flex; align-items:center; justify-content:space-between; gap:20px;}
+  .brand{display:flex; align-items:center; gap:9px; text-decoration:none;}
+  .wordmark{font-size:21px; font-weight:700; color:#fff; letter-spacing:-.02em;}
+  .wordmark span{color:var(--sky);}
+  .nav-links{display:flex; gap:26px; align-items:center;}
+  .nav-links a{color:#C7D3E4; font-size:14.5px; text-decoration:none; transition:color .15s;}
+  .nav-links a:hover{color:#fff;}
+  .nav .btn{padding:10px 22px; font-size:14.5px;}
+  @media (max-width:860px){ .nav-links a{display:none;} }
+
+  /* ===== hero (navy, per brand board) ===== */
+  .hero{background:linear-gradient(155deg, var(--navy) 55%, var(--navy-3)); color:#fff; overflow:hidden;}
+  .hero-grid{
+    display:grid; grid-template-columns:1.2fr .8fr; gap:48px; align-items:center;
+    padding:72px 0 84px;
+  }
+  .eyebrow{
+    display:inline-block; font-size:12px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--sky); margin-bottom:18px;
+  }
+  .hero h1{color:#fff; font-size:clamp(28px, 3vw, 40px); font-weight:700; max-width:22ch;}
+  .hero h1 em{font-style:normal; color:var(--sky);}
+  .hero .sub{color:#C4D2E6; font-size:17px; margin-top:18px; max-width:46ch;}
+  .hero-ctas{display:flex; gap:14px; margin-top:30px; flex-wrap:wrap;}
+
+  /* live product preview (real UI, not a fake screenshot) */
+  .preview{
+    background:#fff; border-radius:var(--r-card); padding:22px;
+    box-shadow:0 24px 60px rgba(4,12,26,.45); color:var(--ink);
+    max-width:430px; justify-self:end; width:100%;
+  }
+  .preview .ph{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+  .preview .ph b{font-size:15px; color:var(--navy);}
+  .chip{
+    font-size:11.5px; font-weight:600; color:var(--good); background:#E7F6EE;
+    border-radius:999px; padding:3px 10px;
+  }
+  .prow{
+    display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid var(--line);
+  }
+  .pava{
+    width:38px; height:38px; border-radius:50%; flex:none; color:#fff; font-weight:700; font-size:13px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .prow .pname{font-size:14px; font-weight:600; color:var(--navy); line-height:1.3;}
+  .prow .pmeta{font-size:12px; color:var(--muted);}
+  .prow .pfee{margin-left:auto; text-align:right;}
+  .prow .pfee b{font-size:17px; color:var(--navy); display:block; line-height:1.2;}
+  .prow .pfee span{font-size:11.5px; color:var(--blue); font-weight:600;}
+  .preview .pfoot{
+    margin-top:12px; padding-top:12px; border-top:1px solid var(--line);
+    font-size:12.5px; color:var(--muted); display:flex; gap:8px; align-items:center;
+  }
+  @media (max-width:900px){
+    .hero-grid{grid-template-columns:1fr; gap:44px; padding:56px 0 64px;}
+    .preview{justify-self:center; max-width:460px;}
+  }
+
+  /* ===== how it works: numbered timeline ===== */
+  .how{padding:88px 0 76px;}
+  .how h2{font-size:clamp(26px, 3.2vw, 36px); max-width:16ch;}
+  .how .lead{color:var(--muted); font-size:16px; margin-top:12px; max-width:52ch;}
+  .timeline{margin-top:44px; display:grid; gap:0;}
+  .tstep{
+    display:grid; grid-template-columns:56px 1fr; gap:22px; padding:26px 0;
+    border-top:1px solid var(--line); align-items:start;
+  }
+  .tstep:last-child{border-bottom:1px solid var(--line);}
+  .tnum{
+    width:44px; height:44px; border-radius:50%; background:var(--navy); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px;
+  }
+  .tstep:nth-child(2) .tnum, .tstep:nth-child(3) .tnum{background:var(--blue);}
+  .tstep h3{font-size:19px;}
+  .tstep p{color:var(--muted); font-size:15px; margin-top:6px; max-width:62ch;}
+  @media (min-width:861px){
+    .timeline{grid-template-columns:1fr 1fr 1fr; gap:0 40px;}
+    .tstep{grid-template-columns:1fr; border-top:1px solid var(--line); padding-top:30px;}
+    .tstep:last-child{border-bottom:none;}
+    .tstep .tnum{margin-bottom:16px;}
+  }
+
+  /* ===== two audiences ===== */
+  .aud{padding:0 0 88px;}
+  .aud-grid{display:grid; grid-template-columns:1.15fr .85fr; gap:22px;}
+  .aud-panel{border-radius:var(--r-card); padding:38px 36px;}
+  .aud-panel.navy{background:var(--navy); color:#fff;}
+  .aud-panel.navy h3{color:#fff;}
+  .aud-panel.light{background:#fff; border:1px solid var(--line);}
+  .aud-panel h3{font-size:22px;}
+  .aud-panel ul{list-style:none; margin-top:18px; display:grid; gap:12px;}
+  .aud-panel li{display:flex; gap:11px; font-size:15px; align-items:flex-start;}
+  .aud-panel.navy li{color:#C4D2E6;}
+  .aud-panel.light li{color:var(--muted);}
+  .tick{color:var(--sky); font-weight:700; flex:none;}
+  .aud-panel.light .tick{color:var(--blue);}
+  .aud-panel .small{font-size:13px; margin-top:20px; opacity:.75;}
+  @media (max-width:860px){ .aud-grid{grid-template-columns:1fr;} }
+
+  /* ===== sealed band ===== */
+  .sealed{background:var(--navy); color:#fff; padding:76px 0;}
+  .sealed .inner{max-width:760px;}
+  .sealed h2{color:#fff; font-size:clamp(24px, 3vw, 34px);}
+  .sealed p{color:#C4D2E6; font-size:16.5px; margin-top:16px; max-width:60ch;}
+  .sealed .lockrow{display:flex; gap:14px; margin-top:26px; align-items:flex-start;}
+  .lockicon{
+    width:46px; height:46px; border-radius:12px; background:var(--navy-3); flex:none;
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+  }
+  .sealed .lockrow div p{margin-top:2px; font-size:14.5px;}
+  .sealed .lockrow b{color:#fff; font-size:15.5px;}
+
+  /* ===== waitlist ===== */
+  .waitlist{padding:88px 0;}
+  .wl-card{
+    background:#fff; border:1px solid var(--line); border-radius:var(--r-card);
+    padding:44px 40px; max-width:640px; margin:0 auto; box-shadow:0 10px 40px rgba(10,27,51,.07);
+  }
+  .wl-card h2{font-size:clamp(24px, 3vw, 32px); text-align:center;}
+  .wl-card .lead{color:var(--muted); font-size:15.5px; text-align:center; margin-top:10px;}
+  form{margin-top:28px; display:grid; gap:18px;}
+  label{display:block; font-size:13.5px; font-weight:600; color:var(--navy); margin-bottom:6px;}
+  .hint{font-size:12.5px; color:var(--muted); font-weight:400;}
+  input, select{
+    width:100%; padding:13px 14px; font-size:15px; font-family:inherit; color:var(--ink);
+    border:1.5px solid var(--line); border-radius:var(--r-input); background:#fff;
+  }
+  input:focus, select:focus{outline:3px solid var(--lightblue); border-color:var(--blue);}
+  .frow{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:560px){ .frow{grid-template-columns:1fr;} }
+  form .btn{width:100%; font-size:16px; padding:15px;}
+  .form-msg{display:none; text-align:center; font-size:15px; padding:14px; border-radius:var(--r-input);}
+  .form-msg.ok{display:block; background:#E7F6EE; color:var(--good);}
+  .form-msg.err{display:block; background:#FBEFEF; color:#9B3D3D;}
+  .wl-note{font-size:12.5px; color:var(--muted); text-align:center; margin-top:14px;}
+
+  /* ===== faq ===== */
+  .faq{padding:0 0 88px;}
+  .faq h2{font-size:clamp(24px, 3vw, 32px); margin-bottom:26px;}
+  .faq-list{max-width:760px;}
+  details{border-top:1px solid var(--line);}
+  details:last-child{border-bottom:1px solid var(--line);}
+  summary{
+    cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:center;
+    padding:20px 4px; font-weight:600; font-size:16px; color:var(--navy); gap:16px;
+  }
+  summary::-webkit-details-marker{display:none;}
+  summary::after{content:"+"; font-size:22px; color:var(--blue); font-weight:400; transition:transform .2s;}
+  details[open] summary::after{transform:rotate(45deg);}
+  details p{padding:0 4px 22px; color:var(--muted); font-size:15px; max-width:66ch;}
+
+  /* ===== footer ===== */
+  footer{background:var(--navy); color:#9FB2CC; padding:48px 0 40px; font-size:13.5px;}
+  .foot-grid{display:flex; justify-content:space-between; gap:24px; flex-wrap:wrap; align-items:flex-start;}
+  .foot-grid .tagline{margin-top:10px; color:#C4D2E6;}
+  .foot-links{display:flex; gap:22px;}
+  .foot-links a{color:#9FB2CC; text-decoration:none;}
+  .foot-links a:hover{color:#fff;}
+  .foot-legal{margin-top:30px; padding-top:22px; border-top:1px solid var(--navy-3); font-size:12.5px; line-height:1.7;}
+
+  /* ===== scroll reveal (gated) ===== */
+  @media (prefers-reduced-motion: no-preference){
+    .reveal{opacity:0; transform:translateY(18px); transition:opacity .6s ease, transform .6s ease;}
+    .reveal.in{opacity:1; transform:none;}
+    .preview{animation:float 7s ease-in-out infinite;}
+    @keyframes float{0%,100%{transform:translateY(0);} 50%{transform:translateY(-8px);}}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top" aria-label="Connexli home">
+      <svg width="40" height="23" viewBox="0 0 64 34" aria-hidden="true">
+        <defs>
+          <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1565FF"/><stop offset="1" stop-color="#0A3EA8"/></linearGradient>
+          <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#42B6FF"/><stop offset="1" stop-color="#1565FF"/></linearGradient>
+        </defs>
+        <circle cx="22" cy="17" r="12" fill="none" stroke="url(#g1)" stroke-width="7"/>
+        <circle cx="42" cy="17" r="12" fill="none" stroke="url(#g2)" stroke-width="7"/>
+        <path d="M 34.5 8 A 12 12 0 0 0 34.5 26" fill="none" stroke="url(#g1)" stroke-width="7"/>
+      </svg>
+      <span class="wordmark">connex<span>li</span></span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#homeowners">For homeowners</a>
+      <a href="#professionals">For professionals</a>
+      <a class="btn" href="#waitlist">Join the waitlist</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow">Launching soon in Utah</span>
+        <h1>The smarter way to <em>connect, compare,</em> and choose.</h1>
+        <p class="sub">Verified real estate professionals compete for your business. You compare their proposals side by side and choose with confidence.</p>
+        <div class="hero-ctas">
+          <a class="btn light" href="#waitlist">Join the waitlist</a>
+          <a class="btn ghost" href="#how">See how it works</a>
+        </div>
+      </div>
+      <div class="preview" role="img" aria-label="Preview of Connexli proposal comparison showing three agent proposals">
+        <div class="ph"><b>Your proposals</b><span class="chip">✓ Verified pros</span></div>
+        <div class="prow">
+          <div class="pava" style="background:#1565FF">SK</div>
+          <div><div class="pname">Sarah K.</div><div class="pmeta">★ 4.9 · 84 sales</div></div>
+          <div class="pfee"><b>1.25%</b><span>Photos + drone</span></div>
+        </div>
+        <div class="prow">
+          <div class="pava" style="background:#0A1B33">MS</div>
+          <div><div class="pname">Mike S.</div><div class="pmeta">★ 4.8 · 132 sales</div></div>
+          <div class="pfee"><b>$8,500</b><span>Flat fee</span></div>
+        </div>
+        <div class="prow">
+          <div class="pava" style="background:#42B6FF">JL</div>
+          <div><div class="pname">Jenna L.</div><div class="pmeta">★ 4.6 · 203 sales</div></div>
+          <div class="pfee"><b>1.35%</b><span>Full marketing</span></div>
+        </div>
+        <div class="pfoot">🔒 Proposals stay sealed until the window closes. Sample data shown.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how" id="how">
+    <div class="wrap">
+      <h2 class="reveal">Three steps. You stay in control.</h2>
+      <p class="lead reveal">Your name, address, and contact info stay private until you decide who earns your business.</p>
+      <div class="timeline">
+        <div class="tstep reveal">
+          <div class="tnum">1</div>
+          <div><h3>Connect</h3><p>Tell us about your home and your priorities. It takes about two minutes, and your identity stays hidden.</p></div>
+        </div>
+        <div class="tstep reveal">
+          <div class="tnum">2</div>
+          <div><h3>Compare</h3><p>Licensed local professionals submit sealed proposals: their fee, services, marketing plan, and track record.</p></div>
+        </div>
+        <div class="tstep reveal">
+          <div class="tnum">3</div>
+          <div><h3>Choose</h3><p>Review everything side by side, then share your contact info only with the professional you pick. No obligation.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TWO AUDIENCES -->
+  <section class="aud">
+    <div class="wrap aud-grid">
+      <div class="aud-panel navy reveal" id="homeowners">
+        <h3>For homeowners</h3>
+        <ul>
+          <li><span class="tick">✓</span>Free to use. No fees, no subscriptions, ever.</li>
+          <li><span class="tick">✓</span>Professionals compete on fee and service, so you see real options instead of one opinion.</li>
+          <li><span class="tick">✓</span>Private by design. Your address and contact info are hidden until you choose to share them.</li>
+          <li><span class="tick">✓</span>No obligation at any point. Walk away whenever you like.</li>
+        </ul>
+        <p class="small">Selling first. Buying support arrives after launch.</p>
+      </div>
+      <div class="aud-panel light reveal" id="professionals">
+        <h3>For professionals</h3>
+        <ul>
+          <li><span class="tick">✓</span>Meet motivated sellers with clear timelines and priorities.</li>
+          <li><span class="tick">✓</span>Sealed proposals. Competitors never see your pricing.</li>
+          <li><span class="tick">✓</span>Win on value: your experience, reviews, and service package appear next to your fee.</li>
+          <li><span class="tick">✓</span>Every professional is license-verified, so the platform stays credible for everyone.</li>
+        </ul>
+        <p class="small">Founding member spots for the Utah pilot are limited.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEALED BAND -->
+  <section class="sealed">
+    <div class="wrap inner">
+      <h2 class="reveal">Why sealed proposals matter</h2>
+      <p class="reveal">On Connexli, professionals cannot see each other's offers. That means every proposal you receive is their best one, not the minimum needed to edge out a rival. And because your identity stays hidden until you choose, nobody can pressure you while you decide.</p>
+      <div class="lockrow reveal">
+        <div class="lockicon">🔒</div>
+        <div>
+          <b>Private until you say otherwise</b>
+          <p>Your contact details are released only to the professional you select.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WAITLIST -->
+  <section class="waitlist" id="waitlist">
+    <div class="wrap">
+      <div class="wl-card reveal">
+        <h2>Be first when we launch</h2>
+        <p class="lead">Connexli opens first in Davis, Salt Lake, and Utah counties. Join the waitlist and we'll email you the moment your area goes live.</p>
+        <form id="wlForm" novalidate>
+          <div>
+            <label for="role">I am a…</label>
+            <select id="role" name="role" required>
+              <option value="" selected disabled>Choose one</option>
+              <option>Homeowner thinking about selling</option>
+              <option>Real estate professional</option>
+              <option>Just curious</option>
+            </select>
+          </div>
+          <div class="frow">
+            <div>
+              <label for="email">Email address</label>
+              <input type="email" id="email" name="email" autocomplete="email" required>
+            </div>
+            <div>
+              <label for="zip">ZIP code <span class="hint">(optional)</span></label>
+              <input type="text" id="zip" name="zip" inputmode="numeric" autocomplete="postal-code">
+            </div>
+          </div>
+          <div class="form-msg" id="formMsg" role="status"></div>
+          <button class="btn" type="submit" id="wlBtn">Join the waitlist</button>
+        </form>
+        <p class="wl-note">We'll only email you about Connexli. No spam, unsubscribe anytime.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="faq">
+    <div class="wrap">
+      <h2 class="reveal">Common questions</h2>
+      <div class="faq-list reveal">
+        <details>
+          <summary>Does Connexli cost homeowners anything?</summary>
+          <p>No. Connexli is free for homeowners. Professionals compete for your business, and you keep the savings that competition creates.</p>
+        </details>
+        <details>
+          <summary>Is Connexli a real estate brokerage?</summary>
+          <p>No. Connexli is the comparison and introduction layer. When you choose a professional, your listing agreement is signed directly with their brokerage, and they represent you from there.</p>
+        </details>
+        <details>
+          <summary>How are professionals verified?</summary>
+          <p>Every professional provides their real estate license number and brokerage when they sign up, and we confirm the license is active in their state before they can submit a single proposal.</p>
+        </details>
+        <details>
+          <summary>Who sees my information?</summary>
+          <p>Until you choose, professionals see only general details: area, home type, size, and price range. Your name, exact address, and contact info are released only to the professional you select.</p>
+        </details>
+        <details>
+          <summary>When and where does Connexli launch?</summary>
+          <p>The pilot opens in Davis, Salt Lake, and Utah counties, with more areas to follow. Waitlist members hear first, and founding professional spots are limited.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="#top" aria-label="Connexli home">
+          <svg width="36" height="21" viewBox="0 0 64 34" aria-hidden="true">
+            <circle cx="22" cy="17" r="12" fill="none" stroke="#1565FF" stroke-width="7"/>
+            <circle cx="42" cy="17" r="12" fill="none" stroke="#42B6FF" stroke-width="7"/>
+            <path d="M 34.5 8 A 12 12 0 0 0 34.5 26" fill="none" stroke="#1565FF" stroke-width="7"/>
+          </svg>
+          <span class="wordmark" style="font-size:18px;">connex<span style="color:#42B6FF">li</span></span>
+        </a>
+        <p class="tagline">Real Connections. Better Decisions.</p>
+      </div>
+      <nav class="foot-links" aria-label="Footer">
+        <a href="#how">How it works</a>
+        <a href="#waitlist">Join the waitlist</a>
+        <a href="mailto:hello@connexli.com">Contact</a>
+      </nav>
+    </div>
+    <p class="foot-legal">© 2026 Connexli. All rights reserved. Connexli is not a real estate brokerage and does not provide brokerage services. Representation agreements are signed directly with each professional's brokerage. Terms of Service and Privacy Policy will be published before launch.</p>
+  </div>
+</footer>
+
+<script>
+  /* ---- Waitlist form ----
+     SETUP (5 minutes): create a free account at formspree.io, make a new form,
+     and paste its ID below (looks like "mqkvabcd"). Until then, the form shows
+     a friendly fallback asking visitors to email hello@connexli.com. */
+  const FORMSPREE_ID = "";
+
+  const form = document.getElementById('wlForm');
+  const msg = document.getElementById('formMsg');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    const role = document.getElementById('role').value;
+    if(!role || !email || !email.includes('@')){
+      msg.className = 'form-msg err';
+      msg.textContent = 'Please choose a role and enter a valid email address.';
+      return;
+    }
+    if(!FORMSPREE_ID){
+      msg.className = 'form-msg ok';
+      msg.innerHTML = 'Almost there! Email <a href="mailto:hello@connexli.com?subject=Waitlist">hello@connexli.com</a> and we\'ll add you to the list.';
+      return;
+    }
+    const btn = document.getElementById('wlBtn');
+    btn.disabled = true; btn.textContent = 'Joining…';
+    try{
+      const res = await fetch('https://formspree.io/f/'+FORMSPREE_ID, {
+        method:'POST',
+        headers:{'Accept':'application/json','Content-Type':'application/json'},
+        body: JSON.stringify({ role, email, zip: document.getElementById('zip').value.trim() })
+      });
+      if(!res.ok) throw new Error();
+      msg.className = 'form-msg ok';
+      msg.textContent = "You're on the list! We'll email you when Connexli opens in your area.";
+      form.reset();
+    }catch{
+      msg.className = 'form-msg err';
+      msg.innerHTML = 'Something went wrong. Please email <a href="mailto:hello@connexli.com">hello@connexli.com</a> instead.';
+    }finally{
+      btn.disabled = false; btn.textContent = 'Join the waitlist';
+    }
+  });
+
+  /* ---- Scroll reveal (respects reduced motion via CSS gating) ---- */
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(en => { if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>
