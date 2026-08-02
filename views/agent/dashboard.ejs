@@ -1,0 +1,80 @@
+<%- include('../partials/head') %>
+<h1>Welcome back, <%= user.name.split(' ')[0] %></h1>
+<p class="sub"><%= profile.brokerage %> · Utah · <span style="color:var(--good); font-weight:600;">✓ License verified</span></p>
+
+<div class="stats">
+  <div class="stat"><b><%= opportunities.length %></b><span>Open opportunities</span></div>
+  <div class="stat"><b><%= stats.submitted %></b><span>Proposals submitted</span></div>
+  <div class="stat"><b><%= stats.shortlisted %></b><span>Times shortlisted</span></div>
+  <div class="stat"><b><%= stats.connected %></b><span>Clients won</span></div>
+</div>
+
+<% if (wins.length > 0) { %>
+  <h2 style="margin-top:26px;">Clients won 🎉</h2>
+  <div class="card">
+    <% wins.forEach(w => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);"><%= w.seller_name %></b>
+          <div class="meta"><%= w.property_type %> · <%= w.city %>, UT <%= w.zip %> · <%= w.price_range %></div>
+        </div>
+        <div class="actions">
+          <span class="pill">📧 <%= w.seller_email %></span>
+          <% if (w.seller_phone) { %><span class="pill">📱 <%= w.seller_phone %></span><% } %>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+  <p class="note">Reach out within 24 hours. The listing agreement is signed with your brokerage, outside Connexli.</p>
+<% } %>
+
+<h2 style="margin-top:26px;">Open opportunities</h2>
+<% if (opportunities.length === 0) { %>
+  <div class="card"><p class="sub">No open opportunities right now. New homeowner requests appear here the moment they launch.</p></div>
+<% } else { %>
+  <div class="card">
+    <% opportunities.forEach(o => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);"><%= o.property_type %> · <%= o.city %>, UT <%= o.zip %></b>
+          <div class="meta"><%= o.sqft_range %> sq ft · <%= o.beds %> bd/<%= o.baths %> ba · <%= o.price_range %><% if (o.priorities) { %> · Priorities: <%= o.priorities %><% } %></div>
+        </div>
+        <div class="actions">
+          <span class="pill" data-closes="<%= new Date(o.closes_at).toISOString() %>">⏱ closes soon</span>
+          <% if (o.mine > 0) { %><span class="badge approved">Proposal in 🔒</span><% } %>
+          <a class="btn sm <%= o.mine > 0 ? 'ghost' : '' %>" href="/agent/opportunities/<%= o.id %>"><%= o.mine > 0 ? 'Edit proposal' : 'Submit proposal' %></a>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+  <div class="sealed">🔒 <span>Sealed process: you never see other professionals' proposals, and they never see yours. The homeowner's identity stays hidden until they choose to connect with you.</span></div>
+<% } %>
+
+<% if (myProposals.length > 0) { %>
+  <h2 style="margin-top:26px;">My proposals</h2>
+  <div class="card">
+    <% myProposals.forEach(p => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);"><%= p.property_type %> · <%= p.city %>, UT <%= p.zip %></b>
+          <div class="meta"><%= H.feeLabel(p) %> · submitted <%= new Date(p.created_at).toLocaleDateString('en-US') %></div>
+        </div>
+        <div class="actions">
+          <% if (p.connected) { %><span class="badge connected">Won — see Clients won above</span>
+          <% } else if (p.shortlisted) { %><span class="badge open">Shortlisted ⭐</span>
+          <% } else if (p.request_status === 'open') { %><span class="badge pending">Sealed until window closes</span>
+          <% } else { %><span class="badge closed">Window closed — awaiting decision</span><% } %>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+<% } %>
+<script>
+document.querySelectorAll('[data-closes]').forEach(function(el){
+  var left = new Date(el.dataset.closes).getTime() - Date.now();
+  if (left <= 0) { el.textContent = '⏱ closed'; return; }
+  var d = Math.floor(left/86400000), h = Math.floor(left%86400000/3600000), m = Math.floor(left%3600000/60000);
+  el.textContent = '⏱ closes in ' + (d > 0 ? d + 'd ' + h + 'h' : h > 0 ? h + 'h ' + m + 'm' : m + 'm');
+});
+</script>
+<%- include('../partials/foot') %>

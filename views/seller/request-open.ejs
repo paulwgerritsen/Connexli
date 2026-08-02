@@ -1,0 +1,43 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:720px;">
+  <h1>Your request is live</h1>
+  <p class="sub">Verified professionals in Utah can now submit sealed proposals.</p>
+
+  <div class="card">
+    <div class="sumrow"><span>Property</span><span><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %></span></div>
+    <div class="sumrow"><span>Size</span><span><%= request.sqft_range %> sq ft · <%= request.beds %> bd · <%= request.baths %> ba</span></div>
+    <div class="sumrow"><span>Price range</span><span><%= request.price_range %></span></div>
+    <div class="sumrow"><span>Your priorities</span><span><%= request.priorities || 'Balanced' %></span></div>
+  </div>
+
+  <div class="card" style="text-align:center;">
+    <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;">Proposal window closes in</div>
+    <div class="count" id="clock" data-closes="<%= new Date(request.closes_at).toISOString() %>">…</div>
+    <div class="bar"><i id="clockbar" style="width:0%"></i></div>
+    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= proposalCount %></b> sealed proposal<%= proposalCount === 1 ? '' : 's' %> received</p>
+    <div class="sealed">🔒 <span><b>Why sealed?</b> Professionals can't see each other's offers, so each one gives you their best proposal, not the minimum needed to beat a rival. You'll see everything the moment the window closes.</span></div>
+  </div>
+
+  <form method="POST" action="/requests/<%= request.id %>/close" onsubmit="return confirm('End the window now? Professionals will no longer be able to submit, and your proposals will be revealed.');">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <button class="btn ghost full" type="submit">End the window early &amp; reveal proposals</button>
+  </form>
+  <p class="note">Ending early is fine if you're satisfied with the number of proposals. Otherwise, sit tight. This page updates the moment the countdown ends.</p>
+</div>
+<script>
+(function(){
+  var el = document.getElementById('clock');
+  var closes = new Date(el.dataset.closes).getTime();
+  var total = <%= request.window_hours %> * 3600 * 1000;
+  function tick(){
+    var left = closes - Date.now();
+    if (left <= 0) { location.reload(); return; }
+    var h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000), s = Math.floor(left%60000/1000);
+    el.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    document.getElementById('clockbar').style.width = Math.min(100, Math.round(100*(1-left/total)))+'%';
+  }
+  tick(); setInterval(tick, 1000);
+  setInterval(function(){ location.reload(); }, 120000); // refresh proposal count every 2 minutes
+})();
+</script>
+<%- include('../partials/foot') %>

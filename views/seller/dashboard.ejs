@@ -1,0 +1,29 @@
+<%- include('../partials/head') %>
+<h1>My requests</h1>
+<p class="sub">Each request invites verified professionals to compete for your listing.</p>
+
+<% if (requests.length === 0) { %>
+  <div class="card" style="text-align:center; padding:38px 20px;">
+    <h2>Ready when you are</h2>
+    <p class="sub">Create your first request. It takes about two minutes, and your identity stays private until you choose someone.</p>
+    <p style="margin-top:16px;"><a class="btn" href="/requests/new">Tell us about your home</a></p>
+  </div>
+<% } else { %>
+  <div class="card">
+    <% requests.forEach(r => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);"><%= r.property_type %> · <%= r.city %>, UT <%= r.zip %></b>
+          <div class="meta"><%= r.price_range %> · created <%= new Date(r.created_at).toLocaleDateString('en-US') %></div>
+        </div>
+        <div class="actions">
+          <span class="badge <%= r.status %>"><%= r.status === 'open' ? 'Window open' : r.status === 'closed' ? 'Proposals ready' : r.status %></span>
+          <span class="pill"><%= r.proposal_count %> proposal<%= r.proposal_count === 1 ? '' : 's' %></span>
+          <a class="btn sm" href="/requests/<%= r.id %>">View</a>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+  <p style="margin-top:16px;"><a class="btn ghost" href="/requests/new">+ New request</a></p>
+<% } %>
+<%- include('../partials/foot') %>

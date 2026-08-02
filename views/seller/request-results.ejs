@@ -1,0 +1,71 @@
+<%- include('../partials/head') %>
+<% const connectedProposal = proposals.find(p => p.connected); %>
+
+<% if (request.status === 'connected' && connectedProposal) { %>
+  <div class="narrow" style="max-width:640px;">
+    <h1>You're connected 🎉</h1>
+    <p class="sub"><%= connectedProposal.agent_name %> has received your contact information and will reach out soon. You can also reach them directly:</p>
+    <div class="card">
+      <div class="sumrow"><span>Professional</span><span><%= connectedProposal.agent_name %></span></div>
+      <div class="sumrow"><span>Brokerage</span><span><%= connectedProposal.brokerage %></span></div>
+      <div class="sumrow"><span>License</span><span><%= connectedProposal.license_number %></span></div>
+      <div class="sumrow"><span>Email</span><span><%= connectedProposal.agent_email %></span></div>
+      <% if (connectedProposal.agent_phone) { %><div class="sumrow"><span>Phone</span><span><%= connectedProposal.agent_phone %></span></div><% } %>
+      <div class="sumrow"><span>Their proposal</span><span><%= H.feeLabel(connectedProposal) %> (est. <%= H.money(H.estFee(connectedProposal, request.price_range)) %>)</span></div>
+    </div>
+    <div class="success">Their Connexli proposal is saved above for your reference. The listing agreement is signed directly with the brokerage, outside Connexli. Still no obligation.</div>
+    <p style="margin-top:16px;"><a class="btn ghost" href="/dashboard">Back to my requests</a></p>
+  </div>
+<% } else { %>
+  <h1>Your proposals are ready 🎉</h1>
+  <p class="sub"><b style="color:var(--blue);"><%= proposals.length %></b> verified professional<%= proposals.length === 1 ? '' : 's' %> responded to your <%= request.property_type.toLowerCase() %> in <%= request.city %>. Estimated fees assume a sale near the middle of your range (<b><%= H.money(H.midPrice(request.price_range)) %></b>).</p>
+
+  <% if (proposals.length === 0) { %>
+    <div class="card" style="text-align:center; padding:34px 20px;">
+      <h2>No proposals this time</h2>
+      <p class="sub">This can happen in a brand-new market. Our team has been notified and will personally reach out to professionals in your area. You can also create a new request with a longer window.</p>
+      <p style="margin-top:14px;"><a class="btn" href="/requests/new">Create a new request</a></p>
+    </div>
+  <% } else { %>
+    <div style="display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap;">
+      <form method="GET" action="/requests/<%= request.id %>" style="display:flex; gap:8px; align-items:center;">
+        <label style="margin:0;" for="sort">Sort by</label>
+        <select id="sort" name="sort" onchange="this.form.submit()" style="width:auto; padding:8px 10px;">
+          <option value="fee" <%= sort === 'fee' ? 'selected' : '' %>>Lowest estimated fee</option>
+          <option value="newest" <%= sort === 'newest' ? 'selected' : '' %>>Newest</option>
+        </select>
+      </form>
+      <a class="btn navy sm" href="/requests/<%= request.id %>/compare">Compare side by side</a>
+    </div>
+
+    <div class="cards">
+      <% proposals.forEach(p => { %>
+        <div class="card pcard">
+          <div class="grow">
+            <div class="agent-top">
+              <div class="avatar"><%= p.agent_name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() %></div>
+              <div><b><%= p.agent_name %></b><span class="brok"><%= p.brokerage %> · <span style="color:var(--good); font-weight:600;">✓ Verified</span></span></div>
+            </div>
+            <div class="complbl">Proposed compensation</div>
+            <div><span class="fee"><%= H.feeLabel(p) %></span> <span class="est">Est. fee: <%= H.money(H.estFee(p, request.price_range)) %></span></div>
+            <% if (p.services) { %><div class="pillrow"><% p.services.split(', ').forEach(s => { %><span class="pill"><%= s %></span><% }) %></div><% } %>
+            <% if (p.marketing_plan) { %><p class="note" style="margin-top:9px;"><b>Marketing plan:</b> <%= p.marketing_plan %></p><% } %>
+            <p class="note"><b>Cancellation:</b> <%= p.cancellation_terms %></p>
+          </div>
+          <div class="cardbtns">
+            <form method="POST" action="/requests/<%= request.id %>/shortlist/<%= p.id %>">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="btn ghost <%= p.shortlisted ? 'on' : '' %>" type="submit"><%= p.shortlisted ? '✓ Shortlisted' : '☆ Shortlist' %></button>
+            </form>
+            <form method="POST" action="/requests/<%= request.id %>/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.');">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="btn" type="submit">Connect</button>
+            </form>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+    <p class="note">Connecting releases your contact info to that one professional only. The listing agreement is signed with their brokerage, outside Connexli. No obligation.</p>
+  <% } %>
+<% } %>
+<%- include('../partials/foot') %>

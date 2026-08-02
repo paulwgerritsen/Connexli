@@ -1,0 +1,73 @@
+<%- include('../partials/head') %>
+<h1>Pilot control room</h1>
+<p class="sub">Approve professionals, watch marketplace health, keep the promise: verified pros only.</p>
+
+<div class="stats">
+  <div class="stat"><b><%= m.sellers %></b><span>Homeowners</span></div>
+  <div class="stat"><b><%= m.approved_agents %></b><span>Approved professionals</span></div>
+  <div class="stat"><b><%= m.total_requests %></b><span>Requests total (<%= m.open_requests %> open)</span></div>
+  <div class="stat"><b><%= m.connected_requests %></b><span>Connections made</span></div>
+  <div class="stat"><b><%= m.avg_proposals %></b><span>Avg proposals per closed request</span></div>
+  <div class="stat"><b><%= m.requests_with_3plus %></b><span>Closed requests with 3+ proposals</span></div>
+</div>
+
+<h2 style="margin-top:26px;">Verification queue<% if (pending.length) { %> · <%= pending.length %> waiting<% } %></h2>
+<% if (pending.length === 0) { %>
+  <div class="card"><p class="sub">No professionals waiting for review. 🎉</p></div>
+<% } else { %>
+  <div class="card">
+    <% pending.forEach(a => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);"><%= a.name %></b> <span class="meta">· <%= a.email %><% if (a.phone) { %> · <%= a.phone %><% } %></span>
+          <div class="meta">License <b><%= a.license_number %></b> · <%= a.brokerage %> · <%= a.state %> · applied <%= new Date(a.created_at).toLocaleDateString('en-US') %></div>
+          <div class="meta"><a href="https://secure.utah.gov/llv/search/index.html" target="_blank" rel="noopener">Check license in the Utah license lookup ↗</a> (verify: active status, name matches, brokerage matches)</div>
+        </div>
+        <div class="actions">
+          <form method="POST" action="/admin/agents/<%= a.user_id %>/approve">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn sm" type="submit">Approve</button>
+          </form>
+          <form method="POST" action="/admin/agents/<%= a.user_id %>/reject" onsubmit="return confirm('Reject this professional? They will be told verification was unsuccessful.');">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn danger sm" type="submit">Reject</button>
+          </form>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+<% } %>
+
+<h2 style="margin-top:26px;">Recent requests</h2>
+<div class="tblwrap">
+  <table>
+    <tr><th>Request</th><th>Seller</th><th>Window</th><th>Status</th><th>Proposals</th><th>Created</th></tr>
+    <% requests.forEach(r => { %>
+      <tr>
+        <td><%= r.property_type %> · <%= r.city %> <%= r.zip %> · <%= r.price_range %></td>
+        <td><%= r.seller_name %></td>
+        <td><%= r.window_hours === 168 ? '7 days' : r.window_hours + ' hrs' %></td>
+        <td><span class="badge <%= r.status %>"><%= r.status %></span></td>
+        <td><%= r.proposal_count %></td>
+        <td><%= new Date(r.created_at).toLocaleDateString('en-US') %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+
+<h2 style="margin-top:26px;">Reviewed professionals</h2>
+<div class="tblwrap">
+  <table>
+    <tr><th>Name</th><th>License</th><th>Brokerage</th><th>Status</th><th>Reviewed</th></tr>
+    <% agents.forEach(a => { %>
+      <tr>
+        <td><%= a.name %> · <%= a.email %></td>
+        <td><%= a.license_number %></td>
+        <td><%= a.brokerage %></td>
+        <td><span class="badge <%= a.status %>"><%= a.status %></span></td>
+        <td><%= a.reviewed_at ? new Date(a.reviewed_at).toLocaleDateString('en-US') : '' %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+<%- include('../partials/foot') %>

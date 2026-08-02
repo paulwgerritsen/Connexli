@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><%= title %> · Connexli</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="nav">
+    <a class="brand" href="/">
+      <svg width="36" height="21" viewBox="0 0 64 34" aria-hidden="true">
+        <circle cx="22" cy="17" r="12" fill="none" stroke="#1565FF" stroke-width="7"/>
+        <circle cx="42" cy="17" r="12" fill="none" stroke="#42B6FF" stroke-width="7"/>
+        <path d="M 34.5 8 A 12 12 0 0 0 34.5 26" fill="none" stroke="#1565FF" stroke-width="7"/>
+      </svg>
+      <span class="wordmark">connex<span>li</span></span>
+    </a>
+    <div class="nav-right">
+      <% if (user) { %>
+        <span class="who"><%= user.name %><% if (user.role === 'admin') { %> · Admin<% } %></span>
+        <% if (user.role === 'seller') { %><a href="/requests/new" style="color:#fff; font-weight:600; text-decoration:none;">+ New request</a><% } %>
+        <form method="POST" action="/logout">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="linkbtn" type="submit">Log out</button>
+        </form>
+      <% } else { %>
+        <a href="/login" style="color:#B9C8DE;">Log in</a>
+        <a href="/register" style="color:#fff; font-weight:600;">Create account</a>
+      <% } %>
+    </div>
+  </div>
+</header>
+<main class="wrap">
