@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS proposals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status, closes_at);
+
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS service_zip TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS service_city TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS service_state TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 CREATE INDEX IF NOT EXISTS idx_proposals_request ON proposals(request_id);
 CREATE INDEX IF NOT EXISTS idx_proposals_agent ON proposals(agent_id);
 `;
@@ -93,9 +99,13 @@ async function init() {
 }
 
 // Any request whose window has passed becomes 'closed' (the sealed reveal).
-// Called lazily on page loads, so no background job is needed.
+// Returns the requests that were closed by THIS call (each returns exactly
+// once, so "proposals ready" emails are never sent twice).
 async function closeExpired() {
-  await pool.query(`UPDATE requests SET status='closed' WHERE status='open' AND closes_at <= now()`);
+  const { rows } = await pool.query(
+    `UPDATE requests SET status='closed' WHERE status='open' AND closes_at <= now()
+     RETURNING id, seller_id, property_type, city, zip, price_range`);
+  return rows;
 }
 
 module.exports = { pool, init, closeExpired };

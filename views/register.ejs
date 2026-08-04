@@ -51,6 +51,9 @@
             <input type="text" id="brokerage" name="brokerage" value="<%= form.brokerage || '' %>">
           </div>
         </div>
+        <label for="service_zip">Primary service ZIP code <span class="hint">(the center of the area you serve)</span></label>
+        <input type="text" id="service_zip" name="service_zip" inputmode="numeric" pattern="\d{5}" value="<%= form.service_zip || '' %>" placeholder="e.g. 84025">
+        <p class="note">We'll email you when homeowners near this area invite proposals. You can still browse every open opportunity statewide.</p>
         <p class="note">Utah pilot: your license is checked against the Utah Division of Real Estate registry before your account is activated. By registering you confirm your brokerage authorizes you to offer pricing and services on Connexli.</p>
       </div>
 
@@ -65,6 +68,7 @@ function toggleAgent(){
   document.getElementById('agentFields').style.display = isAgent ? 'block' : 'none';
   document.getElementById('license_number').required = isAgent;
   document.getElementById('brokerage').required = isAgent;
+  document.getElementById('service_zip').required = isAgent;
 }
 toggleAgent();
 </script>

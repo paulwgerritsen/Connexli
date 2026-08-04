@@ -3,6 +3,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
+const mailer = require('../mailer');
 
 const router = require('../middleware').safeRouter(express.Router());
 const seller = requireRole('seller');
@@ -56,6 +57,8 @@ router.post('/requests/new', seller, async (req, res) => {
     [req.session.user.id, f.property_type, f.zip, f.city, f.neighborhood, f.beds, f.baths, f.sqft_range,
      f.year_built, f.hoa, f.condition, f.price_range, priorities.join(' + '), f.window_hours]
   );
+  const { rows: fullRows } = await pool.query(`SELECT * FROM requests WHERE id=$1`, [rows[0].id]);
+  mailer.agentsNewRequest(fullRows[0]); // fire and forget: notify nearby approved professionals
   res.redirect('/requests/' + rows[0].id);
 });
 
@@ -142,6 +145,9 @@ router.post('/requests/:id(\\d+)/connect/:pid(\\d+)', seller, async (req, res) =
     );
     if (rowCount) await client.query(`UPDATE requests SET status='connected' WHERE id=$1`, [request.id]);
     await client.query('COMMIT');
+    const { rows: winner } = await pool.query(
+      `SELECT u.email, u.name FROM proposals p JOIN users u ON u.id=p.agent_id WHERE p.id=$1`, [req.params.pid]);
+    if (winner[0]) mailer.agentWon(winner[0].email, winner[0].name, request); // fire and forget
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
   res.redirect('/requests/' + request.id);

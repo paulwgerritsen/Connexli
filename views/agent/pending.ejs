@@ -1,14 +1,16 @@
 <%- include('../partials/head') %>
 <div class="narrow">
-  <h1><%= profile.status === 'rejected' ? 'Verification unsuccessful' : 'Verification in progress' %></h1>
+  <h1><%= profile.status === 'rejected' ? 'Verification unsuccessful' : 'Thanks for joining Connexli!' %></h1>
   <% if (profile.status === 'rejected') { %>
     <div class="error">We couldn't verify this license with the information provided. If you believe this is a mistake, contact us at hello@connexli.com and we'll take another look.</div>
   <% } else { %>
-    <p class="sub">Our team is checking your license with the Utah Division of Real Estate. This usually happens within one business day. You'll get access to opportunities the moment you're approved.</p>
+    <p class="sub">Your license is being verified with the Utah Division of Real Estate. Most professionals are approved within one business day.</p>
+    <div class="checkrow"><span class="c">✓</span><span>We'll notify you by email at <b><%= user.email %></b> as soon as you're ready to receive homeowner opportunities.</span></div>
     <div class="card">
       <div class="sumrow"><span>License number</span><span><%= profile.license_number %></span></div>
       <div class="sumrow"><span>Brokerage</span><span><%= profile.brokerage %></span></div>
       <div class="sumrow"><span>State</span><span><%= profile.state %></span></div>
+      <% if (profile.service_zip) { %><div class="sumrow"><span>Service area</span><span><%= profile.service_zip %><%= profile.service_city ? ' · ' + profile.service_city : '' %></span></div><% } %>
       <div class="sumrow"><span>Status</span><span class="badge pending">Pending review</span></div>
     </div>
     <div class="sealed" style="margin-top:14px;">🛡️ <span>Verification keeps Connexli credible for everyone: homeowners only ever meet licensed, active professionals — which is exactly why they're comfortable inviting proposals.</span></div>

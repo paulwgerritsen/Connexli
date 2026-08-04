@@ -3,6 +3,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
+const mailer = require('../mailer');
 
 const router = require('../middleware').safeRouter(express.Router());
 const admin = requireRole('admin');
@@ -44,6 +45,11 @@ router.get('/admin', admin, async (req, res) => {
 router.post('/admin/agents/:id(\\d+)/:action(approve|reject)', admin, async (req, res) => {
   const status = req.params.action === 'approve' ? 'approved' : 'rejected';
   await pool.query(`UPDATE agent_profiles SET status=$1, reviewed_at=now() WHERE user_id=$2`, [status, req.params.id]);
+  const { rows } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [req.params.id]);
+  if (rows[0]) {
+    if (status === 'approved') mailer.agentApproved(rows[0].email, rows[0].name); // fire and forget
+    else mailer.agentRejected(rows[0].email, rows[0].name);
+  }
   res.redirect('/admin');
 });
 

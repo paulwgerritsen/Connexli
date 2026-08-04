@@ -20,7 +20,7 @@
       <div class="rowline">
         <div>
           <b style="color:var(--navy);"><%= a.name %></b> <span class="meta">· <%= a.email %><% if (a.phone) { %> · <%= a.phone %><% } %></span>
-          <div class="meta">License <b><%= a.license_number %></b> · <%= a.brokerage %> · <%= a.state %> · applied <%= new Date(a.created_at).toLocaleDateString('en-US') %></div>
+          <div class="meta">License <b><%= a.license_number %></b> · <%= a.brokerage %> · <%= a.state %><% if (a.service_zip) { %> · Serves <%= a.service_zip %><%= a.service_city ? ' (' + a.service_city + ')' : '' %><% } %> · applied <%= new Date(a.created_at).toLocaleDateString('en-US') %></div>
           <div class="meta"><a href="https://secure.utah.gov/llv/search/index.html" target="_blank" rel="noopener">Check license in the Utah license lookup ↗</a> (verify: active status, name matches, brokerage matches)</div>
         </div>
         <div class="actions">

@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const path = require('path');
 
 const { pool, init, closeExpired } = require('./db');
+const mailer = require('./mailer');
 const { csrf } = require('./middleware');
 
 const app = express();
@@ -40,11 +41,21 @@ app.use((req, res, next) => {
 });
 app.use(csrf);
 
-// Close any expired proposal windows before handling each page view.
-app.use(async (req, res, next) => {
-  try { await closeExpired(); } catch (e) { console.error('closeExpired:', e.message); }
-  next();
-});
+// Close expired proposal windows and email each seller that proposals are
+// ready. Runs before every page view AND on a 5-minute timer, so windows
+// close on schedule even when nobody is browsing. Each closed request is
+// returned exactly once, so emails never duplicate.
+async function closeAndNotify() {
+  try {
+    const closed = await closeExpired();
+    for (const r of closed) {
+      const { rows } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [r.seller_id]);
+      if (rows[0]) mailer.sellerProposalsReady(rows[0].email, rows[0].name, r);
+    }
+  } catch (e) { console.error('closeAndNotify:', e.message); }
+}
+setInterval(closeAndNotify, 5 * 60 * 1000);
+app.use(async (req, res, next) => { await closeAndNotify(); next(); });
 
 app.use('/', require('./routes/auth'));
 app.use('/', require('./routes/seller'));

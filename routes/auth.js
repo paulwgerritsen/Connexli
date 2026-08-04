@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const { pool } = require('../db');
 const { clean } = require('../helpers');
+const mailer = require('../mailer');
 
 const router = require('../middleware').safeRouter(express.Router());
 
@@ -45,6 +46,7 @@ router.post('/register', authLimiter, async (req, res) => {
     phone: clean(req.body.phone, 30),
     license_number: clean(req.body.license_number, 40),
     brokerage: clean(req.body.brokerage, 100),
+    service_zip: clean(req.body.service_zip, 10),
   };
   const password = String(req.body.password || '');
 
@@ -54,6 +56,12 @@ router.post('/register', authLimiter, async (req, res) => {
   if (password.length < 8) return fail('Password must be at least 8 characters.');
   if (form.role === 'agent' && (!form.license_number || !form.brokerage)) {
     return fail('Professionals must provide a license number and brokerage. This is how Connexli keeps the marketplace verified.');
+  }
+  let geo = null;
+  if (form.role === 'agent') {
+    if (!form.service_zip.match(/^\d{5}$/)) return fail('Please enter the 5-digit ZIP code at the center of your service area.');
+    geo = mailer.zipInfo(form.service_zip);
+    if (!geo) return fail('We could not find that ZIP code. Please double-check your primary service ZIP.');
   }
 
   const hash = await bcrypt.hash(password, 12);
@@ -66,11 +74,15 @@ router.post('/register', authLimiter, async (req, res) => {
     );
     if (form.role === 'agent') {
       await client.query(
-        `INSERT INTO agent_profiles (user_id, license_number, brokerage, state) VALUES ($1,$2,$3,'Utah')`,
-        [rows[0].id, form.license_number, form.brokerage]
+        `INSERT INTO agent_profiles (user_id, license_number, brokerage, state, service_zip, service_city, service_state, latitude, longitude)
+         VALUES ($1,$2,$3,'Utah',$4,$5,$6,$7,$8)`,
+        [rows[0].id, form.license_number, form.brokerage, form.service_zip, geo.city, geo.state, geo.latitude, geo.longitude]
       );
     }
     await client.query('COMMIT');
+    if (form.role === 'agent') {
+      mailer.adminNewAgent({ ...form, service_city: geo ? geo.city : null }); // fire and forget
+    }
     req.session.user = { id: rows[0].id, role: form.role, name: form.name, email: form.email };
     res.redirect('/');
   } catch (e) {
