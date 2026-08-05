@@ -14,7 +14,8 @@ const RADIUS_MILES = parseFloat(process.env.NOTIFY_RADIUS_MILES) || 50;
 // ---------- transport ----------
 async function send(to, subject, bodyHtml) {
   if (!RESEND_API_KEY) {
-    console.log(`[email:DRY] to=${to} subject="${subject}"`);
+    const link = (bodyHtml.match(/href="([^"]+)"/) || [])[1] || '';
+    console.log(`[email:DRY] to=${to} subject="${subject}"${link ? ' link=' + link : ''}`);
     return;
   }
   try {
@@ -117,6 +118,16 @@ async function agentsNewRequest(request) {
   }
 }
 
+// Password reset. The link is single-use and expires in 60 minutes.
+function passwordReset(email, name, resetUrl) {
+  return send(email, 'Reset your Connexli password',
+    template('Reset your password', [
+      `${name.split(' ')[0]}, we received a request to reset the password for your Connexli account.`,
+      'Click the button below to choose a new password. This link works once and expires in 60 minutes.',
+      "If you didn't request this, you can safely ignore this email — your password will not change.",
+    ], 'Choose a new password', resetUrl));
+}
+
 function sellerProposalsReady(email, name, request) {
   return send(email, 'Your Connexli proposals are ready',
     template('Your proposals are ready 🎉', [
@@ -137,5 +148,5 @@ function agentWon(email, name, request) {
 
 module.exports = {
   adminNewAgent, agentApproved, agentRejected, agentsNewRequest,
-  sellerProposalsReady, agentWon, zipInfo, zipDistance, RADIUS_MILES,
+  sellerProposalsReady, agentWon, passwordReset, zipInfo, zipDistance, RADIUS_MILES,
 };

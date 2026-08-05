@@ -1,0 +1,18 @@
+<%- include('partials/head') %>
+<div class="narrow">
+  <h1>Choose a new password</h1>
+  <p class="sub">Enter a new password for your Connexli account.</p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+  <div class="card">
+    <form method="POST" action="/reset/<%= token %>">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <label for="password">New password</label>
+      <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
+      <label for="confirm">Confirm new password</label>
+      <input type="password" id="confirm" name="confirm" autocomplete="new-password" minlength="8" required>
+      <p class="note" style="margin-top:6px;">At least 8 characters.</p>
+      <button class="btn full" type="submit" style="margin-top:14px;">Update my password</button>
+    </form>
+  </div>
+</div>
+<%- include('partials/foot') %>

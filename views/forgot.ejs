@@ -1,0 +1,24 @@
+<%- include('partials/head') %>
+<div class="narrow">
+  <h1>Forgot your password?</h1>
+  <p class="sub">Enter your email and we'll send you a link to choose a new one.</p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+  <% if (sent) { %>
+    <div class="card">
+      <h2 style="font-size:18px; margin-bottom:8px;">Check your email</h2>
+      <p class="sub" style="margin-bottom:0;">If an account exists for <b><%= email %></b>, a password reset link is on its way. The link works once and expires in 60 minutes. Don't see it after a few minutes? Check your spam folder.</p>
+    </div>
+    <p class="note"><a href="/login">Back to log in</a></p>
+  <% } else { %>
+    <div class="card">
+      <form method="POST" action="/forgot">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" value="<%= email %>" autocomplete="email" required>
+        <button class="btn full" type="submit" style="margin-top:18px;">Email me a reset link</button>
+      </form>
+    </div>
+    <p class="note">Remembered it after all? <a href="/login">Back to log in</a></p>
+  <% } %>
+</div>
+<%- include('partials/foot') %>
