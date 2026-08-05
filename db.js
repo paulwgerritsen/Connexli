@@ -76,6 +76,9 @@ ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS service_city TEXT;
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS service_state TEXT;
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+ALTER TABLE agent_profiles DROP CONSTRAINT IF EXISTS agent_profiles_status_check;
+ALTER TABLE agent_profiles ADD CONSTRAINT agent_profiles_status_check
+  CHECK (status IN ('pending','approved','rejected','suspended'));
 CREATE INDEX IF NOT EXISTS idx_proposals_request ON proposals(request_id);
 CREATE INDEX IF NOT EXISTS idx_proposals_agent ON proposals(agent_id);
 `;

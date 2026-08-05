@@ -1,0 +1,19 @@
+<%- include('../partials/head') %>
+<div class="narrow">
+  <div class="success-ic" style="width:74px; height:74px; margin:18px auto 6px; border-radius:50%; background:#E7F6EE; display:flex; align-items:center; justify-content:center; font-size:36px;">🔒</div>
+  <h1 style="text-align:center;"><%= wasUpdate ? 'Proposal updated' : 'Proposal submitted' %></h1>
+  <p class="sub" style="text-align:center;">Thank you! Your <%= wasUpdate ? 'changes have been saved' : 'proposal has been saved' %>. It stays sealed and will be shown to the homeowner when the proposal window closes.</p>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="sumrow"><span>Property</span><span><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %></span></div>
+    <div class="sumrow"><span>Price range</span><span><%= request.price_range %></span></div>
+    <div class="sumrow"><span>Window closes</span><span id="deadline" data-closes="<%= new Date(request.closes_at).toISOString() %>"><%= new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain)</span></div>
+    <div class="sumrow"><span>Status</span><span style="color:var(--good);">Sealed until the window closes</span></div>
+  </div>
+
+  <div class="sealed" style="margin-top:14px;">✏️ <span>You can review or edit your proposal any time until the deadline. After the window closes, proposals are locked and revealed to the homeowner together.</span></div>
+
+  <a class="btn full" style="margin-top:16px;" href="/agent">Return to my dashboard</a>
+  <a class="btn ghost full" style="margin-top:10px;" href="/agent/opportunities/<%= request.id %>">Review or edit my proposal</a>
+</div>
+<%- include('../partials/foot') %>

@@ -67,6 +67,20 @@ router.get('/agent/opportunities/:id(\\d+)', agent, async (req, res) => {
   res.render('agent/opportunity', { title: 'Opportunity', request, proposal: mine[0] || null, H, error: null });
 });
 
+// Confirmation page after a proposal is submitted or updated
+router.get('/agent/opportunities/:id(\\d+)/submitted', agent, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT p.updated_at, p.created_at, r.* FROM proposals p JOIN requests r ON r.id = p.request_id
+     WHERE p.request_id=$1 AND p.agent_id=$2`, [req.params.id, req.session.user.id]);
+  if (!rows[0]) return res.redirect('/agent');
+  res.render('agent/submitted', {
+    title: req.query.updated === '1' ? 'Proposal updated' : 'Proposal submitted',
+    request: rows[0],
+    wasUpdate: req.query.updated === '1',
+    H,
+  });
+});
+
 // Create or update a sealed proposal (allowed while the window is open)
 router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) => {
   const profile = await profileOf(req.session.user.id);
@@ -83,6 +97,9 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
   services = services.filter(s => H.SERVICES.includes(s));
   const marketing_plan = H.clean(req.body.marketing_plan, 1000);
   const cancellation_terms = H.oneOf(req.body.cancellation_terms, H.CANCELLATION, H.CANCELLATION[0]);
+
+  const mineBefore = await pool.query(
+    `SELECT 1 FROM proposals WHERE request_id=$1 AND agent_id=$2`, [request.id, req.session.user.id]);
 
   const bad = !fee_amount || fee_amount <= 0 ||
     (fee_type === 'pct' && fee_amount > 10) ||
@@ -105,7 +122,8 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
        marketing_plan=EXCLUDED.marketing_plan, cancellation_terms=EXCLUDED.cancellation_terms, updated_at=now()`,
     [request.id, req.session.user.id, fee_type, fee_amount, services.join(', '), marketing_plan, cancellation_terms]
   );
-  res.redirect('/agent/opportunities/' + request.id);
+  const wasUpdate = mineBefore.rows.length > 0;
+  res.redirect('/agent/opportunities/' + request.id + '/submitted' + (wasUpdate ? '?updated=1' : ''));
 });
 
 // Withdraw a proposal (only while the window is open)

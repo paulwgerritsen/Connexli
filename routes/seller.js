@@ -36,7 +36,7 @@ router.post('/requests/new', seller, async (req, res) => {
     hoa: req.body.hoa === 'Yes' ? 'Yes' : 'No',
     condition: H.oneOf(req.body.condition, H.CONDITIONS, 'Updated'),
     price_range: Object.keys(H.PRICE_RANGES).includes(req.body.price_range) ? req.body.price_range : null,
-    window_hours: [48, 72, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 72,
+    window_hours: [24, 48, 72, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 72,
   };
   let priorities = req.body.priorities || [];
   if (!Array.isArray(priorities)) priorities = [priorities];

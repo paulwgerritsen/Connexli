@@ -1,0 +1,59 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;"><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %> <span class="badge <%= request.status %>" style="vertical-align:4px;"><%= request.status %></span></h1>
+<p class="sub">Seller: <%= request.seller_name %> · <%= request.seller_email %></p>
+
+<div class="stats">
+  <div class="stat"><b><%= request.price_range %></b><span>Price range</span></div>
+  <div class="stat"><b id="countdown" data-closes="<%= new Date(request.closes_at).toISOString() %>"><%= request.status === 'open' ? '…' : 'Closed' %></b><span><%= request.status === 'open' ? 'Time remaining' : 'Window status' %></span></div>
+  <div class="stat"><b><%= inRange %></b><span>Approved pros within <%= radius %> mi</span></div>
+  <div class="stat"><b><%= proposals.length %></b><span>Proposals submitted</span></div>
+</div>
+
+<div class="card">
+  <div class="sumrow"><span>Size</span><span><%= request.sqft_range %> sq ft · <%= request.beds %> bd · <%= request.baths %> ba</span></div>
+  <div class="sumrow"><span>Built</span><span><%= request.year_built %> · <%= request.condition %> · HOA: <%= request.hoa %></span></div>
+  <div class="sumrow"><span>Priorities</span><span><%= request.priorities || 'Balanced' %></span></div>
+  <div class="sumrow"><span>Window</span><span><%= request.window_hours === 168 ? '7 days' : request.window_hours + ' hours' %> · closes <%= new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain)</span></div>
+  <div class="sumrow"><span>Created</span><span><%= new Date(request.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></span></div>
+</div>
+
+<h2 style="margin-top:24px;">Proposals<%= request.status === 'open' ? ' (contents sealed while the window is open)' : '' %></h2>
+<% if (proposals.length === 0) { %>
+  <div class="card"><p class="sub">No proposals yet<%= request.status === 'open' ? ' — if this is still empty at the halfway mark, start calling professionals in the area' : '' %>.</p></div>
+<% } else { %>
+  <div class="tblwrap">
+    <table>
+      <tr><th>Professional</th><th>Brokerage</th><th>Submitted</th><% if (request.status !== 'open') { %><th>Fee</th><th>Outcome</th><% } %></tr>
+      <% proposals.forEach(p => { %>
+        <tr>
+          <td><a href="/admin/agents/<%= p.agent_id %>"><%= p.agent_name %></a></td>
+          <td><%= p.brokerage %></td>
+          <td><%= new Date(p.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
+          <% if (request.status !== 'open') { %>
+            <td><%= H.feeLabel(p) %> (est. <%= H.money(H.estFee(p, request.price_range)) %>)</td>
+            <td>
+              <% if (p.connected) { %><span class="badge connected">selected <%= p.connected_at ? new Date(p.connected_at).toLocaleDateString('en-US') : '' %></span>
+              <% } else if (p.shortlisted) { %><span class="badge open">shortlisted</span>
+              <% } else { %><span class="badge closed">not selected</span><% } %>
+            </td>
+          <% } %>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <% if (request.status === 'open') { %><p class="note">Fees stay sealed from everyone, including this dashboard, until the window closes — the reveal moment is part of the trust promise.</p><% } %>
+<% } %>
+<script>
+var el = document.getElementById('countdown');
+if (el && el.textContent.trim() === '…') {
+  function tick(){
+    var left = new Date(el.dataset.closes).getTime() - Date.now();
+    if (left <= 0) { el.textContent = 'Closing…'; return; }
+    var h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000), s = Math.floor(left%60000/1000);
+    el.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  }
+  tick(); setInterval(tick, 1000);
+}
+</script>
+<%- include('../partials/foot') %>

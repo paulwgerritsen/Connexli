@@ -1,7 +1,9 @@
 <%- include('../partials/head') %>
 <div class="narrow">
-  <h1><%= profile.status === 'rejected' ? 'Verification unsuccessful' : 'Thanks for joining Connexli!' %></h1>
-  <% if (profile.status === 'rejected') { %>
+  <h1><%= profile.status === 'rejected' ? 'Verification unsuccessful' : profile.status === 'suspended' ? 'Account suspended' : 'Thanks for joining Connexli!' %></h1>
+  <% if (profile.status === 'suspended') { %>
+    <div class="error">Your Connexli account is currently suspended and you cannot view opportunities or submit proposals. If you believe this is a mistake, contact us at hello@connexli.com.</div>
+  <% } else if (profile.status === 'rejected') { %>
     <div class="error">We couldn't verify this license with the information provided. If you believe this is a mistake, contact us at hello@connexli.com and we'll take another look.</div>
   <% } else { %>
     <p class="sub">Your license is being verified with the Utah Division of Real Estate. Most professionals are approved within one business day.</p>

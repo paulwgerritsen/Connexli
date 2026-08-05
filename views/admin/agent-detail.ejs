@@ -1,0 +1,65 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;"><%= agent.name %> <span class="badge <%= agent.status %>" style="vertical-align:4px;"><%= agent.status %></span></h1>
+<p class="sub"><%= agent.brokerage %> · Professional profile</p>
+
+<div class="stats">
+  <div class="stat"><b><%= stats.opportunities %></b><span>Opportunities received</span></div>
+  <div class="stat"><b><%= stats.submitted %></b><span>Proposals submitted</span></div>
+  <div class="stat"><b><%= stats.wins %></b><span>Homeowner selections</span></div>
+  <div class="stat"><b><%= stats.successRate %></b><span>Success rate</span></div>
+</div>
+
+<div class="card">
+  <div class="sumrow"><span>Full name</span><span><%= agent.name %></span></div>
+  <div class="sumrow"><span>Email</span><span><%= agent.email %></span></div>
+  <% if (agent.phone) { %><div class="sumrow"><span>Phone</span><span><%= agent.phone %></span></div><% } %>
+  <div class="sumrow"><span>Brokerage</span><span><%= agent.brokerage %></span></div>
+  <div class="sumrow"><span>License number</span><span><%= agent.license_number %> · <span class="badge <%= agent.status %>"><%= agent.status %></span></span></div>
+  <div class="sumrow"><span>Service area</span><span><%= agent.service_zip || 'not provided' %><%= agent.service_city ? ' · ' + agent.service_city + ', ' + (agent.service_state || '') : '' %></span></div>
+  <div class="sumrow"><span>Registered</span><span><%= new Date(agent.registered_at).toLocaleDateString('en-US') %></span></div>
+  <% if (agent.reviewed_at) { %><div class="sumrow"><span>Reviewed</span><span><%= new Date(agent.reviewed_at).toLocaleDateString('en-US') %></span></div><% } %>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Administrator actions</h2>
+  <div class="actions" style="margin-top:12px;">
+    <% if (agent.status === 'pending') { %>
+      <form method="POST" action="/admin/agents/<%= agent.user_id %>/approve"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn sm" type="submit">Approve</button></form>
+      <form method="POST" action="/admin/agents/<%= agent.user_id %>/reject" onsubmit="return confirm('Reject this professional?');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Reject</button></form>
+    <% } %>
+    <% if (agent.status === 'approved') { %>
+      <form method="POST" action="/admin/agents/<%= agent.user_id %>/suspend" onsubmit="return confirm('Suspend this professional? They immediately lose access to opportunities and proposals.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Suspend</button></form>
+    <% } %>
+    <% if (agent.status === 'suspended' || agent.status === 'rejected') { %>
+      <form method="POST" action="/admin/agents/<%= agent.user_id %>/reinstate" onsubmit="return confirm('Reinstate this professional as approved?');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn sm" type="submit">Reinstate</button></form>
+    <% } %>
+    <form method="POST" action="/admin/agents/<%= agent.user_id %>/remove" onsubmit="return confirm('PERMANENTLY remove <%= agent.name %>? This deletes their account and all of their proposals. This cannot be undone.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Permanently remove</button></form>
+  </div>
+  <p class="note">Suspending blocks access immediately but keeps all history. Removal is permanent and deletes their proposals too.</p>
+</div>
+
+<h2 style="margin-top:24px;">Submitted proposals & activity</h2>
+<% if (proposals.length === 0) { %>
+  <div class="card"><p class="sub">No proposals submitted yet.</p></div>
+<% } else { %>
+  <div class="tblwrap">
+    <table>
+      <tr><th>Request</th><th>Fee</th><th>Submitted</th><th>Outcome</th></tr>
+      <% proposals.forEach(p => { %>
+        <tr>
+          <td><a href="/admin/requests/<%= p.request_id %>"><%= p.property_type %> · <%= p.city %> <%= p.zip %></a> · <%= p.price_range %></td>
+          <td><%= H.feeLabel(p) %></td>
+          <td><%= new Date(p.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
+          <td>
+            <% if (p.connected) { %><span class="badge connected">won</span>
+            <% } else if (p.shortlisted) { %><span class="badge open">shortlisted</span>
+            <% } else if (p.request_status === 'open') { %><span class="badge pending">sealed</span>
+            <% } else { %><span class="badge closed">not selected</span><% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+<% } %>
+<%- include('../partials/foot') %>

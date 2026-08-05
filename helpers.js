@@ -11,6 +11,7 @@ const SERVICES = ['Professional photos', 'Drone video', 'Open house(s)', 'Social
 const CANCELLATION = ['Cancel anytime, no fee', '30-day written notice', 'Locked for listing term'];
 
 const PRICE_RANGES = {
+  'Under $300k': 250000,
   '$300k–$500k': 400000,
   '$500k–$750k': 625000,
   '$750k–$1M': 875000,
@@ -19,6 +20,7 @@ const PRICE_RANGES = {
 };
 
 const WINDOWS = [
+  { hours: 24,  label: '24 hours', tag: 'Rush',         desc: 'Fastest turnaround. Many agents respond within hours.' },
   { hours: 48,  label: '48 hours', tag: 'Fast track',   desc: "Great if you're ready to meet agents this week." },
   { hours: 72,  label: '72 hours', tag: 'Recommended',  desc: 'Our recommendation. Gives agents enough time to prepare thoughtful proposals.' },
   { hours: 168, label: '7 days',   tag: 'Extend',       desc: "Best for luxury homes, unique properties, rural areas, or if you're not in a hurry." },

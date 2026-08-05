@@ -4,11 +4,13 @@
 
 <div class="stats">
   <div class="stat"><b><%= m.sellers %></b><span>Homeowners</span></div>
-  <div class="stat"><b><%= m.approved_agents %></b><span>Approved professionals</span></div>
-  <div class="stat"><b><%= m.total_requests %></b><span>Requests total (<%= m.open_requests %> open)</span></div>
-  <div class="stat"><b><%= m.connected_requests %></b><span>Connections made</span></div>
-  <div class="stat"><b><%= m.avg_proposals %></b><span>Avg proposals per closed request</span></div>
-  <div class="stat"><b><%= m.requests_with_3plus %></b><span>Closed requests with 3+ proposals</span></div>
+  <div class="stat"><b><%= m.approved_agents %></b><span>Verified professionals</span></div>
+  <div class="stat"><b><%= m.pending_agents %></b><span>Pending approvals</span></div>
+  <div class="stat"><b><%= m.open_requests %></b><span>Open opportunities</span></div>
+  <div class="stat"><b><%= m.completed_requests %></b><span>Completed opportunities</span></div>
+  <div class="stat"><b><%= m.total_proposals %></b><span>Proposals submitted</span></div>
+  <div class="stat"><b><%= m.connected_requests %></b><span>Homeowner selections</span></div>
+  <div class="stat"><b><%= m.avg_proposals %></b><span>Avg proposals per opportunity</span></div>
 </div>
 
 <h2 style="margin-top:26px;">Verification queue<% if (pending.length) { %> · <%= pending.length %> waiting<% } %></h2>
@@ -19,7 +21,7 @@
     <% pending.forEach(a => { %>
       <div class="rowline">
         <div>
-          <b style="color:var(--navy);"><%= a.name %></b> <span class="meta">· <%= a.email %><% if (a.phone) { %> · <%= a.phone %><% } %></span>
+          <a href="/admin/agents/<%= a.user_id %>" style="font-weight:700; color:var(--navy);"><%= a.name %></a> <span class="meta">· <%= a.email %><% if (a.phone) { %> · <%= a.phone %><% } %></span>
           <div class="meta">License <b><%= a.license_number %></b> · <%= a.brokerage %> · <%= a.state %><% if (a.service_zip) { %> · Serves <%= a.service_zip %><%= a.service_city ? ' (' + a.service_city + ')' : '' %><% } %> · applied <%= new Date(a.created_at).toLocaleDateString('en-US') %></div>
           <div class="meta"><a href="https://secure.utah.gov/llv/search/index.html" target="_blank" rel="noopener">Check license in the Utah license lookup ↗</a> (verify: active status, name matches, brokerage matches)</div>
         </div>
@@ -44,7 +46,7 @@
     <tr><th>Request</th><th>Seller</th><th>Window</th><th>Status</th><th>Proposals</th><th>Created</th></tr>
     <% requests.forEach(r => { %>
       <tr>
-        <td><%= r.property_type %> · <%= r.city %> <%= r.zip %> · <%= r.price_range %></td>
+        <td><a href="/admin/requests/<%= r.id %>"><%= r.property_type %> · <%= r.city %> <%= r.zip %></a> · <%= r.price_range %></td>
         <td><%= r.seller_name %></td>
         <td><%= r.window_hours === 168 ? '7 days' : r.window_hours + ' hrs' %></td>
         <td><span class="badge <%= r.status %>"><%= r.status %></span></td>
@@ -61,7 +63,7 @@
     <tr><th>Name</th><th>License</th><th>Brokerage</th><th>Status</th><th>Reviewed</th></tr>
     <% agents.forEach(a => { %>
       <tr>
-        <td><%= a.name %> · <%= a.email %></td>
+        <td><a href="/admin/agents/<%= a.user_id %>"><%= a.name %></a> · <%= a.email %></td>
         <td><%= a.license_number %></td>
         <td><%= a.brokerage %></td>
         <td><span class="badge <%= a.status %>"><%= a.status %></span></td>
