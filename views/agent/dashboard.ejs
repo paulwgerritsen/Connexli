@@ -1,6 +1,13 @@
 <%- include('../partials/head') %>
 <h1>Welcome back, <%= user.name.split(' ')[0] %></h1>
-<p class="sub"><%= profile.brokerage %> · Utah · <span style="color:var(--good); font-weight:600;">✓ License verified</span></p>
+<p class="sub"><%= profile.brokerage %> · Utah · <span style="color:var(--good); font-weight:600;">✓ License verified</span> · <a href="/agent/settings">Account settings</a></p>
+<% if (profile.transactions_seller_12mo === null && profile.transactions_buyer_12mo === null) { %>
+  <div class="card" style="border-left:4px solid var(--blue); padding:14px 18px;">
+    <b style="color:var(--navy);">Add your track record.</b>
+    <span class="sub" style="display:inline;">Homeowners see your 12-month transaction count next to your proposals. Professionals with a track record listed stand out.</span>
+    <a href="/agent/settings" style="font-weight:600;">Add it in settings ›</a>
+  </div>
+<% } %>
 
 <div class="stats">
   <div class="stat"><b><%= opportunities.length %></b><span>Open opportunities</span></div>

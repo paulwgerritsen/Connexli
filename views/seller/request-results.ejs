@@ -46,6 +46,9 @@
               <div class="avatar"><%= p.agent_name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() %></div>
               <div><b><%= p.agent_name %></b><span class="brok"><%= p.brokerage %> · <span style="color:var(--good); font-weight:600;">✓ Verified</span></span></div>
             </div>
+            <% if (p.transactions_seller_12mo !== null || p.transactions_buyer_12mo !== null) { %>
+              <p class="note" style="margin-top:6px;"><b>Last 12 months:</b> <%= p.transactions_seller_12mo ?? 0 %> seller-side · <%= p.transactions_buyer_12mo ?? 0 %> buyer-side transactions <span style="color:var(--muted);">(reported by the professional)</span></p>
+            <% } %>
             <div class="complbl">Proposed compensation</div>
             <div><span class="fee"><%= H.feeLabel(p) %></span> <span class="est">Est. fee: <%= H.money(H.estFee(p, request.price_range)) %></span></div>
             <% if (p.services) { %><div class="pillrow"><% p.services.split(', ').forEach(s => { %><span class="pill"><%= s %></span><% }) %></div><% } %>

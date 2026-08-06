@@ -82,7 +82,8 @@ router.get('/requests/:id(\\d+)', seller, async (req, res) => {
   }
 
   const { rows: proposals } = await pool.query(
-    `SELECT p.*, u.name AS agent_name, u.email AS agent_email, u.phone AS agent_phone, ap.brokerage, ap.license_number
+    `SELECT p.*, u.name AS agent_name, u.email AS agent_email, u.phone AS agent_phone, ap.brokerage, ap.license_number,
+       ap.transactions_seller_12mo, ap.transactions_buyer_12mo
      FROM proposals p
      JOIN users u ON u.id = p.agent_id
      JOIN agent_profiles ap ON ap.user_id = p.agent_id
@@ -103,7 +104,8 @@ router.get('/requests/:id(\\d+)/compare', seller, async (req, res) => {
   if (!request) return;
   if (request.status === 'open') return res.redirect('/requests/' + request.id);
   const { rows: proposals } = await pool.query(
-    `SELECT p.*, u.name AS agent_name, ap.brokerage FROM proposals p
+    `SELECT p.*, u.name AS agent_name, ap.brokerage, ap.transactions_seller_12mo, ap.transactions_buyer_12mo
+     FROM proposals p
      JOIN users u ON u.id=p.agent_id JOIN agent_profiles ap ON ap.user_id=p.agent_id
      WHERE p.request_id=$1 ORDER BY p.shortlisted DESC, p.created_at ASC`,
     [request.id]

@@ -8,6 +8,7 @@
   <table>
     <tr><th></th><% proposals.forEach(p => { %><th><%= p.agent_name %></th><% }) %></tr>
     <tr><td>Brokerage</td><% proposals.forEach(p => { %><td><%= p.brokerage %></td><% }) %></tr>
+    <tr><td>12-mo transactions*</td><% proposals.forEach(p => { %><td><%= (p.transactions_seller_12mo === null && p.transactions_buyer_12mo === null) ? '—' : ((p.transactions_seller_12mo ?? 0) + ' seller · ' + (p.transactions_buyer_12mo ?? 0) + ' buyer') %></td><% }) %></tr>
     <tr><td>Commission</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.feeLabel(p) %></b></td><% }) %></tr>
     <tr><td>Est. fee</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.money(H.estFee(p, request.price_range)) %></b></td><% }) %></tr>
     <tr><td>Photos</td><% proposals.forEach(p => { %><td><%- has(p,'photo') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
@@ -26,4 +27,5 @@
     <% }) %></tr>
   </table>
 </div>
+<p class="note">*Transaction counts are reported by each professional.</p>
 <%- include('../partials/foot') %>
