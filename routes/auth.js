@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const { pool } = require('../db');
+const { pool, logEvent } = require('../db');
 const { clean } = require('../helpers');
 const mailer = require('../mailer');
 
@@ -48,6 +48,7 @@ router.post('/login', authLimiter, async (req, res) => {
     return res.status(401).render('login', { title: 'Log in', error: 'Email or password is incorrect.', notice: null, email });
   }
   req.session.user = { id: user.id, role: user.role, name: user.name, email: user.email };
+  logEvent('login', { userId: user.id, meta: { role: user.role } });
   res.redirect('/');
 });
 
@@ -132,6 +133,7 @@ router.post('/reset/:token', authLimiter, async (req, res) => {
     console.error('Could not clear old sessions after password reset:', e.message);
   }
 
+  logEvent('password_reset_completed', { userId: reset.user_id });
   res.redirect('/login?reset=1');
 });
 
@@ -185,6 +187,8 @@ router.post('/register', authLimiter, async (req, res) => {
     if (form.role === 'agent') {
       mailer.adminNewAgent({ ...form, service_city: geo ? geo.city : null }); // fire and forget
     }
+    logEvent(form.role === 'agent' ? 'agent_registered' : 'seller_registered',
+      { userId: rows[0].id, meta: form.role === 'agent' ? { service_zip: form.service_zip } : {} });
     req.session.user = { id: rows[0].id, role: form.role, name: form.name, email: form.email };
     res.redirect('/');
   } catch (e) {

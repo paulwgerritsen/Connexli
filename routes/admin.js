@@ -1,7 +1,7 @@
 // routes/admin.js — the pilot control center: approve, inspect, and manage
 // professionals and homeowner requests.
 const express = require('express');
-const { pool } = require('../db');
+const { pool, logEvent } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
@@ -47,6 +47,96 @@ router.get('/admin', admin, async (req, res) => {
   });
 });
 
+// ---------- analytics ----------
+// Everything is computed from Connexli's own database. Nothing leaves it.
+router.get('/admin/analytics', admin, async (req, res) => {
+  const [thirty, weekly, feeRows, reqZips, agentZips, firstProps, viewCounts] = await Promise.all([
+    // Stat cards: the last 30 days at a glance
+    pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM users WHERE role='seller' AND created_at > now() - interval '30 days')::int AS new_sellers,
+        (SELECT COUNT(*) FROM users WHERE role='agent' AND created_at > now() - interval '30 days')::int AS new_agents,
+        (SELECT COUNT(*) FROM requests WHERE created_at > now() - interval '30 days')::int AS new_requests,
+        (SELECT COUNT(*) FROM proposals WHERE created_at > now() - interval '30 days')::int AS new_proposals,
+        (SELECT COUNT(*) FROM proposals WHERE connected_at > now() - interval '30 days')::int AS new_connections
+    `),
+    // Weekly marketplace funnel, last 12 weeks
+    pool.query(`
+      SELECT w.week,
+        COALESCE(r.n,0)::int AS requests, COALESCE(p.n,0)::int AS proposals, COALESCE(c.n,0)::int AS connections
+      FROM generate_series(date_trunc('week', now()) - interval '11 weeks', date_trunc('week', now()), interval '1 week') AS w(week)
+      LEFT JOIN (SELECT date_trunc('week', created_at) wk, COUNT(*) n FROM requests GROUP BY 1) r ON r.wk = w.week
+      LEFT JOIN (SELECT date_trunc('week', created_at) wk, COUNT(*) n FROM proposals GROUP BY 1) p ON p.wk = w.week
+      LEFT JOIN (SELECT date_trunc('week', connected_at) wk, COUNT(*) n FROM proposals WHERE connected GROUP BY 1) c ON c.wk = w.week
+      ORDER BY w.week
+    `),
+    // Every proposal with what's needed to express its fee as a percentage
+    pool.query(`
+      SELECT p.created_at, p.fee_type, p.fee_amount::float, r.price_range
+      FROM proposals p JOIN requests r ON r.id = p.request_id
+    `),
+    // Demand: requests per ZIP
+    pool.query(`SELECT zip, city, COUNT(*)::int AS n FROM requests GROUP BY zip, city ORDER BY n DESC LIMIT 10`),
+    // Supply: approved professionals' service ZIPs
+    pool.query(`SELECT service_zip FROM agent_profiles WHERE status='approved'`),
+    // Speed: hours from request posted to its first proposal
+    pool.query(`
+      SELECT EXTRACT(EPOCH FROM (MIN(p.created_at) - r.created_at))/3600.0 AS hours
+      FROM requests r JOIN proposals p ON p.request_id = r.id GROUP BY r.id
+    `),
+    // Engagement from the event log: opportunity views per week
+    pool.query(`
+      SELECT date_trunc('week', created_at) AS week, COUNT(*)::int AS n
+      FROM events WHERE event_type='opportunity_viewed' GROUP BY 1
+    `),
+  ]);
+
+  // Fee as % of the price range midpoint (flat fees converted).
+  const feePct = (p) => p.fee_type === 'pct' ? p.fee_amount : (100 * p.fee_amount / (H.PRICE_RANGES[p.price_range] || 500000));
+  const median = (arr) => {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
+
+  // Median fee % per week (only weeks that had proposals)
+  const byWeek = {};
+  for (const p of feeRows.rows) {
+    const wk = new Date(p.created_at); wk.setHours(0, 0, 0, 0);
+    wk.setDate(wk.getDate() - ((wk.getDay() + 6) % 7)); // Monday of that week
+    const key = wk.toISOString().slice(0, 10);
+    (byWeek[key] = byWeek[key] || []).push(feePct(p));
+  }
+  const feeTrend = Object.keys(byWeek).sort().slice(-12)
+    .map(k => ({ week: k, median: Math.round(median(byWeek[k]) * 100) / 100, count: byWeek[k].length }));
+
+  // Coverage: for each high-demand ZIP, how many approved pros are in range?
+  const coverage = reqZips.rows.map(z => ({
+    zip: z.zip, city: z.city, requests: z.n,
+    agentsInRange: agentZips.rows.filter(a => {
+      const d = mailer.zipDistance(z.zip, a.service_zip);
+      return d === null || d <= mailer.RADIUS_MILES;
+    }).length,
+  }));
+
+  const hours = firstProps.rows.map(r => parseFloat(r.hours));
+  const viewsByWeek = {};
+  for (const v of viewCounts.rows) viewsByWeek[new Date(v.week).toISOString().slice(0, 10)] = v.n;
+
+  res.render('admin/analytics', {
+    title: 'Analytics', H,
+    m: thirty.rows[0],
+    weekly: weekly.rows.map(w => ({ ...w, week: new Date(w.week).toISOString().slice(0, 10) })),
+    feeTrend,
+    medianFeeAll: feeRows.rows.length ? Math.round(median(feeRows.rows.map(feePct)) * 100) / 100 : null,
+    medianFirstProposalHours: hours.length ? Math.round(median(hours) * 10) / 10 : null,
+    coverage,
+    viewsByWeek,
+    radius: mailer.RADIUS_MILES,
+  });
+});
+
 // ---------- professional detail ----------
 router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
   const { rows } = await pool.query(
@@ -87,6 +177,8 @@ router.post('/admin/agents/:id(\\d+)/:action(approve|reject|suspend|reinstate)',
   const map = { approve: 'approved', reject: 'rejected', suspend: 'suspended', reinstate: 'approved' };
   const status = map[req.params.action];
   await pool.query(`UPDATE agent_profiles SET status=$1, reviewed_at=now() WHERE user_id=$2`, [status, req.params.id]);
+  const eventNames = { approve: 'agent_approved', reject: 'agent_rejected', suspend: 'agent_suspended', reinstate: 'agent_reinstated' };
+  logEvent(eventNames[req.params.action], { userId: parseInt(req.params.id) });
   if (req.params.action === 'approve' || req.params.action === 'reject') {
     const { rows } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [req.params.id]);
     if (rows[0]) {
@@ -100,7 +192,8 @@ router.post('/admin/agents/:id(\\d+)/:action(approve|reject|suspend|reinstate)',
 // Permanently remove: deletes the account and all their proposals. Guarded by
 // a confirmation on the button; cannot remove admins.
 router.post('/admin/agents/:id(\\d+)/remove', admin, async (req, res) => {
-  await pool.query(`DELETE FROM users WHERE id=$1 AND role='agent'`, [req.params.id]);
+  const { rowCount } = await pool.query(`DELETE FROM users WHERE id=$1 AND role='agent'`, [req.params.id]);
+  if (rowCount) logEvent('agent_removed', { userId: parseInt(req.params.id) });
   res.redirect('/admin');
 });
 

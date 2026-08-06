@@ -7,7 +7,7 @@ const PgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 const path = require('path');
 
-const { pool, init, closeExpired } = require('./db');
+const { pool, init, closeExpired, logEvent } = require('./db');
 const mailer = require('./mailer');
 const { csrf } = require('./middleware');
 
@@ -37,6 +37,7 @@ app.use(session({
 app.use((req, res, next) => {
   res.locals.user = req.session.user || null;
   res.locals.path = req.path;
+  res.locals.posthogKey = process.env.POSTHOG_KEY || ''; // analytics on only when set
   next();
 });
 app.use(csrf);
@@ -51,6 +52,7 @@ async function closeAndNotify() {
     for (const r of closed) {
       const { rows } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [r.seller_id]);
       if (rows[0]) mailer.sellerProposalsReady(rows[0].email, rows[0].name, r);
+      logEvent('request_closed', { userId: r.seller_id, requestId: r.id });
     }
   } catch (e) { console.error('closeAndNotify:', e.message); }
 }

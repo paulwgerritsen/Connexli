@@ -1,0 +1,116 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;">Marketplace analytics</h1>
+<p class="sub">Computed live from Connexli's own database. This data never leaves the platform.</p>
+
+<div class="stats">
+  <div class="stat"><b><%= m.new_sellers + m.new_agents %></b><span>New signups · 30 days</span></div>
+  <div class="stat"><b><%= m.new_requests %></b><span>Requests posted · 30 days</span></div>
+  <div class="stat"><b><%= m.new_proposals %></b><span>Proposals · 30 days</span></div>
+  <div class="stat"><b><%= m.new_connections %></b><span>Connections · 30 days</span></div>
+  <div class="stat"><b><%= medianFeeAll === null ? '—' : medianFeeAll + '%' %></b><span>Median proposed fee · all time</span></div>
+  <div class="stat"><b><%= medianFirstProposalHours === null ? '—' : medianFirstProposalHours + 'h' %></b><span>Median time to first proposal</span></div>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Weekly marketplace funnel</h2>
+  <p class="note" style="margin-top:2px;">Requests posted, proposals submitted, and homeowner connections per week (last 12 weeks).</p>
+  <canvas id="funnelChart" height="110"></canvas>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Median proposed fee</h2>
+  <p class="note" style="margin-top:2px;">Weekly median fee as a percent of the request's price-range midpoint (flat fees converted). This is the market rate of listing services on Connexli, measured continuously.</p>
+  <% if (feeTrend.length === 0) { %>
+    <p class="sub">No proposals yet. This chart fills in as agents compete.</p>
+  <% } else { %>
+    <canvas id="feeChart" height="100"></canvas>
+  <% } %>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Coverage: demand vs. supply</h2>
+  <p class="note" style="margin-top:2px;">Where homeowner requests come from, and how many approved professionals are within <%= radius %> miles. A ZIP with requests but few professionals is a recruiting target.</p>
+  <% if (coverage.length === 0) { %>
+    <p class="sub">No requests yet.</p>
+  <% } else { %>
+  <div class="tblwrap">
+    <table>
+      <tr><th>ZIP</th><th>City</th><th>Requests</th><th>Approved pros in range</th><th></th></tr>
+      <% coverage.forEach(c => { %>
+        <tr>
+          <td><%= c.zip %></td>
+          <td><%= c.city %></td>
+          <td><%= c.requests %></td>
+          <td><%= c.agentsInRange %></td>
+          <td><% if (c.agentsInRange === 0) { %><span class="badge pending">recruit here</span>
+              <% } else if (c.agentsInRange < 3) { %><span class="badge open">thin coverage</span>
+              <% } else { %><span class="badge connected">healthy</span><% } %></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <% } %>
+</div>
+
+<script src="/vendor/chart.umd.min.js"></script>
+<script>
+  const WEEKLY = <%- JSON.stringify(weekly) %>;
+  const FEETREND = <%- JSON.stringify(feeTrend) %>;
+
+  const navy = '#0A1B33', blue = '#1565FF', sky = '#42B6FF', light = '#B3D6FF', grid = '#E1E7F0';
+  Chart.defaults.font.family = "'Poppins', sans-serif";
+  Chart.defaults.color = '#5A6779';
+
+  const shortWeek = (iso) => {
+    const d = new Date(iso + 'T00:00:00');
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  };
+
+  new Chart(document.getElementById('funnelChart'), {
+    type: 'bar',
+    data: {
+      labels: WEEKLY.map(w => shortWeek(w.week)),
+      datasets: [
+        { label: 'Requests', data: WEEKLY.map(w => w.requests), backgroundColor: light, borderRadius: 4 },
+        { label: 'Proposals', data: WEEKLY.map(w => w.proposals), backgroundColor: sky, borderRadius: 4 },
+        { label: 'Connections', data: WEEKLY.map(w => w.connections), backgroundColor: blue, borderRadius: 4 },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, boxHeight: 12 } } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, grid: { color: grid }, ticks: { precision: 0 } },
+      },
+    },
+  });
+
+  if (FEETREND.length) {
+    new Chart(document.getElementById('feeChart'), {
+      type: 'line',
+      data: {
+        labels: FEETREND.map(f => shortWeek(f.week)),
+        datasets: [{
+          label: 'Median fee %',
+          data: FEETREND.map(f => f.median),
+          borderColor: blue, backgroundColor: 'rgba(21,101,255,.08)',
+          fill: true, tension: .3, pointBackgroundColor: navy, pointRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ctx.parsed.y + '% median (' + FEETREND[ctx.dataIndex].count + ' proposals)' } },
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: { grid: { color: grid }, ticks: { callback: (v) => v + '%' } },
+        },
+      },
+    });
+  }
+</script>
+<%- include('../partials/foot') %>

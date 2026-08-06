@@ -1,6 +1,6 @@
 // routes/seller.js — the homeowner experience.
 const express = require('express');
-const { pool } = require('../db');
+const { pool, logEvent } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
@@ -59,6 +59,8 @@ router.post('/requests/new', seller, async (req, res) => {
   );
   const { rows: fullRows } = await pool.query(`SELECT * FROM requests WHERE id=$1`, [rows[0].id]);
   mailer.agentsNewRequest(fullRows[0]); // fire and forget: notify nearby approved professionals
+  logEvent('request_posted', { userId: req.session.user.id, requestId: rows[0].id,
+    meta: { zip: f.zip, city: f.city, price_range: f.price_range, window_hours: f.window_hours } });
   res.redirect('/requests/' + rows[0].id);
 });
 
@@ -116,8 +118,9 @@ router.get('/requests/:id(\\d+)/compare', seller, async (req, res) => {
 
 // Close the window early
 router.post('/requests/:id(\\d+)/close', seller, async (req, res) => {
-  await pool.query(`UPDATE requests SET status='closed', closes_at=now() WHERE id=$1 AND seller_id=$2 AND status='open'`,
+  const { rowCount } = await pool.query(`UPDATE requests SET status='closed', closes_at=now() WHERE id=$1 AND seller_id=$2 AND status='open'`,
     [req.params.id, req.session.user.id]);
+  if (rowCount) logEvent('request_closed_early', { userId: req.session.user.id, requestId: parseInt(req.params.id) });
   res.redirect('/requests/' + req.params.id);
 });
 
@@ -127,6 +130,7 @@ router.post('/requests/:id(\\d+)/shortlist/:pid(\\d+)', seller, async (req, res)
   if (!request) return;
   if (request.status === 'closed') {
     await pool.query(`UPDATE proposals SET shortlisted = NOT shortlisted WHERE id=$1 AND request_id=$2`, [req.params.pid, request.id]);
+    logEvent('shortlist_toggled', { userId: req.session.user.id, requestId: request.id, proposalId: parseInt(req.params.pid) });
   }
   res.redirect('/requests/' + request.id + (req.body.from === 'compare' ? '/compare' : ''));
 });
@@ -148,6 +152,7 @@ router.post('/requests/:id(\\d+)/connect/:pid(\\d+)', seller, async (req, res) =
     const { rows: winner } = await pool.query(
       `SELECT u.email, u.name FROM proposals p JOIN users u ON u.id=p.agent_id WHERE p.id=$1`, [req.params.pid]);
     if (winner[0]) mailer.agentWon(winner[0].email, winner[0].name, request); // fire and forget
+    if (rowCount) logEvent('connected', { userId: req.session.user.id, requestId: request.id, proposalId: parseInt(req.params.pid) });
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
   res.redirect('/requests/' + request.id);

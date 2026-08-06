@@ -1,6 +1,6 @@
 // routes/agent.js — the professional experience.
 const express = require('express');
-const { pool } = require('../db');
+const { pool, logEvent } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
 
@@ -64,6 +64,7 @@ router.get('/agent/opportunities/:id(\\d+)', agent, async (req, res) => {
   const { rows: mine } = await pool.query(
     `SELECT * FROM proposals WHERE request_id=$1 AND agent_id=$2`, [request.id, req.session.user.id]);
 
+  logEvent('opportunity_viewed', { userId: req.session.user.id, requestId: request.id });
   res.render('agent/opportunity', { title: 'Opportunity', request, proposal: mine[0] || null, H, error: null });
 });
 
@@ -114,25 +115,31 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     });
   }
 
-  await pool.query(
+  const { rows: saved } = await pool.query(
     `INSERT INTO proposals (request_id, agent_id, fee_type, fee_amount, services, marketing_plan, cancellation_terms)
      VALUES ($1,$2,$3,$4,$5,$6,$7)
      ON CONFLICT (request_id, agent_id) DO UPDATE SET
        fee_type=EXCLUDED.fee_type, fee_amount=EXCLUDED.fee_amount, services=EXCLUDED.services,
-       marketing_plan=EXCLUDED.marketing_plan, cancellation_terms=EXCLUDED.cancellation_terms, updated_at=now()`,
+       marketing_plan=EXCLUDED.marketing_plan, cancellation_terms=EXCLUDED.cancellation_terms, updated_at=now()
+     RETURNING id`,
     [request.id, req.session.user.id, fee_type, fee_amount, services.join(', '), marketing_plan, cancellation_terms]
   );
   const wasUpdate = mineBefore.rows.length > 0;
+  logEvent(wasUpdate ? 'proposal_updated' : 'proposal_submitted', {
+    userId: req.session.user.id, requestId: request.id, proposalId: saved[0].id,
+    meta: { fee_type, fee_amount, price_range: request.price_range },
+  });
   res.redirect('/agent/opportunities/' + request.id + '/submitted' + (wasUpdate ? '?updated=1' : ''));
 });
 
 // Withdraw a proposal (only while the window is open)
 router.post('/agent/opportunities/:id(\\d+)/withdraw', agent, async (req, res) => {
-  await pool.query(
+  const { rowCount } = await pool.query(
     `DELETE FROM proposals p USING requests r
      WHERE p.request_id=r.id AND r.id=$1 AND p.agent_id=$2 AND r.status='open'`,
     [req.params.id, req.session.user.id]
   );
+  if (rowCount) logEvent('proposal_withdrawn', { userId: req.session.user.id, requestId: parseInt(req.params.id) });
   res.redirect('/agent');
 });
 

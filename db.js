@@ -91,6 +91,20 @@ CREATE TABLE IF NOT EXISTS password_resets (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
+
+-- The marketplace event log: one row per meaningful action, forever.
+-- This is the raw material for every Connexli analytic, present and future.
+CREATE TABLE IF NOT EXISTS events (
+  id SERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  user_id INTEGER,
+  request_id INTEGER,
+  proposal_id INTEGER,
+  meta JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(event_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_request ON events(request_id);
 `;
 
 async function init() {
@@ -121,4 +135,14 @@ async function closeExpired() {
   return rows;
 }
 
-module.exports = { pool, init, closeExpired };
+// Record a marketplace event. Fire-and-forget: analytics must never be able
+// to break or slow down a real page for a real user, so errors are only
+// logged. Deliberately no foreign keys — history survives account deletion.
+function logEvent(eventType, { userId = null, requestId = null, proposalId = null, meta = {} } = {}) {
+  pool.query(
+    `INSERT INTO events (event_type, user_id, request_id, proposal_id, meta) VALUES ($1,$2,$3,$4,$5)`,
+    [eventType, userId, requestId, proposalId, JSON.stringify(meta)]
+  ).catch((e) => console.error('logEvent failed:', eventType, e.message));
+}
+
+module.exports = { pool, init, closeExpired, logEvent };
