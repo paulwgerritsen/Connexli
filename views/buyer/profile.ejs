@@ -1,0 +1,87 @@
+<%- include('../partials/head') %>
+<a href="/dashboard" style="font-size:14px;">‹ Back to my dashboard</a>
+<h1 style="margin-top:8px;">My buyer profile <span class="badge <%= profile.readiness === 'ready_now' ? 'connected' : profile.readiness === 'preparing' ? 'open' : 'pending' %>" style="vertical-align:4px;"><%= H.READINESS_LABELS[profile.readiness] %></span></h1>
+<p class="sub"><%= profile.search_areas %> · <%= profile.price_range %> · <%= profile.timeline %><% if (!profile.in_utah) { %> · Relocating from <%= profile.origin_state %><% } %></p>
+
+<% const connectedProposal = proposals.find(p => p.connected); %>
+
+<% if (profile.status === 'connected' && connectedProposal) { %>
+  <div class="narrow" style="max-width:640px; margin:0;">
+    <h2>You're connected 🎉</h2>
+    <p class="sub"><%= connectedProposal.agent_name %> has received your contact information and will reach out soon. You can also reach them directly:</p>
+    <div class="card">
+      <div class="sumrow"><span>Professional</span><span><%= connectedProposal.agent_name %></span></div>
+      <div class="sumrow"><span>Brokerage</span><span><%= connectedProposal.brokerage %></span></div>
+      <div class="sumrow"><span>License</span><span><%= connectedProposal.license_number %></span></div>
+      <div class="sumrow"><span>Email</span><span><%= connectedProposal.agent_email %></span></div>
+      <% if (connectedProposal.agent_phone) { %><div class="sumrow"><span>Phone</span><span><%= connectedProposal.agent_phone %></span></div><% } %>
+      <div class="sumrow"><span>Their proposal</span><span><%= H.buyerFeeLabel(connectedProposal) %></span></div>
+    </div>
+    <div class="success">The buyer representation agreement is signed directly with their brokerage, outside Connexli. Still no obligation.</div>
+  </div>
+<% } else if (profile.status === 'expired') { %>
+  <div class="card"><p class="sub">Your profile expired after 30 days. Renew it to go back in front of agents.</p>
+    <form method="POST" action="/buyer/renew"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn" type="submit">Renew for 30 more days</button></form>
+  </div>
+<% } else if (!profile.published) { %>
+  <div class="card" style="border-left:4px solid var(--blue);">
+    <h2 style="font-size:16px;">Your profile isn't in front of agents yet</h2>
+    <p class="sub" style="margin-bottom:10px;">You're in the <b>Exploring</b> stage. Agents compete hardest for prepared buyers — our Get Ready guide shows the fastest path, and the moment you're preapproved, one tap publishes your profile.</p>
+    <a class="btn" href="/buyer/get-ready">Get ready to buy</a>
+  </div>
+<% } else { %>
+  <div class="checkrow"><span class="c">🔒</span><span>Your profile is live and anonymous. Agents see your search, never your name — up to 5 sealed proposals, and competing agents never see each other's terms.</span></div>
+<% } %>
+
+<% if (profile.status === 'active') { %>
+  <h2 style="margin-top:24px;">Proposals (<%= proposals.length %> of 5)</h2>
+  <% if (proposals.length === 0) { %>
+    <div class="card"><p class="sub">No proposals yet. Verified agents in your areas have been notified — most buyers hear back within a day or two. Proposals appear here the moment they arrive.</p></div>
+  <% } else { %>
+    <div class="cards">
+      <% proposals.forEach(p => { %>
+        <div class="card pcard">
+          <div class="grow">
+            <div class="agent-top">
+              <div class="avatar"><%= p.agent_name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() %></div>
+              <div><b><%= p.agent_name %></b><span class="brok"><%= p.brokerage %> · <span style="color:var(--good); font-weight:600;">✓ Verified</span></span></div>
+            </div>
+            <% if (p.transactions_seller_12mo !== null || p.transactions_buyer_12mo !== null) { %>
+              <p class="note" style="margin-top:6px;"><b>Last 12 months:</b> <%= p.transactions_buyer_12mo ?? 0 %> buyer-side · <%= p.transactions_seller_12mo ?? 0 %> seller-side transactions <span style="color:var(--muted);">(reported by the professional)</span></p>
+            <% } %>
+            <div class="complbl">Proposed compensation</div>
+            <div><span class="fee"><%= H.buyerFeeLabel(p) %></span></div>
+            <% if (p.min_fee) { %><p class="note">Minimum fee: <%= H.money(p.min_fee) %></p><% } %>
+            <div class="pillrow">
+              <% if (p.included_tours) { %><span class="pill"><%= p.included_tours %></span><% } %>
+              <% if (p.video_tours) { %><span class="pill">Video tours</span><% } %>
+              <% if (p.response_time) { %><span class="pill">Responds: <%= p.response_time.toLowerCase() %></span><% } %>
+              <% (p.specialties ? p.specialties.split(', ') : []).forEach(s => { %><span class="pill"><%= s %></span><% }) %>
+            </div>
+            <% if (p.seller_contribution) { %><p class="note" style="margin-top:9px;"><b>Seller contributions:</b> <%= p.seller_contribution %></p><% } %>
+            <% if (p.rebate) { %><p class="note"><b>Rebate:</b> <%= p.rebate %></p><% } %>
+            <% if (p.plan) { %><p class="note"><b>Their plan for you:</b> <%= p.plan %></p><% } %>
+          </div>
+          <div class="cardbtns">
+            <form method="POST" action="/buyer/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.');">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="btn" type="submit">Connect</button>
+            </form>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+    <p class="note">Connecting releases your contact info to that one professional only. The buyer representation agreement is signed with their brokerage, outside Connexli. No obligation.</p>
+  <% } %>
+
+  <div class="card" style="margin-top:20px;">
+    <h2 style="font-size:16px;">Manage my profile</h2>
+    <p class="sub" style="margin-bottom:10px;">Active until <%= new Date(profile.expires_at).toLocaleDateString('en-US') %>. <% if (!profile.priorities && !profile.property_prefs) { %>Complete profiles get stronger, more specific proposals.<% } %></p>
+    <div class="actions">
+      <a class="btn ghost sm" href="/buyer/boost"><%= (profile.priorities || profile.property_prefs) ? 'Edit my preferences' : 'Boost my profile' %></a>
+      <form method="POST" action="/buyer/renew"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn ghost sm" type="submit">Renew 30 days</button></form>
+      <form method="POST" action="/buyer/withdraw" onsubmit="return confirm('Withdraw your buyer profile? Agents will no longer see it.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn danger sm" type="submit">Withdraw</button></form>
+    </div>
+  </div>
+<% } %>
+<%- include('../partials/foot') %>

@@ -1,0 +1,32 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:640px;">
+  <a href="/buyer" style="font-size:14px;">‹ Back to my profile</a>
+  <h1 style="margin-top:8px;">Boost your profile</h1>
+  <p class="sub">All optional — but every answer makes the proposals you receive more specific. Vague profiles get generic pitches; detailed profiles get real plans.</p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+  <form method="POST" action="/buyer/boost">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="card">
+      <label for="property_prefs">What are you looking for in a home?</label>
+      <textarea id="property_prefs" name="property_prefs" rows="3" maxlength="400" placeholder="e.g. Rambler with a finished basement, 3+ beds, 2,500–4,000 sq ft, 2-car garage, newer than 2000"><%= profile.property_prefs %></textarea>
+      <label>Your top priorities (choose up to 3)</label>
+      <div class="optgrid cols">
+        <% H.B_PRIORITIES.forEach(p => { %>
+          <label class="opt"><input type="checkbox" name="priorities" value="<%= p %>" <%= (profile.priorities || '').includes(p) ? 'checked' : '' %>> <%= p %></label>
+        <% }) %>
+      </div>
+      <label for="availability">When are you generally available for tours?</label>
+      <input type="text" id="availability" name="availability" placeholder="e.g. Weeknights after 6 + Saturdays" value="<%= profile.availability %>">
+      <label>Is this your first home purchase?</label>
+      <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+        <label class="opt"><input type="radio" name="first_time" value="yes" <%= profile.first_time === true ? 'checked' : '' %>> Yes</label>
+        <label class="opt"><input type="radio" name="first_time" value="no" <%= profile.first_time === false ? 'checked' : '' %>> No</label>
+      </div>
+      <label for="notes">Anything else agents should know? (optional)</label>
+      <textarea id="notes" name="notes" rows="3" maxlength="500"><%= profile.notes %></textarea>
+    </div>
+    <button class="btn full" type="submit">Save my answers</button>
+  </form>
+</div>
+<%- include('../partials/foot') %>

@@ -1,0 +1,13 @@
+<%- include('../partials/head') %>
+<div class="narrow">
+  <a href="/buyer" style="font-size:14px;">‹ Back</a>
+  <h1 style="margin-top:8px;">One thing first</h1>
+  <p class="sub">You told us you have an <b>active Buyer Broker Agreement</b> with another agent. That agreement means they currently represent you — inviting new proposals now could put you (and any new agent) in a legal conflict called a procuring-cause dispute.</p>
+  <div class="card">
+    <div class="checkrow"><span class="c">1</span><span><b>Check your agreement's end date.</b> Most have a set term<%= bba_expires ? ' — you mentioned yours runs until ' + bba_expires : '' %>.</span></div>
+    <div class="checkrow"><span class="c">2</span><span><b>Or talk to your current agent.</b> Many agreements can be cancelled by mutual consent if it's not working out.</span></div>
+    <div class="checkrow"><span class="c">3</span><span><b>Then come back.</b> The moment you're free, your Connexli buyer profile takes about 2 minutes.</span></div>
+  </div>
+  <p class="note">This protects you as much as anyone — it's part of how Connexli keeps every connection clean. Questions? <a href="mailto:hello@connexli.com">hello@connexli.com</a></p>
+</div>
+<%- include('../partials/foot') %>

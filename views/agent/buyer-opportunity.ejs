@@ -1,0 +1,77 @@
+<%- include('../partials/head') %>
+<a href="/agent" style="font-size:14px;">‹ Back to opportunities</a>
+<div class="narrow" style="max-width:720px; margin:0;">
+  <h1 style="margin-top:8px;">Buyer Snapshot <span class="badge <%= buyer.readiness === 'ready_now' ? 'connected' : 'open' %>" style="vertical-align:4px;"><%= H.READINESS_LABELS[buyer.readiness] %></span></h1>
+  <p class="sub"><%= buyer.proposal_count %>/5 sealed proposals · active until <%= new Date(buyer.expires_at).toLocaleDateString('en-US') %> · anonymous until they choose</p>
+  <% if (typeof error === 'string' && error) { %><div class="error"><%= error %></div><% } %>
+
+  <div class="card">
+    <div class="sumrow"><span>Financing</span><span><b><%= buyer.financing_type %></b> · <%= buyer.lender_status %> · <%= buyer.down_payment %> down</span></div>
+    <div class="sumrow"><span>Price range & purpose</span><span><%= buyer.price_range %> · <%= buyer.purchase_purpose %></span></div>
+    <div class="sumrow"><span>Timeline</span><span><%= buyer.timeline %></span></div>
+    <div class="sumrow"><span>Search areas</span><span><%= buyer.search_areas %></span></div>
+    <div class="sumrow"><span>Current home</span><span><%= buyer.current_situation %><%= buyer.need_to_sell !== 'No' ? ' · Must sell first (' + buyer.need_to_sell.replace('Yes — ','') + ')' : '' %></span></div>
+    <% if (!buyer.in_utah) { %><div class="sumrow"><span>Relocation</span><span>From <%= buyer.origin_state %><%= buyer.move_reason ? ' · ' + buyer.move_reason : '' %><%= buyer.visit_dates ? ' · visiting ' + buyer.visit_dates : '' %><%= buyer.video_tours ? ' · wants video tours' : '' %></span></div><% } %>
+    <% if (buyer.property_prefs) { %><div class="sumrow"><span>Looking for</span><span><%= buyer.property_prefs %></span></div><% } %>
+    <% if (buyer.priorities) { %><div class="sumrow"><span>Top priorities</span><span><%= buyer.priorities %></span></div><% } %>
+    <% if (buyer.availability) { %><div class="sumrow"><span>Tour availability</span><span><%= buyer.availability %></span></div><% } %>
+    <% if (buyer.first_time === true) { %><div class="sumrow"><span>First-time buyer</span><span>Yes</span></div><% } %>
+    <% if (buyer.notes) { %><div class="sumrow"><span>In their words</span><span><%= buyer.notes %></span></div><% } %>
+  </div>
+
+  <% if (typeof proposal !== 'undefined' && proposal && proposal.id) { %>
+    <div class="success">Your sealed proposal is in 🔒 — you can update it below any time while the profile is active.</div>
+  <% } %>
+
+  <h2 style="margin-top:22px;"><%= proposal && proposal.id ? 'Update your sealed proposal' : 'Submit your sealed proposal' %></h2>
+  <p class="sub">Buyer representation takes real time — structure your fee to protect it. Buyers see every structure explained plainly, side by side.</p>
+
+  <form method="POST" action="/agent/buyers/<%= buyer.id %>/propose">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="card">
+      <label for="comp_structure">Fee structure</label>
+      <select id="comp_structure" name="comp_structure">
+        <% Object.entries(H.BP_STRUCTURES).forEach(([k, v]) => { %>
+          <option value="<%= k %>" <%= proposal && proposal.comp_structure === k ? 'selected' : '' %>><%= v %></option>
+        <% }) %>
+      </select>
+      <label for="comp_amount">Amount (percent for percentage, dollars otherwise)</label>
+      <input type="text" id="comp_amount" name="comp_amount" placeholder="e.g. 2.5 or 6000" value="<%= proposal ? proposal.comp_amount : '' %>" required>
+      <label for="min_fee">Minimum fee in dollars (optional)</label>
+      <input type="text" id="min_fee" name="min_fee" placeholder="e.g. 5000" value="<%= proposal && proposal.min_fee ? proposal.min_fee : '' %>">
+      <label for="seller_contribution">How you handle seller contributions</label>
+      <input type="text" id="seller_contribution" name="seller_contribution" placeholder="e.g. Any seller contribution reduces what you pay dollar-for-dollar" value="<%= proposal ? proposal.seller_contribution : 'Any seller contribution reduces what you pay dollar-for-dollar' %>">
+      <label for="rebate">Rebate offer, if any (optional — rebates are legal in Utah)</label>
+      <input type="text" id="rebate" name="rebate" value="<%= proposal ? proposal.rebate : '' %>">
+    </div>
+    <div class="card">
+      <label for="included_tours">Tours included</label>
+      <select id="included_tours" name="included_tours">
+        <% H.BP_TOURS.forEach(t => { %><option <%= proposal && proposal.included_tours === t ? 'selected' : '' %>><%= t %></option><% }) %>
+      </select>
+      <label class="opt" style="margin-top:8px;"><input type="checkbox" name="video_tours" value="yes" <%= proposal && proposal.video_tours ? 'checked' : '' %>> I offer video / virtual tours (important for relocating buyers)</label>
+      <label for="response_time">Response-time commitment</label>
+      <select id="response_time" name="response_time">
+        <% H.BP_RESPONSE.forEach(r => { %><option <%= proposal && proposal.response_time === r ? 'selected' : '' %>><%= r %></option><% }) %>
+      </select>
+      <label>Your specialties</label>
+      <div class="optgrid cols">
+        <% H.BP_SPECIALTIES.forEach(s => { %>
+          <label class="opt"><input type="checkbox" name="specialties" value="<%= s %>" <%= proposal && (proposal.specialties || '').includes(s) ? 'checked' : '' %>> <%= s %></label>
+        <% }) %>
+      </div>
+      <label for="plan">Your plan for this buyer</label>
+      <textarea id="plan" name="plan" rows="4" maxlength="1000" placeholder="What you'd do for this buyer specifically — their areas, their timeline, their situation."><%= proposal ? proposal.plan : '' %></textarea>
+    </div>
+    <button class="btn full" type="submit"><%= proposal && proposal.id ? 'Update my sealed proposal' : 'Submit my sealed proposal' %></button>
+  </form>
+
+  <% if (proposal && proposal.id && !proposal.connected) { %>
+    <form method="POST" action="/agent/buyers/<%= buyer.id %>/withdraw" onsubmit="return confirm('Withdraw your proposal for this buyer?');" style="margin-top:10px;">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn ghost full danger" type="submit">Withdraw my proposal</button>
+    </form>
+  <% } %>
+  <div class="sealed" style="margin-top:14px;">🔒 <span>Sealed means sealed: competing professionals never see your terms, and the buyer's identity stays hidden until they choose to connect with you.</span></div>
+</div>
+<%- include('../partials/foot') %>

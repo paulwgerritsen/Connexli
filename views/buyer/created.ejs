@@ -1,0 +1,32 @@
+<%- include('../partials/head') %>
+<div class="narrow">
+  <% if (published) { %>
+    <div class="success-ic" style="width:74px; height:74px; margin:18px auto 6px; border-radius:50%; background:#E7F6EE; display:flex; align-items:center; justify-content:center; font-size:36px;">🎉</div>
+    <h1 style="text-align:center;">Your profile is live</h1>
+    <p class="sub" style="text-align:center;">Verified buyer's agents near <%= profile.search_areas %> are being notified now. Your badge: <b><%= H.READINESS_LABELS[badge] %></b>. You'll get an email as proposals arrive (up to 5).</p>
+  <% } else { %>
+    <div class="success-ic" style="width:74px; height:74px; margin:18px auto 6px; border-radius:50%; background:#EAF2FF; display:flex; align-items:center; justify-content:center; font-size:36px;">🧭</div>
+    <h1 style="text-align:center;">Let's get you ready</h1>
+    <p class="sub" style="text-align:center;">Your profile is saved. Based on your answers you're in the <b>Exploring</b> stage — agents compete hardest for prepared buyers, so let's make you one. The moment you're preapproved, one tap publishes your profile.</p>
+    <a class="btn full" style="margin-top:8px;" href="/buyer/get-ready">Show me how to get ready</a>
+  <% } %>
+
+  <% if (crossSell) { %>
+    <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
+      <h2 style="font-size:16px;">You mentioned you need to sell first</h2>
+      <p class="sub" style="margin-bottom:10px;">Connexli does that too. Invite sealed proposals from listing agents for your current home and compare both sides — you can choose the same agent for both or different agents for each.</p>
+      <a class="btn ghost" href="/requests/new">Get listing proposals for my current home</a>
+    </div>
+  <% } %>
+
+  <% if (published) { %>
+    <div class="card" style="margin-top:18px;">
+      <h2 style="font-size:16px;">Want stronger proposals?</h2>
+      <p class="sub" style="margin-bottom:10px;">Complete profiles get more specific proposals — agents who match your priorities, your availability, and your must-haves. Two more minutes, entirely optional.</p>
+      <a class="btn ghost" href="/buyer/boost">Boost my profile</a>
+    </div>
+  <% } %>
+
+  <a class="btn ghost full" style="margin-top:14px;" href="/buyer">Go to my buyer profile</a>
+</div>
+<%- include('../partials/foot') %>

@@ -13,6 +13,19 @@
 </div>
 
 <div class="card">
+  <h2 style="font-size:16px;">Buyer side ("Find Your Buyer's Agent")</h2>
+  <p class="note" style="margin-top:2px;">Readiness mix shows lead quality; the lender counter is the hard evidence for the future lender vertical.</p>
+  <div class="stats" style="margin-top:10px;">
+    <div class="stat"><b><%= b.total_profiles %></b><span>Buyer profiles · all time</span></div>
+    <div class="stat"><b><%= b.ready_now %> / <%= b.preparing %> / <%= b.exploring %></b><span>Ready Now / Preparing / Exploring</span></div>
+    <div class="stat"><b><%= b.upgrades %></b><span>Exploring → Ready upgrades</span></div>
+    <div class="stat"><b><%= b.relocating %></b><span>Relocating from out of state</span></div>
+    <div class="stat"><b><%= b.lender_requests %></b><span>Lender recommendations requested</span></div>
+    <div class="stat"><b><%= b.proposals %> → <%= b.connections %></b><span>Buyer proposals → connections</span></div>
+  </div>
+</div>
+
+<div class="card">
   <h2 style="font-size:16px;">Weekly marketplace funnel</h2>
   <p class="note" style="margin-top:2px;">Requests posted, proposals submitted, and homeowner connections per week (last 12 weeks).</p>
   <canvas id="funnelChart" height="110"></canvas>

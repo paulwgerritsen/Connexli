@@ -1,0 +1,96 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:640px;">
+  <a href="/buyer" style="font-size:14px;">‹ Back</a>
+  <h1 style="margin-top:8px;">Your buyer profile</h1>
+  <p class="sub">About 2 minutes. Agents see an anonymous snapshot — your name and contact info stay hidden until you choose to connect.</p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+  <form method="POST" action="/buyer/new">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+    <div class="card">
+      <h2 style="font-size:16px;">Your financing</h2>
+      <label for="financing_type">How will you pay?</label>
+      <select id="financing_type" name="financing_type" required>
+        <option value="" disabled <%= !form.financing_type ? 'selected' : '' %>>Choose one…</option>
+        <% H.B_FINANCING.forEach(o => { %><option <%= form.financing_type === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+      <label for="lender_status">Are you working with a lender?</label>
+      <select id="lender_status" name="lender_status" required>
+        <option value="" disabled <%= !form.lender_status ? 'selected' : '' %>>Choose one…</option>
+        <% H.B_LENDER.forEach(o => { %><option <%= form.lender_status === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+      <p class="note">Prequalified is a quick estimate; preapproved means a lender verified your documents. Agents compete hardest for preapproved buyers.</p>
+      <label for="down_payment">Estimated down payment</label>
+      <select id="down_payment" name="down_payment" required>
+        <option value="" disabled <%= !form.down_payment ? 'selected' : '' %>>Choose one…</option>
+        <% H.B_DOWN.forEach(o => { %><option <%= form.down_payment === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;">Your search</h2>
+      <label for="search_areas">Cities or areas you're searching (separate with commas)</label>
+      <input type="text" id="search_areas" name="search_areas" placeholder="e.g. Lehi, Saratoga Springs, American Fork" value="<%= form.search_areas || '' %>" required>
+      <label for="price_range">Price range</label>
+      <select id="price_range" name="price_range" required>
+        <option value="" disabled <%= !form.price_range ? 'selected' : '' %>>Choose one…</option>
+        <% Object.keys(H.PRICE_RANGES).forEach(o => { %><option <%= form.price_range === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+      <label for="timeline">When do you want to buy?</label>
+      <select id="timeline" name="timeline" required>
+        <option value="" disabled <%= !form.timeline ? 'selected' : '' %>>Choose one…</option>
+        <% H.B_TIMELINE.forEach(o => { %><option <%= form.timeline === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+      <label for="purchase_purpose">This home will be a…</label>
+      <select id="purchase_purpose" name="purchase_purpose">
+        <% H.B_PURPOSE.forEach(o => { %><option <%= (form.purchase_purpose || 'Primary residence') === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;">Your current home</h2>
+      <label for="current_situation">Right now you…</label>
+      <select id="current_situation" name="current_situation">
+        <% H.B_SITUATION.forEach(o => { %><option <%= (form.current_situation || 'Rent') === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+      <label for="need_to_sell">Do you need to sell a home before buying?</label>
+      <select id="need_to_sell" name="need_to_sell">
+        <% H.B_SELL_FIRST.forEach(o => { %><option <%= (form.need_to_sell || 'No') === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;">Where you're located</h2>
+      <label>Are you currently in Utah?</label>
+      <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+        <label class="opt"><input type="radio" name="in_utah" value="yes" <%= form.in_utah !== 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='none'"> Yes</label>
+        <label class="opt"><input type="radio" name="in_utah" value="no" <%= form.in_utah === 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='block'"> No — I'm relocating</label>
+      </div>
+      <div id="relo" style="display:<%= form.in_utah === 'no' ? 'block' : 'none' %>; margin-top:10px;">
+        <label for="origin_state">Which state are you moving from?</label>
+        <input type="text" id="origin_state" name="origin_state" value="<%= form.origin_state || '' %>">
+        <label for="move_reason">Reason for the move (optional)</label>
+        <input type="text" id="move_reason" name="move_reason" placeholder="e.g. job, family, lifestyle" value="<%= form.move_reason || '' %>">
+        <label for="visit_dates">When do you plan to visit Utah? (optional)</label>
+        <input type="text" id="visit_dates" name="visit_dates" placeholder="e.g. Sept 12–15" value="<%= form.visit_dates || '' %>">
+        <label class="opt" style="margin-top:8px;"><input type="checkbox" name="video_tours" value="yes" <%= form.video_tours === 'yes' ? 'checked' : '' %>> I'd like video / virtual tours</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="font-size:16px;">One important question</h2>
+      <label for="bba">Have you signed a Buyer Broker Agreement with another agent?</label>
+      <select id="bba" name="bba">
+        <% H.B_BBA.forEach(o => { %><option <%= (form.bba || 'No') === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+      <label for="bba_expires">If currently active: when does it expire? (optional)</label>
+      <input type="text" id="bba_expires" name="bba_expires" placeholder="e.g. October 2026" value="<%= form.bba_expires || '' %>">
+      <p class="note">An active exclusive agreement means that agent already represents you — we'll explain what that means on the next screen if it applies.</p>
+    </div>
+
+    <button class="btn full" type="submit" style="margin-top:6px;">Publish my buyer profile</button>
+    <p class="note" style="text-align:center;">Free · anonymous until you connect · no obligation</p>
+  </form>
+</div>
+<%- include('../partials/foot') %>

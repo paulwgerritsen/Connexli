@@ -11,7 +11,7 @@
       <div class="optgrid cols">
         <label class="opt">
           <input type="radio" name="role" value="seller" <%= form.role !== 'agent' ? 'checked' : '' %> onchange="toggleAgent()">
-          <span class="tile"><span><b>Homeowner</b><span class="desc">I want professionals to compete for my listing.</span></span></span>
+          <span class="tile"><span><b>Homeowner / Buyer</b><span class="desc">I'm selling, buying, or both — let professionals compete for my business.</span></span></span>
         </label>
         <label class="opt">
           <input type="radio" name="role" value="agent" <%= form.role === 'agent' ? 'checked' : '' %> onchange="toggleAgent()">
@@ -58,6 +58,7 @@
       </div>
 
       <button class="btn full" type="submit" style="margin-top:18px;">Create account</button>
+      <p class="note" style="text-align:center;">By creating an account you agree to the <a href="https://connexli.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://connexli.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
     </form>
   </div>
   <p class="note">Already have an account? <a href="/login">Log in</a>.</p>

@@ -35,6 +35,25 @@
   <p class="note">Reach out within 24 hours. The listing agreement is signed with your brokerage, outside Connexli.</p>
 <% } %>
 
+<% if (buyerWins.length > 0) { %>
+  <h2 style="margin-top:26px;">Buyer clients won 🎉</h2>
+  <div class="card">
+    <% buyerWins.forEach(w => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);"><%= w.buyer_name %></b>
+          <div class="meta">Buying in <%= w.search_areas %> · <%= w.price_range %> · <%= w.timeline %></div>
+        </div>
+        <div class="actions">
+          <span class="pill">📧 <%= w.buyer_email %></span>
+          <% if (w.buyer_phone) { %><span class="pill">📱 <%= w.buyer_phone %></span><% } %>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+  <p class="note">Reach out within 24 hours. The buyer representation agreement is signed with your brokerage, outside Connexli.</p>
+<% } %>
+
 <h2 style="margin-top:26px;">Open opportunities</h2>
 <% if (opportunities.length === 0) { %>
   <div class="card"><p class="sub">No open opportunities right now. New homeowner requests appear here the moment they launch.</p></div>
@@ -55,6 +74,28 @@
     <% }) %>
   </div>
   <div class="sealed">🔒 <span>Sealed process: you never see other professionals' proposals, and they never see yours. The homeowner's identity stays hidden until they choose to connect with you.</span></div>
+<% } %>
+
+<h2 style="margin-top:26px;">Buyer opportunities <span class="badge open" style="vertical-align:2px;">New</span></h2>
+<% if (buyerOpps.length === 0) { %>
+  <div class="card"><p class="sub">No published buyer profiles right now. Verified buyers looking for an agent appear here — anonymous snapshots with an honest readiness badge, so you always know who's worth a proposal.</p></div>
+<% } else { %>
+  <div class="card">
+    <% buyerOpps.forEach(b => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);">Buyer · <%= b.search_areas %></b>
+          <span class="badge <%= b.readiness === 'ready_now' ? 'connected' : 'open' %>" style="margin-left:6px;"><%= H.READINESS_LABELS[b.readiness] %></span>
+          <div class="meta"><%= b.price_range %> · <%= b.timeline %> · <%= b.purchase_purpose %><% if (!b.in_utah) { %> · Relocating from <%= b.origin_state %><% } %><% if (b.need_to_sell !== 'No') { %> · Must sell first<% } %></div>
+        </div>
+        <div class="actions">
+          <span class="pill"><%= b.proposal_count %>/5 proposals</span>
+          <% if (b.mine > 0) { %><span class="badge approved">Proposal in 🔒</span><% } %>
+          <a class="btn sm <%= b.mine > 0 ? 'ghost' : '' %>" href="/agent/buyers/<%= b.id %>"><%= b.mine > 0 ? 'Edit proposal' : 'View snapshot' %></a>
+        </div>
+      </div>
+    <% }) %>
+  </div>
 <% } %>
 
 <% if (myProposals.length > 0) { %>

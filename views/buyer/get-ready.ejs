@@ -1,0 +1,32 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:680px;">
+  <a href="/buyer" style="font-size:14px;">‹ Back</a>
+  <h1 style="margin-top:8px;">Get ready to buy</h1>
+  <p class="sub">Agents compete hardest for prepared buyers. Here's how to become one — usually in a week or two, not months.</p>
+
+  <div class="card">
+    <h2 style="font-size:16px;">1. Understand preapproval (the key that opens doors)</h2>
+    <p class="sub" style="margin-bottom:8px;"><b>Prequalification</b> is a quick estimate based on what you tell a lender. <b>Preapproval</b> means a lender verified your documents — pay stubs, tax returns, bank statements — and issued a letter stating what they'll lend you. Sellers and agents take preapproval far more seriously: in a competitive market it's the difference between an offer that gets read and one that gets set aside.</p>
+  </div>
+  <div class="card">
+    <h2 style="font-size:16px;">2. Gather your documents</h2>
+    <div class="checkrow"><span class="c">✓</span><span>Last 2 pay stubs (or 2 years of returns if self-employed)</span></div>
+    <div class="checkrow"><span class="c">✓</span><span>Last 2 years of W-2s or tax returns</span></div>
+    <div class="checkrow"><span class="c">✓</span><span>Last 2 months of bank statements</span></div>
+    <div class="checkrow"><span class="c">✓</span><span>Photo ID · and know your approximate credit score</span></div>
+  </div>
+  <div class="card">
+    <h2 style="font-size:16px;">3. Talk to a lender (or two)</h2>
+    <p class="sub" style="margin-bottom:8px;">Any bank, credit union, or mortgage lender can preapprove you — most do it free within a day or two. Worth asking each one: What rate and fees am I looking at? Are there first-time buyer or low-down-payment programs I qualify for (FHA, VA, USDA, Utah Housing)? How long is my preapproval good for? Comparing two lenders is normal and smart — this is exactly the kind of decision Connexli believes you should never make on the first quote.</p>
+  </div>
+  <div class="card" style="border-left:4px solid var(--blue);">
+    <h2 style="font-size:16px;">4. The moment you're preapproved</h2>
+    <p class="sub" style="margin-bottom:10px;">One tap upgrades your profile and publishes it to verified buyer's agents in your areas. Nobody gets rejected on Connexli — everyone gets a next step.</p>
+    <form method="POST" action="/buyer/upgrade">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn" type="submit">I'm preapproved now — publish my profile</button>
+    </form>
+  </div>
+  <p class="note">Connexli doesn't recommend specific lenders today. This guide is educational, not financial advice.</p>
+</div>
+<%- include('../partials/foot') %>

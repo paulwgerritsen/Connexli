@@ -1,6 +1,14 @@
 <%- include('../partials/head') %>
-<h1>My requests</h1>
-<p class="sub">Each request invites verified professionals to compete for your listing.</p>
+<h1>My dashboard</h1>
+<p class="sub">Selling, buying, or both — verified professionals compete for your business either way.</p>
+
+<div class="card" style="border-left:4px solid var(--blue);">
+  <h2 style="font-size:16px;">Buying a home? <span class="badge open" style="vertical-align:2px;">New</span></h2>
+  <p class="sub" style="margin-bottom:10px;">Find Your Buyer's Agent: verified buyer's agents send you sealed proposals — fees, tours, and services side by side. Anonymous until you choose.</p>
+  <a class="btn ghost sm" href="/buyer">Find my buyer's agent</a>
+</div>
+
+<h2 style="margin-top:24px;">My selling requests</h2>
 
 <% if (requests.length === 0) { %>
   <div class="card" style="text-align:center; padding:38px 20px;">

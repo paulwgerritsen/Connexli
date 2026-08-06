@@ -37,13 +37,22 @@ router.get('/admin', admin, async (req, res) => {
           WHERE r.status <> 'open' GROUP BY r.id) sub), 0) AS avg_proposals,
         (SELECT COUNT(*) FROM (
           SELECT r.id FROM requests r JOIN proposals p ON p.request_id=r.id
-          WHERE r.status <> 'open' GROUP BY r.id HAVING COUNT(p.id) >= 3) sub2)::int AS requests_with_3plus
+          WHERE r.status <> 'open' GROUP BY r.id HAVING COUNT(p.id) >= 3) sub2)::int AS requests_with_3plus,
+        (SELECT COUNT(*) FROM buyer_profiles WHERE status='active' AND published)::int AS active_buyers,
+        (SELECT COUNT(*) FROM buyer_profiles WHERE status='active' AND NOT published)::int AS exploring_buyers,
+        (SELECT COUNT(*) FROM buyer_proposals)::int AS buyer_proposals,
+        (SELECT COUNT(*) FROM buyer_proposals WHERE connected)::int AS buyer_connections
     `),
   ]);
 
+  const { rows: buyers } = await pool.query(
+    `SELECT b.*, u.name AS buyer_name, u.email AS buyer_email,
+       (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
+     FROM buyer_profiles b JOIN users u ON u.id=b.user_id ORDER BY b.created_at DESC LIMIT 50`);
+
   res.render('admin/dashboard', {
     title: 'Admin', H,
-    pending: pending.rows, agents: agents.rows, requests: requests.rows, m: metrics.rows[0],
+    pending: pending.rows, agents: agents.rows, requests: requests.rows, m: metrics.rows[0], buyers,
   });
 });
 
@@ -124,6 +133,20 @@ router.get('/admin/analytics', admin, async (req, res) => {
   const viewsByWeek = {};
   for (const v of viewCounts.rows) viewsByWeek[new Date(v.week).toISOString().slice(0, 10)] = v.n;
 
+  // Buyer-side metrics: readiness mix, lender-demand counter, funnel counts.
+  const { rows: buyerStats } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*) FROM buyer_profiles)::int AS total_profiles,
+      (SELECT COUNT(*) FROM buyer_profiles WHERE readiness='ready_now')::int AS ready_now,
+      (SELECT COUNT(*) FROM buyer_profiles WHERE readiness='preparing')::int AS preparing,
+      (SELECT COUNT(*) FROM buyer_profiles WHERE readiness='exploring')::int AS exploring,
+      (SELECT COUNT(*) FROM buyer_profiles WHERE NOT in_utah)::int AS relocating,
+      (SELECT COUNT(*) FROM events WHERE event_type='lender_recommendation_requested')::int AS lender_requests,
+      (SELECT COUNT(*) FROM events WHERE event_type='buyer_upgraded_ready')::int AS upgrades,
+      (SELECT COUNT(*) FROM buyer_proposals)::int AS proposals,
+      (SELECT COUNT(*) FROM buyer_proposals WHERE connected)::int AS connections
+  `);
+
   res.render('admin/analytics', {
     title: 'Analytics', H,
     m: thirty.rows[0],
@@ -134,6 +157,7 @@ router.get('/admin/analytics', admin, async (req, res) => {
     coverage,
     viewsByWeek,
     radius: mailer.RADIUS_MILES,
+    b: buyerStats[0],
   });
 });
 

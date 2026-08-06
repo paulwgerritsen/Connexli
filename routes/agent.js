@@ -23,6 +23,12 @@ router.get('/agent', agent, async (req, res) => {
   }
 
   const uid = req.session.user.id;
+  // Published buyer profiles (anonymous snapshots), with my-proposal flag.
+  const { rows: buyerOpps } = await pool.query(
+    `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count,
+       (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id AND p.agent_id=$1)::int AS mine
+     FROM buyer_profiles b
+     WHERE b.published AND b.status='active' ORDER BY b.created_at DESC`, [uid]);
   const [opps, mine, stats] = await Promise.all([
     pool.query(
       `SELECT r.*,
@@ -47,10 +53,119 @@ router.get('/agent', agent, async (req, res) => {
      FROM proposals p JOIN requests r ON r.id=p.request_id JOIN users u ON u.id=r.seller_id
      WHERE p.agent_id=$1 AND p.connected ORDER BY p.connected_at DESC`, [req.session.user.id]);
 
+  // Buyer clients won: connected buyer proposals reveal the buyer's contact info.
+  const { rows: buyerWins } = await pool.query(
+    `SELECT bp.id, u.name AS buyer_name, u.email AS buyer_email, u.phone AS buyer_phone,
+            b.search_areas, b.price_range, b.timeline
+     FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id JOIN users u ON u.id=b.user_id
+     WHERE bp.agent_id=$1 AND bp.connected ORDER BY bp.connected_at DESC`, [uid]);
+
   res.render('agent/dashboard', {
     title: 'Opportunities', profile, H,
     opportunities: opps.rows, myProposals: mine.rows, stats: stats.rows[0], wins,
+    buyerOpps, buyerWins,
   });
+});
+
+// ---------- buyer opportunities ----------
+// The anonymous Buyer Snapshot + sealed proposal form.
+router.get('/agent/buyers/:id(\\d+)', agent, async (req, res) => {
+  const profile = await profileOf(req.session.user.id);
+  if (!profile || profile.status !== 'approved') return res.redirect('/agent');
+
+  const { rows } = await pool.query(
+    `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
+     FROM buyer_profiles b WHERE b.id=$1 AND b.published AND b.status='active'`, [req.params.id]);
+  const buyer = rows[0];
+  if (!buyer) return res.status(404).render('error', { title: 'Not found', message: 'That buyer profile is no longer available.' });
+
+  const { rows: mine } = await pool.query(
+    `SELECT * FROM buyer_proposals WHERE profile_id=$1 AND agent_id=$2`, [buyer.id, req.session.user.id]);
+
+  logEvent('buyer_opportunity_viewed', { userId: req.session.user.id, meta: { profile_id: buyer.id } });
+  res.render('agent/buyer-opportunity', { title: 'Buyer opportunity', buyer, proposal: mine[0] || null, H, error: null });
+});
+
+router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
+  const profile = await profileOf(req.session.user.id);
+  if (!profile || profile.status !== 'approved') return res.redirect('/agent');
+
+  const { rows } = await pool.query(
+    `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
+     FROM buyer_profiles b WHERE b.id=$1 AND b.published AND b.status='active'`, [req.params.id]);
+  const buyer = rows[0];
+  if (!buyer) return res.status(400).render('error', { title: 'Not available', message: 'That buyer profile is no longer accepting proposals.' });
+
+  const { rows: mineBefore } = await pool.query(
+    `SELECT 1 FROM buyer_proposals WHERE profile_id=$1 AND agent_id=$2`, [buyer.id, req.session.user.id]);
+
+  // Cap: 5 proposals per buyer profile (updates to an existing one always allowed).
+  if (!mineBefore.length && buyer.proposal_count >= 5) {
+    return res.status(400).render('error', { title: 'Proposal cap reached', message: 'This buyer already has 5 sealed proposals — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.' });
+  }
+
+  const comp_structure = ['pct', 'flat', 'hourly', 'retainer'].includes(req.body.comp_structure) ? req.body.comp_structure : 'pct';
+  const comp_amount = parseFloat(String(req.body.comp_amount).replace(/[^0-9.]/g, ''));
+  const min_fee = String(req.body.min_fee || '').trim() === '' ? null : parseFloat(String(req.body.min_fee).replace(/[^0-9.]/g, ''));
+  let specialties = req.body.specialties || [];
+  if (!Array.isArray(specialties)) specialties = [specialties];
+  specialties = specialties.filter(s => H.BP_SPECIALTIES.includes(s));
+  const fields = {
+    included_tours: H.oneOf(req.body.included_tours, H.BP_TOURS, H.BP_TOURS[3]),
+    video_tours: req.body.video_tours === 'yes',
+    response_time: H.oneOf(req.body.response_time, H.BP_RESPONSE, H.BP_RESPONSE[1]),
+    seller_contribution: H.clean(req.body.seller_contribution, 300),
+    rebate: H.clean(req.body.rebate, 200),
+    plan: H.clean(req.body.plan, 1000),
+  };
+
+  const bad = !comp_amount || comp_amount <= 0 ||
+    (comp_structure === 'pct' && comp_amount > 10) ||
+    (comp_structure === 'flat' && comp_amount > 100000) ||
+    (comp_structure === 'hourly' && comp_amount > 1000) ||
+    (comp_structure === 'retainer' && comp_amount > 25000) ||
+    (min_fee !== null && (Number.isNaN(min_fee) || min_fee < 0 || min_fee > 100000));
+  if (bad) {
+    return res.status(400).render('agent/buyer-opportunity', {
+      title: 'Buyer opportunity', buyer, H,
+      proposal: { comp_structure, comp_amount: req.body.comp_amount, min_fee: req.body.min_fee, specialties: specialties.join(', '), ...fields },
+      error: 'Please enter a valid amount for the fee structure you chose (percentages up to 10, and dollar amounts in a reasonable range).',
+    });
+  }
+
+  const { rows: saved } = await pool.query(
+    `INSERT INTO buyer_proposals (profile_id, agent_id, comp_structure, comp_amount, min_fee, included_tours,
+       video_tours, response_time, specialties, seller_contribution, rebate, plan)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     ON CONFLICT (profile_id, agent_id) DO UPDATE SET
+       comp_structure=EXCLUDED.comp_structure, comp_amount=EXCLUDED.comp_amount, min_fee=EXCLUDED.min_fee,
+       included_tours=EXCLUDED.included_tours, video_tours=EXCLUDED.video_tours, response_time=EXCLUDED.response_time,
+       specialties=EXCLUDED.specialties, seller_contribution=EXCLUDED.seller_contribution,
+       rebate=EXCLUDED.rebate, plan=EXCLUDED.plan, updated_at=now()
+     RETURNING id`,
+    [buyer.id, req.session.user.id, comp_structure, comp_amount, min_fee, fields.included_tours,
+     fields.video_tours, fields.response_time, specialties.join(', '), fields.seller_contribution, fields.rebate, fields.plan]
+  );
+  const wasUpdate = mineBefore.length > 0;
+  logEvent(wasUpdate ? 'buyer_proposal_updated' : 'buyer_proposal_submitted', {
+    userId: req.session.user.id, proposalId: saved[0].id,
+    meta: { profile_id: buyer.id, comp_structure, comp_amount, price_range: buyer.price_range },
+  });
+  if (!wasUpdate) {
+    const { rows: owner } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [buyer.user_id]);
+    if (owner[0]) mailer.buyerNewProposal(owner[0].email, owner[0].name, buyer.proposal_count + 1); // fire and forget
+  }
+  res.redirect('/agent/buyers/' + buyer.id + '?submitted=' + (wasUpdate ? 'updated' : 'new'));
+});
+
+router.post('/agent/buyers/:id(\\d+)/withdraw', agent, async (req, res) => {
+  const { rowCount } = await pool.query(
+    `DELETE FROM buyer_proposals bp USING buyer_profiles b
+     WHERE bp.profile_id=b.id AND b.id=$1 AND bp.agent_id=$2 AND bp.connected=false AND b.status='active'`,
+    [req.params.id, req.session.user.id]
+  );
+  if (rowCount) logEvent('buyer_proposal_withdrawn', { userId: req.session.user.id, meta: { profile_id: parseInt(req.params.id) } });
+  res.redirect('/agent');
 });
 
 // ---------- account settings ----------
