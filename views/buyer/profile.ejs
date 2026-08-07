@@ -30,11 +30,22 @@
     <a class="btn" href="/buyer/get-ready">Get ready to buy</a>
   </div>
 <% } else { %>
-  <div class="checkrow"><span class="c">🔒</span><span>Your profile is live and anonymous. Agents see your search, never your name — up to 5 sealed proposals, and competing agents never see each other's terms.</span></div>
+  <div class="checkrow"><span class="c">🔒</span><span>Your profile is live and anonymous. Agents see your search, never your name — up to 10 sealed proposals per round, and competing agents never see each other's terms. If all 10 arrive early, your set is complete sooner.</span></div>
+<% } %>
+
+<% if (profile.status === 'active' && profile.published && proposals.length >= profile.round * H.ROUND_CAP) { %>
+  <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
+    <h2 style="font-size:16px;">All <%= H.ROUND_CAP %> proposals are in — this round is complete 🎉</h2>
+    <p class="sub" style="margin-bottom:10px;">Your full set is ready to compare below. Want even more options? Open another round: up to 10 additional verified agents can propose, and only agents who <b>haven't</b> proposed yet will see your profile. Everything you already have stays saved.</p>
+    <form method="POST" action="/buyer/rebid" onsubmit="return confirm('Open a new proposal round? Up to 10 additional agents (who haven\'t proposed yet) will be invited, and your current proposals remain saved.');">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn ghost" type="submit">Invite another round of proposals</button>
+    </form>
+  </div>
 <% } %>
 
 <% if (profile.status === 'active') { %>
-  <h2 style="margin-top:24px;">Proposals (<%= proposals.length %> of 5)</h2>
+  <h2 style="margin-top:24px;">Proposals (<%= proposals.length %> of <%= profile.round * H.ROUND_CAP %><% if (profile.round > 1) { %> across <%= profile.round %> rounds<% } %>)</h2>
   <% if (proposals.length === 0) { %>
     <div class="card"><p class="sub">No proposals yet. Verified agents in your areas have been notified — most buyers hear back within a day or two. Proposals appear here the moment they arrive.</p></div>
   <% } else { %>

@@ -66,14 +66,16 @@
           <div class="meta"><%= o.sqft_range %> sq ft · <%= o.beds %> bd/<%= o.baths %> ba · <%= o.price_range %><% if (o.priorities) { %> · Priorities: <%= o.priorities %><% } %></div>
         </div>
         <div class="actions">
+          <span class="pill"><%= Math.max(0, o.proposal_count - (o.round - 1) * H.ROUND_CAP) %>/<%= H.ROUND_CAP %> proposals</span>
           <span class="pill" data-closes="<%= new Date(o.closes_at).toISOString() %>">⏱ closes soon</span>
+          <% if (o.round > 1) { %><span class="badge open">Round <%= o.round %></span><% } %>
           <% if (o.mine > 0) { %><span class="badge approved">Proposal in 🔒</span><% } %>
           <a class="btn sm <%= o.mine > 0 ? 'ghost' : '' %>" href="/agent/opportunities/<%= o.id %>"><%= o.mine > 0 ? 'Edit proposal' : 'Submit proposal' %></a>
         </div>
       </div>
     <% }) %>
   </div>
-  <div class="sealed">🔒 <span>Sealed process: you never see other professionals' proposals, and they never see yours. The homeowner's identity stays hidden until they choose to connect with you.</span></div>
+  <div class="sealed">🔒 <span>Sealed process: you never see other professionals' proposals, and they never see yours. The homeowner's identity stays hidden until they choose to connect with you. Each round accepts at most <%= H.ROUND_CAP %> proposals and closes the moment it fills — don't wait until the last hour.</span></div>
 <% } %>
 
 <h2 style="margin-top:26px;">Buyer opportunities <span class="badge open" style="vertical-align:2px;">New</span></h2>
@@ -89,7 +91,8 @@
           <div class="meta"><%= b.price_range %> · <%= b.timeline %> · <%= b.purchase_purpose %><% if (!b.in_utah) { %> · Relocating from <%= b.origin_state %><% } %><% if (b.need_to_sell !== 'No') { %> · Must sell first<% } %></div>
         </div>
         <div class="actions">
-          <span class="pill"><%= b.proposal_count %>/5 proposals</span>
+          <span class="pill"><%= Math.max(0, b.proposal_count - (b.round - 1) * H.ROUND_CAP) %>/<%= H.ROUND_CAP %> proposals</span>
+          <% if (b.round > 1) { %><span class="badge open">Round <%= b.round %></span><% } %>
           <% if (b.mine > 0) { %><span class="badge approved">Proposal in 🔒</span><% } %>
           <a class="btn sm <%= b.mine > 0 ? 'ghost' : '' %>" href="/agent/buyers/<%= b.id %>"><%= b.mine > 0 ? 'Edit proposal' : 'View snapshot' %></a>
         </div>
@@ -110,6 +113,7 @@
         <div class="actions">
           <% if (p.connected) { %><span class="badge connected">Won — see Clients won above</span>
           <% } else if (p.shortlisted) { %><span class="badge open">Shortlisted ⭐</span>
+          <% } else if (p.request_status === 'open' && p.round < p.request_round) { %><span class="badge pending">In the stack — new round in progress</span>
           <% } else if (p.request_status === 'open') { %><span class="badge pending">Sealed until window closes</span>
           <% } else { %><span class="badge closed">Window closed — awaiting decision</span><% } %>
         </div>

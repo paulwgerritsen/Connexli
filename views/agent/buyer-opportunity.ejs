@@ -2,7 +2,7 @@
 <a href="/agent" style="font-size:14px;">‹ Back to opportunities</a>
 <div class="narrow" style="max-width:720px; margin:0;">
   <h1 style="margin-top:8px;">Buyer Snapshot <span class="badge <%= buyer.readiness === 'ready_now' ? 'connected' : 'open' %>" style="vertical-align:4px;"><%= H.READINESS_LABELS[buyer.readiness] %></span></h1>
-  <p class="sub"><%= buyer.proposal_count %>/5 sealed proposals · active until <%= new Date(buyer.expires_at).toLocaleDateString('en-US') %> · anonymous until they choose</p>
+  <p class="sub"><%= Math.max(0, buyer.proposal_count - (buyer.round - 1) * H.ROUND_CAP) %>/<%= H.ROUND_CAP %> sealed proposals this round<% if (buyer.round > 1) { %> (round <%= buyer.round %>)<% } %> · active until <%= new Date(buyer.expires_at).toLocaleDateString('en-US') %> · anonymous until they choose</p>
   <% if (typeof error === 'string' && error) { %><div class="error"><%= error %></div><% } %>
 
   <div class="card">

@@ -19,7 +19,7 @@
   </div>
 <% } else { %>
   <h1>Your proposals are ready 🎉</h1>
-  <p class="sub"><b style="color:var(--blue);"><%= proposals.length %></b> verified professional<%= proposals.length === 1 ? '' : 's' %> responded to your <%= request.property_type.toLowerCase() %> in <%= request.city %>. Estimated fees assume a sale near the middle of your range (<b><%= H.money(H.midPrice(request.price_range)) %></b>).</p>
+  <p class="sub"><b style="color:var(--blue);"><%= proposals.length %></b> verified professional<%= proposals.length === 1 ? '' : 's' %> responded to your <%= request.property_type.toLowerCase() %> in <%= request.city %><% if (request.round > 1) { %> across <%= request.round %> rounds<% } %>. Estimated fees assume a sale near the middle of your range (<b><%= H.money(H.midPrice(request.price_range)) %></b>).</p>
 
   <% if (proposals.length === 0) { %>
     <div class="card" style="text-align:center; padding:34px 20px;">
@@ -70,6 +70,17 @@
       <% }) %>
     </div>
     <p class="note">Connecting releases your contact info to that one professional only. The listing agreement is signed with their brokerage, outside Connexli. No obligation.</p>
+  <% } %>
+
+  <% if (request.status === 'closed') { %>
+    <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
+      <h2 style="font-size:16px;">Want more options?</h2>
+      <p class="sub" style="margin-bottom:10px;">Open another round: your request goes live again for <%= request.window_hours >= 24 ? (request.window_hours / 24) + ' day' + (request.window_hours > 24 ? 's' : '') : request.window_hours + ' hours' %> and up to 10 more verified professionals can propose — only agents who <b>haven't</b> proposed yet will see it. Every proposal you already have stays right here.</p>
+      <form method="POST" action="/requests/<%= request.id %>/rebid" onsubmit="return confirm('Open a new proposal round? Up to 10 additional professionals (who haven\'t proposed yet) will be invited, and your current proposals remain saved.');">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn ghost" type="submit">Request another round of proposals</button>
+      </form>
+    </div>
   <% } %>
 <% } %>
 <%- include('../partials/foot') %>

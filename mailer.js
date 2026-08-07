@@ -95,27 +95,94 @@ function agentRejected(email, name) {
 // Notify approved professionals near the property. Radius is configurable via
 // NOTIFY_RADIUS_MILES (default 50). Agents without a service ZIP, and ZIPs we
 // can't resolve, are included rather than silently excluded.
-async function agentsNewRequest(request) {
+// excludeAgentIds: professionals who already proposed in an earlier round are
+// never told about a fresh round — those slots belong to new agents.
+async function agentsNewRequest(request, excludeAgentIds = []) {
   try {
     const { rows: agents } = await pool.query(
-      `SELECT u.email, u.name, ap.service_zip FROM users u
+      `SELECT u.id, u.email, u.name, ap.service_zip FROM users u
        JOIN agent_profiles ap ON ap.user_id = u.id WHERE ap.status = 'approved'`);
+    const excluded = new Set(excludeAgentIds.map(Number));
+    const newRound = (request.round || 1) > 1;
     let notified = 0;
     for (const a of agents) {
+      if (excluded.has(Number(a.id))) continue;
       const dist = zipDistance(request.zip, a.service_zip);
       if (dist !== null && dist > RADIUS_MILES) continue;
       notified++;
-      await send(a.email, 'New Connexli Opportunity Near You',
-        template('New opportunity near you', [
-          `A homeowner in <b>${request.city}, ${request.zip}</b> is inviting sealed proposals from professionals like you.`,
+      await send(a.email, newRound ? 'Fresh Round: Connexli Opportunity Near You' : 'New Connexli Opportunity Near You',
+        template(newRound ? 'A fresh round just opened near you' : 'New opportunity near you', [
+          newRound
+            ? `A homeowner in <b>${request.city}, ${request.zip}</b> opened a new round of sealed proposals — reserved for professionals who haven't proposed yet, like you.`
+            : `A homeowner in <b>${request.city}, ${request.zip}</b> is inviting sealed proposals from professionals like you.`,
           `Property: <b>${request.property_type}</b><br>Price range: <b>${request.price_range}</b><br>Proposal window closes: <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b>`,
-          'Submit your sealed proposal before the window closes. Competing professionals never see your pricing.',
+          'Submit your sealed proposal before the window closes — it ends early once 10 proposals arrive. Competing professionals never see your pricing.',
         ], 'View Opportunity', APP_URL + '/login'));
     }
-    console.log(`Opportunity emails: ${notified}/${agents.length} approved professionals within ${RADIUS_MILES} miles of ${request.zip}`);
+    console.log(`Opportunity emails: ${notified}/${agents.length} approved professionals within ${RADIUS_MILES} miles of ${request.zip}${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}`);
   } catch (e) {
     console.error('agentsNewRequest failed:', e.message);
   }
+}
+
+// ---------- buyer-side notifications ----------
+// Rough distance from an agent's service ZIP to any of the buyer's named
+// cities (buyers think in cities, not ZIPs). Fail-open: unknown city or
+// missing data means we notify rather than silently exclude.
+function cityDistance(agentZip, cityName) {
+  try {
+    const zips = zipcodes.lookupByName(String(cityName).trim(), 'UT');
+    if (!zips || !zips.length) return null;
+    return zipDistance(agentZip, zips[0].zip);
+  } catch (e) { return null; }
+}
+
+async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) {
+  try {
+    const { rows: agents } = await pool.query(
+      `SELECT u.id, u.email, u.name, ap.service_zip FROM users u
+       JOIN agent_profiles ap ON ap.user_id = u.id WHERE ap.status = 'approved'`);
+    const excluded = new Set(excludeAgentIds.map(Number));
+    const newRound = (profile.round || 1) > 1;
+    const cities = String(profile.search_areas).split(',').map(s => s.trim()).filter(Boolean);
+    let notified = 0;
+    for (const a of agents) {
+      if (excluded.has(Number(a.id))) continue;
+      const dists = cities.map(c => cityDistance(a.service_zip, c)).filter(d => d !== null);
+      if (dists.length && Math.min(...dists) > RADIUS_MILES) continue; // fail-open when no city resolves
+      notified++;
+      await send(a.email, newRound ? 'Fresh Round: Connexli Buyer Near You' : 'New Connexli Buyer Near You',
+        template(newRound ? 'A buyer opened a fresh round near you' : 'New buyer profile near you', [
+          newRound
+            ? `A <b>${badgeLabel}</b> buyer looking in <b>${profile.search_areas}</b> opened a new round of sealed proposals — reserved for professionals who haven't proposed yet, like you.`
+            : `A <b>${badgeLabel}</b> buyer is looking in <b>${profile.search_areas}</b>.`,
+          `Price range: <b>${profile.price_range}</b><br>Timeline: <b>${profile.timeline}</b>${profile.in_utah ? '' : '<br>Relocating from: <b>' + (profile.origin_state || 'out of state') + '</b>'}`,
+          'Review the anonymous Buyer Snapshot and submit a sealed proposal. Up to 10 professionals may propose per round; competing professionals never see your terms.',
+        ], 'View Buyer Snapshot', APP_URL + '/login'));
+    }
+    console.log(`Buyer-profile emails: ${notified}/${agents.length} approved professionals for areas "${profile.search_areas}"${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}`);
+  } catch (e) {
+    console.error('agentsNewBuyerProfile failed:', e.message);
+  }
+}
+
+function buyerNewProposal(email, name, count, roundFull = false) {
+  return send(email, roundFull ? 'Your Connexli proposal set is complete' : 'A buyer’s agent sent you a proposal on Connexli',
+    template(roundFull ? 'All 10 proposals are in 🎉' : 'You have a new proposal 🎉', [
+      `${name.split(' ')[0]}, a verified buyer's agent just submitted a sealed proposal for your home search.`,
+      roundFull
+        ? `That fills all <b>10</b> proposal spots for this round — your full set is ready to compare now, sooner than expected. If you'd like even more options after reviewing, you can open another round anytime.`
+        : `You now have <b>${count}</b> proposal${count === 1 ? '' : 's'} to compare. Your name and contact info remain hidden until you choose to connect.`,
+    ], 'Compare my proposals', APP_URL + '/buyer'));
+}
+
+function buyerAgentWon(email, name, profile) {
+  return send(email, "You've been chosen — a buyer connected with you",
+    template('You won the buyer conversation 🎉', [
+      `${name.split(' ')[0]}, a buyer searching in ${profile.search_areas} chose YOUR proposal and released their contact information to you.`,
+      'Their details are on your dashboard. Reach out within 24 hours while the decision is fresh.',
+      'The buyer representation agreement is signed with your brokerage, outside Connexli.',
+    ], 'See my new client', APP_URL + '/agent'));
 }
 
 // Password reset. The link is single-use and expires in 60 minutes.
@@ -128,12 +195,16 @@ function passwordReset(email, name, resetUrl) {
     ], 'Choose a new password', resetUrl));
 }
 
-function sellerProposalsReady(email, name, request) {
-  return send(email, 'Your Connexli proposals are ready',
-    template('Your proposals are ready 🎉', [
-      `${name.split(' ')[0]}, the proposal window for your ${request.property_type.toLowerCase()} in ${request.city} has closed.`,
+function sellerProposalsReady(email, name, request, filledEarly = false) {
+  return send(email, filledEarly ? 'All 10 proposals are in — ready early' : 'Your Connexli proposals are ready',
+    template(filledEarly ? 'All 10 proposals are in 🎉' : 'Your proposals are ready 🎉', [
+      filledEarly
+        ? `${name.split(' ')[0]}, your ${request.property_type.toLowerCase()} in ${request.city} filled all 10 proposal spots before the window even ended — so we closed it and your proposals are ready now, sooner than expected.`
+        : `${name.split(' ')[0]}, the proposal window for your ${request.property_type.toLowerCase()} in ${request.city} has closed.`,
       'Log in to compare every proposal side by side: fees, services, marketing plans, and cancellation terms.',
-      'Your address and contact info are still hidden until you choose to share them.',
+      filledEarly
+        ? 'If you want even more options after reviewing, you can open another round — shown only to professionals who haven\'t proposed yet. Your contact info stays hidden until you choose to share it.'
+        : 'Your address and contact info are still hidden until you choose to share them.',
     ], 'Compare my proposals', APP_URL + '/requests/' + request.id));
 }
 
@@ -148,5 +219,7 @@ function agentWon(email, name, request) {
 
 module.exports = {
   adminNewAgent, agentApproved, agentRejected, agentsNewRequest,
-  sellerProposalsReady, agentWon, passwordReset, zipInfo, zipDistance, RADIUS_MILES,
+  sellerProposalsReady, agentWon, passwordReset,
+  agentsNewBuyerProfile, buyerNewProposal, buyerAgentWon, cityDistance,
+  zipInfo, zipDistance, RADIUS_MILES,
 };

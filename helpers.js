@@ -19,12 +19,53 @@ const PRICE_RANGES = {
   '$1.5M+': 1750000,
 };
 
+// One number controls the marketplace cap everywhere: each round accepts at
+// most this many sealed proposals, then the window closes on the spot.
+const ROUND_CAP = 10;
+
 const WINDOWS = [
   { hours: 24,  label: '24 hours', tag: 'Rush',         desc: 'Fastest turnaround. Many agents respond within hours.' },
   { hours: 48,  label: '48 hours', tag: 'Fast track',   desc: "Great if you're ready to meet agents this week." },
   { hours: 72,  label: '72 hours', tag: 'Recommended',  desc: 'Our recommendation. Gives agents enough time to prepare thoughtful proposals.' },
   { hours: 168, label: '7 days',   tag: 'Extend',       desc: "Best for luxury homes, unique properties, rural areas, or if you're not in a hurry." },
 ];
+
+// ---------- buyer-side constants ----------
+const B_FINANCING = ['Cash', 'Conventional', 'FHA', 'VA', 'USDA', 'Not sure'];
+const B_LENDER = ['Yes — preapproved', 'Yes — prequalified', 'Yes — in conversations', 'No — not yet', "No — I'd like a recommendation"];
+const B_DOWN = ['Under 5%', '5–10%', '10–20%', '20%+', 'Cash purchase'];
+const B_SITUATION = ['Rent', 'Own', 'Live with family', 'Other'];
+const B_SELL_FIRST = ['No', 'Yes — not started', 'Yes — already listed', 'Yes — under contract'];
+const B_TIMELINE = ['ASAP', 'Within 30 days', '1–3 months', '3–6 months', '6–12 months', 'Just researching'];
+const B_PURPOSE = ['Primary residence', 'Second home', 'Investment'];
+const B_BBA = ['No', "Yes — it's expired or cancelled", 'Yes — currently active'];
+const B_PRIORITIES = ['Schools', 'Commute', 'Yard/lot size', 'Main-level living', 'Updated/move-in ready', 'Fixer-upper potential', 'New construction', 'Quiet neighborhood', 'Walkability', 'Views', 'Room to grow', 'Investment value'];
+const BP_STRUCTURES = { pct: 'Percentage at closing', flat: 'Flat fee', hourly: 'Hourly', retainer: 'Retainer credited at closing' };
+const BP_TOURS = ['Up to 5 tours included', 'Up to 10 tours included', 'Up to 20 tours included', 'Unlimited tours'];
+const BP_RESPONSE = ['Within 1 hour', 'Same day', 'Within 24 hours'];
+const BP_SPECIALTIES = ['First-time buyers', 'VA/FHA', 'New construction', 'Relocation', 'Investment', 'Luxury'];
+
+// Readiness badge, computed from Step-1 answers. Never rejects — sorts.
+function readiness(p) {
+  const preapproved = p.financing_type === 'Cash' || p.lender_status === 'Yes — preapproved';
+  const nearTerm = ['ASAP', 'Within 30 days', '1–3 months'].includes(p.timeline);
+  const researching = ['6–12 months', 'Just researching'].includes(p.timeline);
+  const noLender = ['No — not yet', "No — I'd like a recommendation"].includes(p.lender_status);
+  const mustSellUnstarted = p.need_to_sell === 'Yes — not started';
+  if (preapproved && nearTerm && !mustSellUnstarted) return 'ready_now';
+  if (!preapproved && ((noLender && researching) || p.timeline === 'Just researching')) return 'exploring';
+  return 'preparing';
+}
+const READINESS_LABELS = { ready_now: 'Ready Now', preparing: 'Preparing', exploring: 'Exploring' };
+
+// Label for a buyer proposal's fee structure.
+function buyerFeeLabel(p) {
+  const amt = parseFloat(p.comp_amount);
+  if (p.comp_structure === 'pct') return amt + '% at closing';
+  if (p.comp_structure === 'flat') return money(amt) + ' flat fee';
+  if (p.comp_structure === 'hourly') return money(amt) + '/hour';
+  return money(amt) + ' retainer, credited at closing';
+}
 
 function midPrice(range) { return PRICE_RANGES[range] || 875000; }
 
@@ -46,6 +87,9 @@ function oneOf(value, list, fallback) { return list.includes(value) ? value : fa
 
 module.exports = {
   PROPERTY_TYPES, BEDS, BATHS, SQFT, YEARS, CONDITIONS, PRIORITIES, SERVICES,
-  CANCELLATION, PRICE_RANGES, WINDOWS,
+  CANCELLATION, PRICE_RANGES, WINDOWS, ROUND_CAP,
+  B_FINANCING, B_LENDER, B_DOWN, B_SITUATION, B_SELL_FIRST, B_TIMELINE,
+  B_PURPOSE, B_BBA, B_PRIORITIES, BP_STRUCTURES, BP_TOURS, BP_RESPONSE, BP_SPECIALTIES,
+  readiness, READINESS_LABELS, buyerFeeLabel,
   midPrice, money, estFee, feeLabel, clean, oneOf,
 };

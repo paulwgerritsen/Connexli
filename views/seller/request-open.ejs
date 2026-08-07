@@ -1,8 +1,8 @@
 <%- include('../partials/head') %>
 <div class="narrow" style="max-width:720px;">
   <a href="/dashboard" style="font-size:14px;">‹ Back to my requests</a>
-  <h1 style="margin-top:8px;">Your request is live</h1>
-  <p class="sub">Verified professionals in Utah can now submit sealed proposals.</p>
+  <h1 style="margin-top:8px;">Your request is live<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
+  <p class="sub">Verified professionals in Utah can now submit sealed proposals.<% if (request.round > 1) { %> This round is shown only to professionals who haven't proposed yet — your earlier proposals are saved.<% } %></p>
   <div class="checkrow"><span class="c">✓</span><span>Your address and contact info are hidden until you choose to share them.</span></div>
 
   <div class="card">
@@ -16,7 +16,8 @@
     <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;">Proposal window closes in</div>
     <div class="count" id="clock" data-closes="<%= new Date(request.closes_at).toISOString() %>">…</div>
     <div class="bar"><i id="clockbar" style="width:0%"></i></div>
-    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= proposalCount %></b> sealed proposal<%= proposalCount === 1 ? '' : 's' %> received</p>
+    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= proposalCount %></b> of <b><%= roundCap %></b> sealed proposal<%= roundCap === 1 ? '' : 's' %> received</p>
+    <p class="note" style="margin-top:4px;">If all 10 spots for this round fill before the countdown ends, the window closes early and your proposals are ready sooner.</p>
     <div class="sealed">🔒 <span><b>Why sealed?</b> Professionals can't see each other's offers, so each one gives you their best proposal, not the minimum needed to beat a rival. You'll see everything the moment the window closes.</span></div>
   </div>
 
