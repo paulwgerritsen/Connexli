@@ -44,8 +44,15 @@ router.post('/requests/new', seller, async (req, res) => {
 
   if (!f.property_type || !f.zip.match(/^\d{5}$/) || !f.city || !f.price_range) {
     return res.status(400).render('seller/new-request', {
-      title: 'Tell us about your home', H, form: { ...f, priorities },
+      title: 'Tell us about your home', H, form: { ...f, priorities, comp_ack: req.body.comp_ack },
       error: 'Please choose a property type, enter a 5-digit ZIP code and city, and pick a price range.',
+    });
+  }
+  // Compensation-transparency acknowledgement (required; see selling.html education).
+  if (req.body.comp_ack !== 'yes') {
+    return res.status(400).render('seller/new-request', {
+      title: 'Tell us about your home', H, form: { ...f, priorities },
+      error: 'Please confirm the acknowledgement about listing-side compensation before launching your request.',
     });
   }
 

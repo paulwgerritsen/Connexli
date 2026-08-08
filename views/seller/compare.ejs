@@ -1,7 +1,7 @@
 <%- include('../partials/head') %>
 <a href="/requests/<%= request.id %>" style="font-size:14px;">‹ Back to proposals</a>
 <h1 style="margin-top:8px;"><%= usingShortlist ? 'Your shortlist, side by side' : 'All proposals, side by side' %></h1>
-<p class="sub">Estimated fees assume a <%= H.money(H.midPrice(request.price_range)) %> sale (the middle of your range). Scroll sideways on smaller screens.</p>
+<p class="sub">Estimated fees assume a <%= H.money(H.midPrice(request.price_range)) %> sale (the middle of your range). Fees shown are each professional's proposed <b>listing-side</b> compensation — buyer-agent compensation, if any, is separate. Scroll sideways on smaller screens.</p>
 
 <% const has = (p, kw) => (p.services || '').toLowerCase().includes(kw); %>
 <div class="tblwrap">
@@ -9,8 +9,8 @@
     <tr><th></th><% proposals.forEach(p => { %><th><%= p.agent_name %></th><% }) %></tr>
     <tr><td>Brokerage</td><% proposals.forEach(p => { %><td><%= p.brokerage %></td><% }) %></tr>
     <tr><td>12-mo transactions*</td><% proposals.forEach(p => { %><td><%= (p.transactions_seller_12mo === null && p.transactions_buyer_12mo === null) ? '—' : ((p.transactions_seller_12mo ?? 0) + ' seller · ' + (p.transactions_buyer_12mo ?? 0) + ' buyer') %></td><% }) %></tr>
-    <tr><td>Commission</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.feeLabel(p) %></b></td><% }) %></tr>
-    <tr><td>Est. fee</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.money(H.estFee(p, request.price_range)) %></b></td><% }) %></tr>
+    <tr><td>Listing-side compensation</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.feeLabel(p) %></b></td><% }) %></tr>
+    <tr><td>Est. listing-side fee</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.money(H.estFee(p, request.price_range)) %></b></td><% }) %></tr>
     <tr><td>Photos</td><% proposals.forEach(p => { %><td><%- has(p,'photo') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
     <tr><td>Drone</td><% proposals.forEach(p => { %><td><%- has(p,'drone') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
     <tr><td>Open house</td><% proposals.forEach(p => { %><td><%- has(p,'open house') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>

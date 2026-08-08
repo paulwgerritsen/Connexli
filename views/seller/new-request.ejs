@@ -64,8 +64,16 @@
           </label>
         <% }) %>
       </div>
+      <div class="card" style="border-left:4px solid var(--blue); margin-top:18px; padding:16px 18px;">
+        <h2 style="font-size:15.5px;">Before you request proposals</h2>
+        <p class="note" style="margin-top:6px;">Agents will compete on their <b>listing-side fee and services</b> — the compensation for representing <i>you</i>. Any compensation involving a <b>buyer's agent</b> is separate, and is something to discuss with the listing professional you ultimately select. <a href="https://connexli.com/selling.html" target="_blank" rel="noopener">Learn more ›</a></p>
+        <label style="display:flex; gap:10px; align-items:flex-start; margin-top:10px; cursor:pointer;">
+          <input type="checkbox" name="comp_ack" value="yes" required style="margin-top:4px; width:16px; height:16px; flex:none; accent-color:var(--blue);" <%= form.comp_ack === 'yes' ? 'checked' : '' %>>
+          <span style="font-size:13.5px; color:var(--muted); line-height:1.5; font-weight:400;">I understand that Connexli listing proposals show the listing professional's proposed compensation and do not necessarily represent every cost associated with a future sale.</span>
+        </label>
+      </div>
       <button class="btn full" type="submit" style="margin-top:18px;">Launch my request</button>
-      <p class="note">Free for homeowners. No obligation at any point.</p>
+      <p class="note">Free for homeowners. No obligation at any point. Connexli does not set or recommend commissions.</p>
     </div>
   </form>
 </div>

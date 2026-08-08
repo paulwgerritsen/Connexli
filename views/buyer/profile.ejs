@@ -46,6 +46,7 @@
 
 <% if (profile.status === 'active') { %>
   <h2 style="margin-top:24px;">Proposals (<%= proposals.length %> of <%= profile.round * H.ROUND_CAP %><% if (profile.round > 1) { %> across <%= profile.round %> rounds<% } %>)</h2>
+  <p class="note">ⓘ Each amount shown is that professional's <b>proposed buyer-agent compensation</b>. Who ultimately pays it can vary by transaction — a seller or listing side may contribute — and your own written agreement governs what you're responsible for. Review those terms before signing anything. Connexli does not set or recommend commissions.</p>
   <% if (proposals.length === 0) { %>
     <div class="card"><p class="sub">No proposals yet. Verified agents in your areas have been notified — most buyers hear back within a day or two. Proposals appear here the moment they arrive.</p></div>
   <% } else { %>
@@ -60,7 +61,7 @@
             <% if (p.transactions_seller_12mo !== null || p.transactions_buyer_12mo !== null) { %>
               <p class="note" style="margin-top:6px;"><b>Last 12 months:</b> <%= p.transactions_buyer_12mo ?? 0 %> buyer-side · <%= p.transactions_seller_12mo ?? 0 %> seller-side transactions <span style="color:var(--muted);">(reported by the professional)</span></p>
             <% } %>
-            <div class="complbl">Proposed compensation</div>
+            <div class="complbl">Proposed buyer-agent compensation ⓘ</div>
             <div><span class="fee"><%= H.buyerFeeLabel(p) %></span></div>
             <% if (p.min_fee) { %><p class="note">Minimum fee: <%= H.money(p.min_fee) %></p><% } %>
             <div class="pillrow">
@@ -74,7 +75,7 @@
             <% if (p.plan) { %><p class="note"><b>Their plan for you:</b> <%= p.plan %></p><% } %>
           </div>
           <div class="cardbtns">
-            <form method="POST" action="/buyer/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.');">
+            <form method="POST" action="/buyer/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.\n\nNote: selecting an agent may lead to a separate written representation agreement — review the compensation terms in that agreement before signing.');">
               <input type="hidden" name="_csrf" value="<%= csrf %>">
               <button class="btn" type="submit">Connect</button>
             </form>

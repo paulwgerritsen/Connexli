@@ -20,6 +20,7 @@
 <% } else { %>
   <h1>Your proposals are ready 🎉</h1>
   <p class="sub"><b style="color:var(--blue);"><%= proposals.length %></b> verified professional<%= proposals.length === 1 ? '' : 's' %> responded to your <%= request.property_type.toLowerCase() %> in <%= request.city %><% if (request.round > 1) { %> across <%= request.round %> rounds<% } %>. Estimated fees assume a sale near the middle of your range (<b><%= H.money(H.midPrice(request.price_range)) %></b>).</p>
+  <p class="note">ⓘ Each fee shown is that professional's proposed <b>listing-side</b> compensation — for representing you as the seller. Compensation involving a buyer's agent, if any, is separate: discuss your options with the professional you select. Connexli does not set or recommend commissions.</p>
 
   <% if (proposals.length === 0) { %>
     <div class="card" style="text-align:center; padding:34px 20px;">
@@ -50,7 +51,7 @@
             <% if (p.transactions_seller_12mo !== null || p.transactions_buyer_12mo !== null) { %>
               <p class="note" style="margin-top:6px;"><b>Last 12 months:</b> <%= p.transactions_seller_12mo ?? 0 %> seller-side · <%= p.transactions_buyer_12mo ?? 0 %> buyer-side transactions <span style="color:var(--muted);">(reported by the professional)</span></p>
             <% } %>
-            <div class="complbl">Proposed compensation</div>
+            <div class="complbl">Proposed listing-side compensation ⓘ</div>
             <div><span class="fee"><%= H.feeLabel(p) %></span> <span class="est">Est. fee: <%= H.money(H.estFee(p, request.price_range)) %></span></div>
             <% if (p.services) { %><div class="pillrow"><% p.services.split(', ').forEach(s => { %><span class="pill"><%= s %></span><% }) %></div><% } %>
             <% if (p.marketing_plan) { %><p class="note" style="margin-top:9px;"><b>Marketing plan:</b> <%= p.marketing_plan %></p><% } %>
@@ -61,7 +62,7 @@
               <input type="hidden" name="_csrf" value="<%= csrf %>">
               <button class="btn ghost <%= p.shortlisted ? 'on' : '' %>" type="submit"><%= p.shortlisted ? '✓ Shortlisted' : '☆ Shortlist' %></button>
             </form>
-            <form method="POST" action="/requests/<%= request.id %>/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.');">
+            <form method="POST" action="/requests/<%= request.id %>/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.\n\nNote: choosing an agent may lead to a separate written listing agreement — review the compensation terms, including any buyer-agent compensation you authorize, before signing.');">
               <input type="hidden" name="_csrf" value="<%= csrf %>">
               <button class="btn" type="submit">Connect</button>
             </form>

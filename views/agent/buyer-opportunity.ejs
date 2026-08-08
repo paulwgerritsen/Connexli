@@ -29,6 +29,7 @@
   <form method="POST" action="/agent/buyers/<%= buyer.id %>/propose">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <div class="card">
+      <p class="note" style="margin-top:2px;">The amount below is your <b>proposed buyer-agent compensation</b> — presented to the buyer with a reminder that the source of payment can vary by transaction and that their own agreement governs what they owe.</p>
       <label for="comp_structure">Fee structure</label>
       <select id="comp_structure" name="comp_structure">
         <% Object.entries(H.BP_STRUCTURES).forEach(([k, v]) => { %>

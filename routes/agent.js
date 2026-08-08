@@ -24,18 +24,27 @@ router.get('/agent', agent, async (req, res) => {
 
   const uid = req.session.user.id;
   // Published buyer profiles (anonymous snapshots), with my-proposal flag.
+  // Hidden here: profiles whose current round is full, and later-round
+  // profiles this agent already proposed on in an earlier round.
   const { rows: buyerOpps } = await pool.query(
     `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count,
        (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id AND p.agent_id=$1)::int AS mine
      FROM buyer_profiles b
-     WHERE b.published AND b.status='active' ORDER BY b.created_at DESC`, [uid]);
+     WHERE b.published AND b.status='active'
+       AND (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id) < b.round * ${H.ROUND_CAP}
+       AND NOT EXISTS (SELECT 1 FROM buyer_proposals p WHERE p.profile_id=b.id AND p.agent_id=$1 AND p.round < b.round)
+     ORDER BY b.created_at DESC`, [uid]);
   const [opps, mine, stats] = await Promise.all([
     pool.query(
       `SELECT r.*,
+         (SELECT COUNT(*) FROM proposals p WHERE p.request_id=r.id)::int AS proposal_count,
          (SELECT COUNT(*) FROM proposals p WHERE p.request_id=r.id AND p.agent_id=$1)::int AS mine
-       FROM requests r WHERE r.status='open' ORDER BY r.closes_at ASC`, [uid]),
+       FROM requests r WHERE r.status='open'
+         AND NOT EXISTS (SELECT 1 FROM proposals p WHERE p.request_id=r.id AND p.agent_id=$1 AND p.round < r.round)
+       ORDER BY r.closes_at ASC`, [uid]),
     pool.query(
-      `SELECT p.*, r.city, r.zip, r.property_type, r.price_range, r.status AS request_status, r.closes_at
+      `SELECT p.*, r.city, r.zip, r.property_type, r.price_range, r.status AS request_status, r.closes_at,
+         r.round AS request_round
        FROM proposals p JOIN requests r ON r.id=p.request_id
        WHERE p.agent_id=$1 ORDER BY p.created_at DESC`, [uid]),
     pool.query(
@@ -82,6 +91,11 @@ router.get('/agent/buyers/:id(\\d+)', agent, async (req, res) => {
   const { rows: mine } = await pool.query(
     `SELECT * FROM buyer_proposals WHERE profile_id=$1 AND agent_id=$2`, [buyer.id, req.session.user.id]);
 
+  // A later round is reserved for professionals who haven't proposed yet.
+  if (mine[0] && mine[0].round < buyer.round) {
+    return res.status(403).render('error', { title: 'New round in progress', message: 'This buyer opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
+  }
+
   logEvent('buyer_opportunity_viewed', { userId: req.session.user.id, meta: { profile_id: buyer.id } });
   res.render('agent/buyer-opportunity', { title: 'Buyer opportunity', buyer, proposal: mine[0] || null, H, error: null });
 });
@@ -97,11 +111,16 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
   if (!buyer) return res.status(400).render('error', { title: 'Not available', message: 'That buyer profile is no longer accepting proposals.' });
 
   const { rows: mineBefore } = await pool.query(
-    `SELECT 1 FROM buyer_proposals WHERE profile_id=$1 AND agent_id=$2`, [buyer.id, req.session.user.id]);
+    `SELECT round FROM buyer_proposals WHERE profile_id=$1 AND agent_id=$2`, [buyer.id, req.session.user.id]);
 
-  // Cap: 5 proposals per buyer profile (updates to an existing one always allowed).
-  if (!mineBefore.length && buyer.proposal_count >= 5) {
-    return res.status(400).render('error', { title: 'Proposal cap reached', message: 'This buyer already has 5 sealed proposals — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.' });
+  // Earlier-round proposals are locked in during a fresh round.
+  if (mineBefore[0] && mineBefore[0].round < buyer.round) {
+    return res.status(403).render('error', { title: 'New round in progress', message: 'This buyer opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
+  }
+
+  // Cap: 10 proposals per round (updates within the current round are allowed).
+  if (!mineBefore.length && buyer.proposal_count >= buyer.round * H.ROUND_CAP) {
+    return res.status(400).render('error', { title: 'Proposal cap reached', message: `This buyer already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.` });
   }
 
   const comp_structure = ['pct', 'flat', 'hourly', 'retainer'].includes(req.body.comp_structure) ? req.body.comp_structure : 'pct';
@@ -133,27 +152,52 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     });
   }
 
-  const { rows: saved } = await pool.query(
-    `INSERT INTO buyer_proposals (profile_id, agent_id, comp_structure, comp_amount, min_fee, included_tours,
-       video_tours, response_time, specialties, seller_contribution, rebate, plan)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-     ON CONFLICT (profile_id, agent_id) DO UPDATE SET
-       comp_structure=EXCLUDED.comp_structure, comp_amount=EXCLUDED.comp_amount, min_fee=EXCLUDED.min_fee,
-       included_tours=EXCLUDED.included_tours, video_tours=EXCLUDED.video_tours, response_time=EXCLUDED.response_time,
-       specialties=EXCLUDED.specialties, seller_contribution=EXCLUDED.seller_contribution,
-       rebate=EXCLUDED.rebate, plan=EXCLUDED.plan, updated_at=now()
-     RETURNING id`,
-    [buyer.id, req.session.user.id, comp_structure, comp_amount, min_fee, fields.included_tours,
-     fields.video_tours, fields.response_time, specialties.join(', '), fields.seller_contribution, fields.rebate, fields.plan]
-  );
+  // Same overshoot protection as the seller side: the profile row is locked
+  // while we count, insert, and (on the 10th proposal) complete the round.
   const wasUpdate = mineBefore.length > 0;
+  const client = await pool.connect();
+  let savedId = null, capReached = false, newCount = 0;
+  try {
+    await client.query('BEGIN');
+    const { rows: locked } = await client.query(
+      `SELECT * FROM buyer_profiles WHERE id=$1 AND published AND status='active' FOR UPDATE`, [buyer.id]);
+    if (!locked[0]) { await client.query('ROLLBACK'); client.release(); return res.status(400).render('error', { title: 'Not available', message: 'That buyer profile is no longer accepting proposals.' }); }
+    const live = locked[0];
+    const { rows: cnt } = await client.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [buyer.id]);
+    if (!wasUpdate && cnt[0].n >= live.round * H.ROUND_CAP) { capReached = true; }
+    else {
+      const { rows: saved } = await client.query(
+        `INSERT INTO buyer_proposals (profile_id, agent_id, comp_structure, comp_amount, min_fee, included_tours,
+           video_tours, response_time, specialties, seller_contribution, rebate, plan, round)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         ON CONFLICT (profile_id, agent_id) DO UPDATE SET
+           comp_structure=EXCLUDED.comp_structure, comp_amount=EXCLUDED.comp_amount, min_fee=EXCLUDED.min_fee,
+           included_tours=EXCLUDED.included_tours, video_tours=EXCLUDED.video_tours, response_time=EXCLUDED.response_time,
+           specialties=EXCLUDED.specialties, seller_contribution=EXCLUDED.seller_contribution,
+           rebate=EXCLUDED.rebate, plan=EXCLUDED.plan, updated_at=now()
+         RETURNING id`,
+        [buyer.id, req.session.user.id, comp_structure, comp_amount, min_fee, fields.included_tours,
+         fields.video_tours, fields.response_time, specialties.join(', '), fields.seller_contribution, fields.rebate, fields.plan, live.round]
+      );
+      savedId = saved[0].id;
+      newCount = wasUpdate ? cnt[0].n : cnt[0].n + 1;
+    }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); client.release(); throw e; }
+  client.release();
+
+  if (capReached) {
+    return res.status(400).render('error', { title: 'Proposal cap reached', message: `This buyer already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.` });
+  }
+  const roundFull = newCount >= buyer.round * H.ROUND_CAP;
   logEvent(wasUpdate ? 'buyer_proposal_updated' : 'buyer_proposal_submitted', {
-    userId: req.session.user.id, proposalId: saved[0].id,
-    meta: { profile_id: buyer.id, comp_structure, comp_amount, price_range: buyer.price_range },
+    userId: req.session.user.id, proposalId: savedId,
+    meta: { profile_id: buyer.id, comp_structure, comp_amount, price_range: buyer.price_range, round: buyer.round },
   });
   if (!wasUpdate) {
+    if (roundFull) logEvent('buyer_round_full', { userId: req.session.user.id, meta: { profile_id: buyer.id, round: buyer.round } });
     const { rows: owner } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [buyer.user_id]);
-    if (owner[0]) mailer.buyerNewProposal(owner[0].email, owner[0].name, buyer.proposal_count + 1); // fire and forget
+    if (owner[0]) mailer.buyerNewProposal(owner[0].email, owner[0].name, newCount, roundFull); // fire and forget
   }
   res.redirect('/agent/buyers/' + buyer.id + '?submitted=' + (wasUpdate ? 'updated' : 'new'));
 });
@@ -161,7 +205,7 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
 router.post('/agent/buyers/:id(\\d+)/withdraw', agent, async (req, res) => {
   const { rowCount } = await pool.query(
     `DELETE FROM buyer_proposals bp USING buyer_profiles b
-     WHERE bp.profile_id=b.id AND b.id=$1 AND bp.agent_id=$2 AND bp.connected=false AND b.status='active'`,
+     WHERE bp.profile_id=b.id AND b.id=$1 AND bp.agent_id=$2 AND bp.connected=false AND b.status='active' AND bp.round = b.round`,
     [req.params.id, req.session.user.id]
   );
   if (rowCount) logEvent('buyer_proposal_withdrawn', { userId: req.session.user.id, meta: { profile_id: parseInt(req.params.id) } });
@@ -236,12 +280,19 @@ router.get('/agent/opportunities/:id(\\d+)', agent, async (req, res) => {
   const profile = await profileOf(req.session.user.id);
   if (!profile || profile.status !== 'approved') return res.redirect('/agent');
 
-  const { rows } = await pool.query(`SELECT * FROM requests WHERE id=$1`, [req.params.id]);
+  const { rows } = await pool.query(
+    `SELECT r.*, (SELECT COUNT(*) FROM proposals p WHERE p.request_id=r.id)::int AS proposal_count
+     FROM requests r WHERE r.id=$1`, [req.params.id]);
   const request = rows[0];
   if (!request) return res.status(404).render('error', { title: 'Not found', message: 'That opportunity does not exist.' });
 
   const { rows: mine } = await pool.query(
     `SELECT * FROM proposals WHERE request_id=$1 AND agent_id=$2`, [request.id, req.session.user.id]);
+
+  // A later round is reserved for professionals who haven't proposed yet.
+  if (mine[0] && mine[0].round < request.round) {
+    return res.status(403).render('error', { title: 'New round in progress', message: 'This homeowner opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
+  }
 
   logEvent('opportunity_viewed', { userId: req.session.user.id, requestId: request.id });
   res.render('agent/opportunity', { title: 'Opportunity', request, proposal: mine[0] || null, H, error: null });
@@ -279,35 +330,76 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
   const cancellation_terms = H.oneOf(req.body.cancellation_terms, H.CANCELLATION, H.CANCELLATION[0]);
 
   const mineBefore = await pool.query(
-    `SELECT 1 FROM proposals WHERE request_id=$1 AND agent_id=$2`, [request.id, req.session.user.id]);
+    `SELECT round FROM proposals WHERE request_id=$1 AND agent_id=$2`, [request.id, req.session.user.id]);
+
+  // Earlier-round proposals are locked in: this professional cannot edit or
+  // resubmit during a round reserved for agents who haven't proposed yet.
+  if (mineBefore.rows[0] && mineBefore.rows[0].round < request.round) {
+    return res.status(403).render('error', { title: 'New round in progress', message: 'This homeowner opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
+  }
 
   const bad = !fee_amount || fee_amount <= 0 ||
     (fee_type === 'pct' && fee_amount > 10) ||
     (fee_type === 'flat' && fee_amount > 200000);
-  if (bad) {
+  const noAck = req.body.listing_ack !== 'yes';
+  if (bad || noAck) {
     return res.status(400).render('agent/opportunity', {
       title: 'Opportunity', request, H,
       proposal: { fee_type, fee_amount: req.body.fee_amount, services: services.join(', '), marketing_plan, cancellation_terms },
-      error: fee_type === 'pct'
-        ? 'Please enter a percentage fee between 0.1 and 10.'
-        : 'Please enter a flat fee amount in dollars (up to $200,000).',
+      error: bad
+        ? (fee_type === 'pct'
+          ? 'Please enter a percentage fee between 0.1 and 10.'
+          : 'Please enter a flat fee amount in dollars (up to $200,000).')
+        : 'Please confirm the listing-side compensation acknowledgement before submitting.',
     });
   }
 
-  const { rows: saved } = await pool.query(
-    `INSERT INTO proposals (request_id, agent_id, fee_type, fee_amount, services, marketing_plan, cancellation_terms)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
-     ON CONFLICT (request_id, agent_id) DO UPDATE SET
-       fee_type=EXCLUDED.fee_type, fee_amount=EXCLUDED.fee_amount, services=EXCLUDED.services,
-       marketing_plan=EXCLUDED.marketing_plan, cancellation_terms=EXCLUDED.cancellation_terms, updated_at=now()
-     RETURNING id`,
-    [request.id, req.session.user.id, fee_type, fee_amount, services.join(', '), marketing_plan, cancellation_terms]
-  );
+  // The cap check, the insert, and the possible early close all happen inside
+  // ONE database transaction with the request row locked. Plain English: even
+  // if two agents click Submit at the exact same instant, the database makes
+  // them take turns, so the 10-proposal cap can never be overshot.
   const wasUpdate = mineBefore.rows.length > 0;
+  const client = await pool.connect();
+  let capClosed = false, savedId = null, capReached = false;
+  try {
+    await client.query('BEGIN');
+    const { rows: locked } = await client.query(`SELECT * FROM requests WHERE id=$1 AND status='open' FOR UPDATE`, [request.id]);
+    if (!locked[0]) { await client.query('ROLLBACK'); return res.status(400).render('error', { title: 'Window closed', message: 'This proposal window has already closed.' }); }
+    const live = locked[0];
+    const { rows: cnt } = await client.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
+    if (!wasUpdate && cnt[0].n >= live.round * H.ROUND_CAP) { capReached = true; }
+    else {
+      const { rows: saved } = await client.query(
+        `INSERT INTO proposals (request_id, agent_id, fee_type, fee_amount, services, marketing_plan, cancellation_terms, round)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (request_id, agent_id) DO UPDATE SET
+           fee_type=EXCLUDED.fee_type, fee_amount=EXCLUDED.fee_amount, services=EXCLUDED.services,
+           marketing_plan=EXCLUDED.marketing_plan, cancellation_terms=EXCLUDED.cancellation_terms, updated_at=now()
+         RETURNING id`,
+        [request.id, req.session.user.id, fee_type, fee_amount, services.join(', '), marketing_plan, cancellation_terms, live.round]
+      );
+      savedId = saved[0].id;
+      if (!wasUpdate && cnt[0].n + 1 >= live.round * H.ROUND_CAP) {
+        await client.query(`UPDATE requests SET status='closed', closes_at=now() WHERE id=$1`, [request.id]);
+        capClosed = true;
+      }
+    }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); client.release(); throw e; }
+  client.release();
+
+  if (capReached) {
+    return res.status(400).render('error', { title: 'Proposal cap reached', message: `This homeowner already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.` });
+  }
   logEvent(wasUpdate ? 'proposal_updated' : 'proposal_submitted', {
-    userId: req.session.user.id, requestId: request.id, proposalId: saved[0].id,
-    meta: { fee_type, fee_amount, price_range: request.price_range },
+    userId: req.session.user.id, requestId: request.id, proposalId: savedId,
+    meta: { fee_type, fee_amount, price_range: request.price_range, round: request.round },
   });
+  if (capClosed) {
+    logEvent('request_closed_cap', { userId: req.session.user.id, requestId: request.id, meta: { round: request.round } });
+    const { rows: owner } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [request.seller_id]);
+    if (owner[0]) mailer.sellerProposalsReady(owner[0].email, owner[0].name, request, true); // fire and forget
+  }
   res.redirect('/agent/opportunities/' + request.id + '/submitted' + (wasUpdate ? '?updated=1' : ''));
 });
 
@@ -315,7 +407,7 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
 router.post('/agent/opportunities/:id(\\d+)/withdraw', agent, async (req, res) => {
   const { rowCount } = await pool.query(
     `DELETE FROM proposals p USING requests r
-     WHERE p.request_id=r.id AND r.id=$1 AND p.agent_id=$2 AND r.status='open'`,
+     WHERE p.request_id=r.id AND r.id=$1 AND p.agent_id=$2 AND r.status='open' AND p.round = r.round`,
     [req.params.id, req.session.user.id]
   );
   if (rowCount) logEvent('proposal_withdrawn', { userId: req.session.user.id, requestId: parseInt(req.params.id) });

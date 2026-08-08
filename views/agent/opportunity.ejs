@@ -23,6 +23,7 @@
       <h2><%= proposal ? 'Edit your sealed proposal' : 'Your sealed proposal' %></h2>
       <form method="POST" action="/agent/opportunities/<%= request.id %>/propose">
         <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <p class="note" style="margin-top:2px;">The amount below is your <b>proposed listing-side compensation</b> — what you propose to charge for representing the seller. Connexli presents it to the homeowner as separate from any compensation that may involve a buyer's agent.</p>
         <label>Compensation type</label>
         <div class="optgrid cols">
           <label class="opt"><input type="radio" name="fee_type" value="pct" <%= (!proposal || proposal.fee_type === 'pct') ? 'checked' : '' %> onchange="feeLbl()"><span class="tile"><b>% of sale price</b></span></label>
@@ -47,6 +48,10 @@
           <% H.CANCELLATION.forEach(c => { %><option <%= (proposal && proposal.cancellation_terms === c) ? 'selected' : '' %>><%= c %></option><% }) %>
         </select>
 
+        <label style="display:flex; gap:10px; align-items:flex-start; margin-top:16px; cursor:pointer;">
+          <input type="checkbox" name="listing_ack" value="yes" required style="margin-top:4px; width:16px; height:16px; flex:none; accent-color:var(--blue);">
+          <span style="font-size:13px; color:var(--muted); line-height:1.5; font-weight:400;">I understand that the compensation entered above represents my proposed listing-side compensation. Connexli will present it to the homeowner as separate from any compensation that may involve a buyer's agent.</span>
+        </label>
         <button class="btn full" type="submit" style="margin-top:18px;"><%= proposal ? 'Update sealed proposal 🔒' : 'Submit sealed proposal 🔒' %></button>
         <p class="note">Sealed until the window closes. No other professional can see your pricing. By submitting you confirm your brokerage authorizes these terms; the final fee is set in the listing agreement.</p>
       </form>
@@ -63,7 +68,7 @@
 var MID = <%= H.midPrice(request.price_range) %>;
 function feeLbl(){
   var pct = document.querySelector('input[name="fee_type"][value="pct"]').checked;
-  document.getElementById('feeAmtLbl').textContent = pct ? 'Listing fee (%)' : 'Flat fee ($)';
+  document.getElementById('feeAmtLbl').textContent = pct ? 'Your proposed listing-side compensation (%)' : 'Your proposed listing-side compensation (flat $)';
   prev();
 }
 function prev(){

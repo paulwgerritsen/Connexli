@@ -6,7 +6,7 @@ const BATHS = ['1', '2', '3', '4', '5+'];
 const SQFT = ['Under 1,500', '1,500–2,000', '2,000–2,500', '2,500–3,000', '3,000–4,000', '4,000+'];
 const YEARS = ['2020s', '2010–2019', '2000–2009', '1980–1999', 'Before 1980'];
 const CONDITIONS = ['Like new', 'Updated', 'Average', 'Needs work'];
-const PRIORITIES = ['Lowest commission', 'Most experienced', 'Fastest sale', 'Best marketing', 'Highest sale price'];
+const PRIORITIES = ['Lowest listing fee', 'Most experienced', 'Fastest sale', 'Best marketing', 'Highest sale price'];
 const SERVICES = ['Professional photos', 'Drone video', 'Open house(s)', 'Social campaign', '3D tour', 'Staging consult', 'Print marketing'];
 const CANCELLATION = ['Cancel anytime, no fee', '30-day written notice', 'Locked for listing term'];
 
