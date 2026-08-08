@@ -96,6 +96,7 @@ router.post('/buyer/new', consumer, async (req, res) => {
   if (published) {
     logEvent('buyer_profile_published', { userId: req.session.user.id, meta: { readiness: badge } });
     mailer.agentsNewBuyerProfile(profile, H.READINESS_LABELS[badge]); // fire and forget
+    mailer.buyerProfileLive(req.session.user.email, req.session.user.name, profile); // instant confirmation
   }
 
   // Sell-then-buy cross-sell: owners who must sell get the one-tap bridge.
@@ -145,8 +146,31 @@ router.post('/buyer/upgrade', consumer, async (req, res) => {
   logEvent('buyer_upgraded_ready', { userId: req.session.user.id, meta: { readiness: badge } });
   if (published && !profile.published) {
     mailer.agentsNewBuyerProfile({ ...profile, lender_status: 'Yes — preapproved' }, H.READINESS_LABELS[badge]);
+    mailer.buyerProfileLive(req.session.user.email, req.session.user.name, profile); // instant confirmation
     logEvent('buyer_profile_published', { userId: req.session.user.id, meta: { readiness: badge, via: 'upgrade' } });
   }
+  res.redirect('/buyer');
+});
+
+// ---------- request another round of proposals ----------
+// Available once the current round is full (10 sealed proposals). Opens 10
+// more slots reserved for agents who haven't proposed yet, extends the
+// profile 30 days, and re-notifies nearby agents (excluding prior bidders).
+router.post('/buyer/rebid', consumer, async (req, res) => {
+  const profile = await activeProfile(req.session.user.id);
+  if (!profile || profile.status !== 'active' || !profile.published) return res.redirect('/buyer');
+  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
+  if (cnt[0].n < profile.round * H.ROUND_CAP) return res.redirect('/buyer'); // round not full yet
+
+  const { rows } = await pool.query(
+    `UPDATE buyer_profiles SET round = round + 1, expires_at = now() + interval '30 days'
+     WHERE id=$1 AND status='active' RETURNING *`, [profile.id]);
+  if (!rows[0]) return res.redirect('/buyer');
+
+  const { rows: prior } = await pool.query(`SELECT agent_id FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
+  mailer.agentsNewBuyerProfile(rows[0], H.READINESS_LABELS[rows[0].readiness], prior.map(p => p.agent_id)); // fire and forget
+  logEvent('buyer_new_round', { userId: req.session.user.id,
+    meta: { profile_id: profile.id, round: rows[0].round, prior_proposals: prior.length } });
   res.redirect('/buyer');
 });
 

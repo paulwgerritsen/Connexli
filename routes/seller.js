@@ -59,6 +59,7 @@ router.post('/requests/new', seller, async (req, res) => {
   );
   const { rows: fullRows } = await pool.query(`SELECT * FROM requests WHERE id=$1`, [rows[0].id]);
   mailer.agentsNewRequest(fullRows[0]); // fire and forget: notify nearby approved professionals
+  mailer.sellerRequestReceived(req.session.user.email, req.session.user.name, fullRows[0]); // instant confirmation
   logEvent('request_posted', { userId: req.session.user.id, requestId: rows[0].id,
     meta: { zip: f.zip, city: f.city, price_range: f.price_range, window_hours: f.window_hours } });
   res.redirect('/requests/' + rows[0].id);
@@ -78,7 +79,10 @@ router.get('/requests/:id(\\d+)', seller, async (req, res) => {
 
   if (request.status === 'open') {
     const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
-    return res.render('seller/request-open', { title: 'Your request is live', request, proposalCount: rows[0].n, H });
+    return res.render('seller/request-open', {
+      title: 'Your request is live', request, proposalCount: rows[0].n, H,
+      roundCap: request.round * H.ROUND_CAP, // window auto-closes at this count
+    });
   }
 
   const { rows: proposals } = await pool.query(
@@ -118,11 +122,39 @@ router.get('/requests/:id(\\d+)/compare', seller, async (req, res) => {
   });
 });
 
+// Request another round of proposals. Reopens the window for the same length
+// the seller originally chose, invites up to 10 MORE professionals, and hides
+// the request from everyone who already proposed in an earlier round (their
+// sealed proposals stay in the stack).
+router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
+  const request = await loadRequest(req, res);
+  if (!request) return;
+  if (request.status !== 'closed') return res.redirect('/requests/' + request.id);
+
+  const { rows } = await pool.query(
+    `UPDATE requests SET round = round + 1, status='open', closes_at = now() + make_interval(hours => window_hours)
+     WHERE id=$1 AND status='closed' RETURNING *`, [request.id]);
+  if (!rows[0]) return res.redirect('/requests/' + request.id);
+
+  // Professionals who already proposed are excluded from the new-round emails.
+  const { rows: prior } = await pool.query(`SELECT agent_id FROM proposals WHERE request_id=$1`, [request.id]);
+  mailer.agentsNewRequest(rows[0], prior.map(p => p.agent_id)); // fire and forget
+  logEvent('request_new_round', { userId: req.session.user.id, requestId: request.id,
+    meta: { round: rows[0].round, prior_proposals: prior.length } });
+  res.redirect('/requests/' + request.id);
+});
+
 // Close the window early
 router.post('/requests/:id(\\d+)/close', seller, async (req, res) => {
-  const { rowCount } = await pool.query(`UPDATE requests SET status='closed', closes_at=now() WHERE id=$1 AND seller_id=$2 AND status='open'`,
+  const { rows } = await pool.query(
+    `UPDATE requests SET status='closed', closes_at=now() WHERE id=$1 AND seller_id=$2 AND status='open' RETURNING *`,
     [req.params.id, req.session.user.id]);
-  if (rowCount) logEvent('request_closed_early', { userId: req.session.user.id, requestId: parseInt(req.params.id) });
+  if (rows[0]) {
+    logEvent('request_closed_early', { userId: req.session.user.id, requestId: parseInt(req.params.id) });
+    // Email the written record too, so "your proposals are ready" always
+    // lands in the inbox no matter how the window ended.
+    mailer.sellerProposalsReady(req.session.user.email, req.session.user.name, rows[0]); // fire and forget
+  }
   res.redirect('/requests/' + req.params.id);
 });
 

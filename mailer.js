@@ -177,9 +177,9 @@ function buyerNewProposal(email, name, count, roundFull = false) {
 }
 
 function buyerAgentWon(email, name, profile) {
-  return send(email, "You've been chosen — a buyer connected with you",
-    template('You won the buyer conversation 🎉', [
-      `${name.split(' ')[0]}, a buyer searching in ${profile.search_areas} chose YOUR proposal and released their contact information to you.`,
+  return send(email, 'Congratulations — a buyer chose your proposal',
+    template('A buyer chose your proposal 🎉', [
+      `${name.split(' ')[0]}, a buyer searching in ${profile.search_areas} compared their sealed proposals and chose yours. Their contact information has been released to you.`,
       'Their details are on your dashboard. Reach out within 24 hours while the decision is fresh.',
       'The buyer representation agreement is signed with your brokerage, outside Connexli.',
     ], 'See my new client', APP_URL + '/agent'));
@@ -193,6 +193,27 @@ function passwordReset(email, name, resetUrl) {
       'Click the button below to choose a new password. This link works once and expires in 60 minutes.',
       "If you didn't request this, you can safely ignore this email — your password will not change.",
     ], 'Choose a new password', resetUrl));
+}
+
+// Instant confirmation the moment a seller's request goes live. Requested by
+// Paul (Aug 7): reassure the requester right away, then the "ready" email
+// closes the loop later.
+function sellerRequestReceived(email, name, request) {
+  return send(email, 'Your Connexli request is live',
+    template('Your request is live 🏡', [
+      `${name.split(' ')[0]}, thanks for inviting proposals — verified professionals near ${request.city} are being notified right now.`,
+      `Your proposal window closes <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b> — or the moment all 10 proposal spots fill, whichever comes first.`,
+      "You don't need to do anything. We'll email you the instant your sealed proposals are ready to compare. Your address and contact info stay hidden until you choose to share them.",
+    ], 'Watch my request', APP_URL + '/requests/' + request.id));
+}
+
+// Same confirmation for buyers when their profile publishes to agents.
+function buyerProfileLive(email, name, profile) {
+  return send(email, 'Your buyer profile is live',
+    template('Your profile is live 🔑', [
+      `${name.split(' ')[0]}, thanks for creating your buyer profile — verified buyer's agents near ${profile.search_areas} are being notified right now.`,
+      "You don't need to do anything. We'll email you as each sealed proposal arrives (up to 10 this round), and your name and contact info stay hidden until you choose to connect.",
+    ], 'See my profile', APP_URL + '/buyer'));
 }
 
 function sellerProposalsReady(email, name, request, filledEarly = false) {
@@ -209,9 +230,9 @@ function sellerProposalsReady(email, name, request, filledEarly = false) {
 }
 
 function agentWon(email, name, request) {
-  return send(email, "You've been chosen — a homeowner connected with you",
-    template("You won the listing conversation 🎉", [
-      `${name.split(' ')[0]}, the homeowner in ${request.city} chose YOUR proposal and released their contact information to you.`,
+  return send(email, 'Congratulations — a homeowner chose your proposal',
+    template('A homeowner chose your proposal 🎉', [
+      `${name.split(' ')[0]}, the homeowner in ${request.city} compared their sealed proposals and chose yours. Their contact information has been released to you.`,
       'Their details are on your dashboard. Reach out within 24 hours while the decision is fresh.',
       'The listing agreement is signed with your brokerage, outside Connexli.',
     ], 'See my new client', APP_URL + '/agent'));
@@ -219,6 +240,7 @@ function agentWon(email, name, request) {
 
 module.exports = {
   adminNewAgent, agentApproved, agentRejected, agentsNewRequest,
+  sellerRequestReceived, buyerProfileLive,
   sellerProposalsReady, agentWon, passwordReset,
   agentsNewBuyerProfile, buyerNewProposal, buyerAgentWon, cityDistance,
   zipInfo, zipDistance, RADIUS_MILES,
