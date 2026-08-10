@@ -7,7 +7,7 @@ const PgSession = require('connect-pg-simple')(session);
 const helmet = require('helmet');
 const path = require('path');
 
-const { pool, init, closeExpired, logEvent } = require('./db');
+const { pool, init, closeExpired, expireBuyerProfiles, logEvent } = require('./db');
 const mailer = require('./mailer');
 const { csrf } = require('./middleware');
 
@@ -54,15 +54,25 @@ async function closeAndNotify() {
       if (rows[0]) mailer.sellerProposalsReady(rows[0].email, rows[0].name, r);
       logEvent('request_closed', { userId: r.seller_id, requestId: r.id });
     }
+    await expireBuyerProfiles();
   } catch (e) { console.error('closeAndNotify:', e.message); }
 }
 setInterval(closeAndNotify, 5 * 60 * 1000);
 app.use(async (req, res, next) => { await closeAndNotify(); next(); });
 
-app.use('/', require('./routes/auth'));
-app.use('/', require('./routes/seller'));
-app.use('/', require('./routes/agent'));
-app.use('/', require('./routes/admin'));
+// Every feature area the app expects to serve. If a route file is missing the
+// server refuses to start with a clear message — a half-deployed update can
+// never boot silently with features missing.
+const APP_VERSION = '2026-08-10-buyer-rounds-compensation-review';
+const ROUTE_MODULES = ['auth', 'seller', 'buyer', 'agent', 'admin'];
+for (const m of ROUTE_MODULES) {
+  app.use('/', require('./routes/' + m));
+}
+console.log(`Connexli ${APP_VERSION} — mounted routes: ${ROUTE_MODULES.join(', ')}`);
+
+// One-glance deploy check: visit /healthz after every deploy. If "buyer" (or
+// any module) is missing from this list, the deploy is incomplete.
+app.get('/healthz', (req, res) => res.json({ ok: true, version: APP_VERSION, routes: ROUTE_MODULES }));
 
 app.get('/', (req, res) => {
   const u = req.session.user;
