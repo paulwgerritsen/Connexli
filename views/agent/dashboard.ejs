@@ -112,10 +112,34 @@
         </div>
         <div class="actions">
           <% if (p.connected) { %><span class="badge connected">Won — see Clients won above</span>
+          <% } else if (p.request_status === 'connected') { %><span class="badge closed">Not selected — client chose another professional</span>
           <% } else if (p.shortlisted) { %><span class="badge open">Shortlisted ⭐</span>
           <% } else if (p.request_status === 'open' && p.round < p.request_round) { %><span class="badge pending">In the stack — new round in progress</span>
           <% } else if (p.request_status === 'open') { %><span class="badge pending">Sealed until window closes</span>
           <% } else { %><span class="badge closed">Window closed — awaiting decision</span><% } %>
+          <a class="btn sm ghost" href="/agent/proposals/<%= p.id %>">Review</a>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+  <p class="note">Review any proposal to see the full original request next to what you submitted — client identities are never shared.</p>
+<% } %>
+
+<% if (myBuyerProposals.length > 0) { %>
+  <h2 style="margin-top:26px;">My buyer proposals</h2>
+  <div class="card">
+    <% myBuyerProposals.forEach(p => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);">Buyer · <%= p.search_areas %></b>
+          <div class="meta"><%= H.buyerFeeLabel(p) %> · <%= p.b_price_range %> · submitted <%= new Date(p.created_at).toLocaleDateString('en-US') %></div>
+        </div>
+        <div class="actions">
+          <% if (p.connected) { %><span class="badge connected">Won — see Buyer clients won above</span>
+          <% } else if (p.someone_won > 0) { %><span class="badge closed">Not selected — buyer chose another professional</span>
+          <% } else if (p.profile_status === 'active') { %><span class="badge pending">In the running</span>
+          <% } else { %><span class="badge closed">Profile <%= p.profile_status %></span><% } %>
+          <a class="btn sm ghost" href="/agent/buyer-proposals/<%= p.id %>">Review</a>
         </div>
       </div>
     <% }) %>

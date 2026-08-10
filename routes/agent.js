@@ -69,11 +69,49 @@ router.get('/agent', agent, async (req, res) => {
      FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id JOIN users u ON u.id=b.user_id
      WHERE bp.agent_id=$1 AND bp.connected ORDER BY bp.connected_at DESC`, [uid]);
 
+  // Every buyer proposal this agent has made, with outcome status (anonymous —
+  // no buyer identity joined). Lets agents review and learn from past bids.
+  const { rows: myBuyerProposals } = await pool.query(
+    `SELECT bp.*, b.search_areas, b.price_range AS b_price_range, b.timeline, b.status AS profile_status,
+       (SELECT COUNT(*) FROM buyer_proposals x WHERE x.profile_id=bp.profile_id AND x.connected)::int AS someone_won
+     FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id
+     WHERE bp.agent_id=$1 ORDER BY bp.created_at DESC`, [uid]);
+
   res.render('agent/dashboard', {
     title: 'Opportunities', profile, H,
     opportunities: opps.rows, myProposals: mine.rows, stats: stats.rows[0], wins,
-    buyerOpps, buyerWins,
+    buyerOpps, buyerWins, myBuyerProposals,
   });
+});
+
+// ---------- read-only proposal review pages ----------
+// What the agent proposed + what the client had asked for, long after the
+// window closes. Anonymous: no client name/contact is ever joined here.
+router.get('/agent/proposals/:id(\\d+)', agent, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT p.*, r.property_type, r.zip, r.city, r.neighborhood, r.beds, r.baths, r.sqft_range,
+       r.year_built, r.hoa, r.condition, r.price_range, r.priorities, r.window_hours, r.closes_at,
+       r.status AS request_status, r.round AS request_round,
+       (SELECT COUNT(*) FROM proposals x WHERE x.request_id=p.request_id)::int AS total_proposals
+     FROM proposals p JOIN requests r ON r.id=p.request_id
+     WHERE p.id=$1 AND p.agent_id=$2`, [req.params.id, req.session.user.id]);
+  if (!rows[0]) return res.status(404).render('error', { title: 'Not found', message: 'That proposal does not exist.' });
+  logEvent('proposal_reviewed', { userId: req.session.user.id, proposalId: rows[0].id, requestId: rows[0].request_id });
+  res.render('agent/proposal-review', { title: 'My proposal', p: rows[0], H });
+});
+
+router.get('/agent/buyer-proposals/:id(\\d+)', agent, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT bp.*, b.readiness, b.financing_type, b.lender_status, b.down_payment, b.search_areas,
+       b.price_range AS b_price_range, b.timeline, b.purchase_purpose, b.in_utah, b.origin_state,
+       b.property_prefs, b.priorities AS b_priorities, b.need_to_sell, b.first_time,
+       b.status AS profile_status, b.round AS profile_round,
+       (SELECT COUNT(*) FROM buyer_proposals x WHERE x.profile_id=bp.profile_id AND x.connected)::int AS someone_won
+     FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id
+     WHERE bp.id=$1 AND bp.agent_id=$2`, [req.params.id, req.session.user.id]);
+  if (!rows[0]) return res.status(404).render('error', { title: 'Not found', message: 'That proposal does not exist.' });
+  logEvent('buyer_proposal_reviewed', { userId: req.session.user.id, proposalId: rows[0].id });
+  res.render('agent/buyer-proposal-review', { title: 'My buyer proposal', p: rows[0], H });
 });
 
 // ---------- buyer opportunities ----------

@@ -1,0 +1,41 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:720px;">
+  <a href="/agent" style="font-size:14px;">‹ Back to my dashboard</a>
+  <h1 style="margin-top:8px;">My proposal · <%= p.property_type %> in <%= p.city %></h1>
+
+  <% if (p.connected) { %>
+    <div class="success">🎉 <b>You won this one.</b> The homeowner chose your proposal — their contact details are on your dashboard under Clients won.</div>
+  <% } else if (p.request_status === 'connected') { %>
+    <div class="sealed" style="border-left:4px solid var(--muted);">🤝 <span><b>Not selected this time.</b> The homeowner connected with another professional. Your proposal below is exactly what they compared — reviewing it against the request is the fastest way to sharpen the next one.</span></div>
+  <% } else if (p.request_status === 'open' && p.round < p.request_round) { %>
+    <div class="sealed">🔄 <span><b>New round in progress.</b> Your sealed proposal is still in the homeowner's stack while additional professionals propose.</span></div>
+  <% } else if (p.request_status === 'open') { %>
+    <div class="sealed">🔒 <span><b>Sealed — window still open.</b> You can still <a href="/agent/opportunities/<%= p.request_id %>">edit this proposal</a> until the window closes.</span></div>
+  <% } else { %>
+    <div class="sealed">⏱ <span><b>Window closed — awaiting the homeowner's decision.</b> All proposals have been revealed to them.</span></div>
+  <% } %>
+
+  <div class="card">
+    <h2 style="font-size:16px;">What the seller asked for</h2>
+    <div class="sumrow"><span>Property</span><span><%= p.property_type %> · <%= p.city %>, UT <%= p.zip %><% if (p.neighborhood) { %> · <%= p.neighborhood %><% } %></span></div>
+    <div class="sumrow"><span>Size</span><span><%= p.sqft_range %> sq ft · <%= p.beds %> bd · <%= p.baths %> ba</span></div>
+    <div class="sumrow"><span>Built / condition</span><span><%= p.year_built %> · <%= p.condition %> · HOA: <%= p.hoa %></span></div>
+    <div class="sumrow"><span>Price range</span><span><%= p.price_range %></span></div>
+    <div class="sumrow"><span>Seller priorities</span><span><b style="color:var(--blue);"><%= p.priorities || 'Balanced' %></b></span></div>
+    <div class="sumrow"><span>Window</span><span><%= p.window_hours %> hours · <%= p.total_proposals %> total proposal<%= p.total_proposals === 1 ? '' : 's' %> received</span></div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:16px;">What you proposed</h2>
+    <div class="sumrow"><span>Listing-side compensation</span><span><b style="color:var(--navy);"><%= H.feeLabel(p) %></b> · est. <%= H.money(H.estFee(p, p.price_range)) %></span></div>
+    <% if (p.services) { %><div class="sumrow"><span>Included services</span><span><%= p.services %></span></div><% } %>
+    <% if (p.marketing_plan) { %><div class="sumrow"><span>Marketing plan</span><span><%= p.marketing_plan %></span></div><% } %>
+    <div class="sumrow"><span>Cancellation terms</span><span><%= p.cancellation_terms %></span></div>
+    <div class="sumrow"><span>Submitted</span><span><%= new Date(p.created_at).toLocaleDateString('en-US') %><% if (new Date(p.updated_at).getTime() !== new Date(p.created_at).getTime()) { %> · last edited <%= new Date(p.updated_at).toLocaleDateString('en-US') %><% } %> · round <%= p.round %></span></div>
+  </div>
+
+  <% if (!p.connected && p.request_status === 'connected') { %>
+    <p class="note">💡 A quick self-review that top professionals do: did the proposal speak to the seller's stated priorities (<b><%= p.priorities || 'Balanced' %></b>)? Sealed bidding rewards proposals tailored to what the client said mattered most. The homeowner's identity and contact information are never shared.</p>
+  <% } %>
+</div>
+<%- include('../partials/foot') %>

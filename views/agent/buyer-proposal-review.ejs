@@ -1,0 +1,44 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:720px;">
+  <a href="/agent" style="font-size:14px;">‹ Back to my dashboard</a>
+  <h1 style="margin-top:8px;">My buyer proposal · <%= p.search_areas %></h1>
+
+  <% if (p.connected) { %>
+    <div class="success">🎉 <b>You won this one.</b> The buyer chose your proposal — their contact details are on your dashboard under Buyer clients won.</div>
+  <% } else if (p.someone_won > 0) { %>
+    <div class="sealed" style="border-left:4px solid var(--muted);">🤝 <span><b>Not selected this time.</b> The buyer connected with another professional. Your proposal below is exactly what they compared — a quick review sharpens the next one.</span></div>
+  <% } else if (p.profile_status === 'active' && p.round < p.profile_round) { %>
+    <div class="sealed">🔄 <span><b>New round in progress.</b> Your sealed proposal is still in the buyer's stack while additional professionals propose.</span></div>
+  <% } else if (p.profile_status === 'active') { %>
+    <div class="sealed">🔒 <span><b>In the running.</b> The buyer is still comparing proposals. You can <a href="/agent/buyers/<%= p.profile_id %>">edit yours</a> while their profile is active.</span></div>
+  <% } else if (p.profile_status === 'withdrawn' || p.profile_status === 'expired') { %>
+    <div class="sealed">⏱ <span><b>This buyer's profile is no longer active</b> (<%= p.profile_status %>). No professional was selected.</span></div>
+  <% } else { %>
+    <div class="sealed">⏱ <span><b>Awaiting the buyer's decision.</b></span></div>
+  <% } %>
+
+  <div class="card">
+    <h2 style="font-size:16px;">What the buyer was looking for</h2>
+    <div class="sumrow"><span>Readiness</span><span><b style="color:var(--blue);"><%= H.READINESS_LABELS[p.readiness] || p.readiness %></b></span></div>
+    <div class="sumrow"><span>Search areas</span><span><%= p.search_areas %></span></div>
+    <div class="sumrow"><span>Price range / timeline</span><span><%= p.b_price_range %> · <%= p.timeline %></span></div>
+    <div class="sumrow"><span>Financing</span><span><%= p.financing_type %> · <%= p.lender_status %> · <%= p.down_payment %> down</span></div>
+    <div class="sumrow"><span>Purpose</span><span><%= p.purchase_purpose %><% if (!p.in_utah) { %> · relocating from <%= p.origin_state || 'out of state' %><% } %><% if (p.need_to_sell !== 'No') { %> · must sell current home<% } %><% if (p.first_time) { %> · first-time buyer<% } %></span></div>
+    <% if (p.property_prefs) { %><div class="sumrow"><span>Property preferences</span><span><%= p.property_prefs %></span></div><% } %>
+    <% if (p.b_priorities) { %><div class="sumrow"><span>Priorities</span><span><b style="color:var(--blue);"><%= p.b_priorities %></b></span></div><% } %>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:16px;">What you proposed</h2>
+    <div class="sumrow"><span>Buyer-agent compensation</span><span><b style="color:var(--navy);"><%= H.buyerFeeLabel(p) %></b><% if (p.min_fee) { %> · <%= H.money(p.min_fee) %> minimum<% } %></span></div>
+    <div class="sumrow"><span>Tours / response</span><span><%= p.included_tours %> · responds <%= (p.response_time || '').toLowerCase() %><% if (p.video_tours) { %> · video tours<% } %></span></div>
+    <% if (p.specialties) { %><div class="sumrow"><span>Specialties</span><span><%= p.specialties %></span></div><% } %>
+    <% if (p.seller_contribution) { %><div class="sumrow"><span>Seller contributions</span><span><%= p.seller_contribution %></span></div><% } %>
+    <% if (p.rebate) { %><div class="sumrow"><span>Rebate</span><span><%= p.rebate %></span></div><% } %>
+    <% if (p.plan) { %><div class="sumrow"><span>Your plan</span><span><%= p.plan %></span></div><% } %>
+    <div class="sumrow"><span>Submitted</span><span><%= new Date(p.created_at).toLocaleDateString('en-US') %> · round <%= p.round %></span></div>
+  </div>
+
+  <p class="note">The buyer's name and contact information are never shared unless they choose you. This snapshot is what you saw when proposing.</p>
+</div>
+<%- include('../partials/foot') %>
