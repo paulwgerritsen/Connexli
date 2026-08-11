@@ -41,6 +41,8 @@ const B_PURPOSE = ['Primary residence', 'Second home', 'Investment'];
 const B_BBA = ['No', "Yes — it's expired or cancelled", 'Yes — currently active'];
 const B_PRIORITIES = ['Schools', 'Commute', 'Yard/lot size', 'Main-level living', 'Updated/move-in ready', 'Fixer-upper potential', 'New construction', 'Quiet neighborhood', 'Walkability', 'Views', 'Room to grow', 'Investment value'];
 const BP_STRUCTURES = { pct: 'Percentage at closing', flat: 'Flat fee', hourly: 'Hourly', retainer: 'Retainer credited at closing' };
+// For the relocating-buyer "moving from" dropdown (standardized, no free text).
+const US_STATES = ['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','District of Columbia','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming','Other / outside the U.S.'];
 const BP_TOURS = ['Up to 5 tours included', 'Up to 10 tours included', 'Up to 20 tours included', 'Unlimited tours'];
 const BP_RESPONSE = ['Within 1 hour', 'Same day', 'Within 24 hours'];
 const BP_SPECIALTIES = ['First-time buyers', 'VA/FHA', 'New construction', 'Relocation', 'Investment', 'Luxury'];
@@ -89,7 +91,7 @@ module.exports = {
   PROPERTY_TYPES, BEDS, BATHS, SQFT, YEARS, CONDITIONS, PRIORITIES, SERVICES,
   CANCELLATION, PRICE_RANGES, WINDOWS, ROUND_CAP,
   B_FINANCING, B_LENDER, B_DOWN, B_SITUATION, B_SELL_FIRST, B_TIMELINE,
-  B_PURPOSE, B_BBA, B_PRIORITIES, BP_STRUCTURES, BP_TOURS, BP_RESPONSE, BP_SPECIALTIES,
+  B_PURPOSE, B_BBA, B_PRIORITIES, BP_STRUCTURES, BP_TOURS, BP_RESPONSE, BP_SPECIALTIES, US_STATES,
   readiness, READINESS_LABELS, buyerFeeLabel,
   midPrice, money, estFee, feeLabel, clean, oneOf,
 };

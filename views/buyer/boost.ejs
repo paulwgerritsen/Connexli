@@ -13,15 +13,16 @@
       <label>Your top priorities (choose up to 3)</label>
       <div class="optgrid cols">
         <% H.B_PRIORITIES.forEach(p => { %>
-          <label class="opt"><input type="checkbox" name="priorities" value="<%= p %>" <%= (profile.priorities || '').includes(p) ? 'checked' : '' %>> <%= p %></label>
+          <label class="opt"><input type="checkbox" name="priorities" value="<%= p %>" <%= (profile.priorities || '').includes(p) ? 'checked' : '' %>><span class="tile"><b style="font-weight:500;"><%= p %></b></span></label>
         <% }) %>
       </div>
+      <p class="note" id="prioNote">Tap to select — tap again to deselect. Up to 3.</p>
       <label for="availability">When are you generally available for tours?</label>
       <input type="text" id="availability" name="availability" placeholder="e.g. Weeknights after 6 + Saturdays" value="<%= profile.availability %>">
       <label>Is this your first home purchase?</label>
       <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
-        <label class="opt"><input type="radio" name="first_time" value="yes" <%= profile.first_time === true ? 'checked' : '' %>> Yes</label>
-        <label class="opt"><input type="radio" name="first_time" value="no" <%= profile.first_time === false ? 'checked' : '' %>> No</label>
+        <label class="opt"><input type="radio" name="first_time" value="yes" <%= profile.first_time === true ? 'checked' : '' %>><span class="tile"><b>Yes</b></span></label>
+        <label class="opt"><input type="radio" name="first_time" value="no" <%= profile.first_time === false ? 'checked' : '' %>><span class="tile"><b>No</b></span></label>
       </div>
       <label for="notes">Anything else agents should know? (optional)</label>
       <textarea id="notes" name="notes" rows="3" maxlength="500"><%= profile.notes %></textarea>
@@ -29,4 +30,17 @@
     <button class="btn full" type="submit">Save my answers</button>
   </form>
 </div>
+<script>
+// Limit priorities to three; a fourth click bounces with a brief note.
+var pboxes = document.querySelectorAll('input[name="priorities"]');
+pboxes.forEach(function(b){ b.addEventListener('change', function(){
+  var checked = document.querySelectorAll('input[name="priorities"]:checked');
+  if (checked.length > 3) {
+    b.checked = false;
+    var n = document.getElementById('prioNote');
+    n.textContent = 'That\'s 3 already — deselect one first to swap it.';
+    setTimeout(function(){ n.textContent = 'Tap to select — tap again to deselect. Up to 3.'; }, 2500);
+  }
+});});
+</script>
 <%- include('../partials/foot') %>

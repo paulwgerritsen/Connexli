@@ -64,17 +64,22 @@
       <h2 style="font-size:16px;">Where you're located</h2>
       <label>Are you currently in Utah?</label>
       <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
-        <label class="opt"><input type="radio" name="in_utah" value="yes" <%= form.in_utah !== 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='none'"> Yes</label>
-        <label class="opt"><input type="radio" name="in_utah" value="no" <%= form.in_utah === 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='block'"> No — I'm relocating</label>
+        <label class="opt"><input type="radio" name="in_utah" value="yes" <%= form.in_utah !== 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='none'"><span class="tile"><b>Yes</b></span></label>
+        <label class="opt"><input type="radio" name="in_utah" value="no" <%= form.in_utah === 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='block'"><span class="tile"><b>No — I'm relocating</b></span></label>
       </div>
       <div id="relo" style="display:<%= form.in_utah === 'no' ? 'block' : 'none' %>; margin-top:10px;">
         <label for="origin_state">Which state are you moving from?</label>
-        <input type="text" id="origin_state" name="origin_state" value="<%= form.origin_state || '' %>">
+        <select id="origin_state" name="origin_state">
+          <option value="" <%= !form.origin_state ? 'selected' : '' %>>Choose a state…</option>
+          <% H.US_STATES.forEach(s => { %><option <%= form.origin_state === s ? 'selected' : '' %>><%= s %></option><% }) %>
+        </select>
         <label for="move_reason">Reason for the move (optional)</label>
         <input type="text" id="move_reason" name="move_reason" placeholder="e.g. job, family, lifestyle" value="<%= form.move_reason || '' %>">
         <label for="visit_dates">When do you plan to visit Utah? (optional)</label>
         <input type="text" id="visit_dates" name="visit_dates" placeholder="e.g. Sept 12–15" value="<%= form.visit_dates || '' %>">
-        <label class="opt" style="margin-top:8px;"><input type="checkbox" name="video_tours" value="yes" <%= form.video_tours === 'yes' ? 'checked' : '' %>> I'd like video / virtual tours</label>
+      </div>
+      <div class="optgrid" style="margin-top:10px;">
+        <label class="opt"><input type="checkbox" name="video_tours" value="yes" <%= form.video_tours === 'yes' ? 'checked' : '' %>><span class="tile"><b style="font-weight:600;">I'd like video / virtual tours</b><span class="desc">Helpful if you're relocating, traveling, or just prefer a first look on video.</span></span></label>
       </div>
     </div>
 

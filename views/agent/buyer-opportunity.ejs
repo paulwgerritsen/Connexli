@@ -11,7 +11,8 @@
     <div class="sumrow"><span>Timeline</span><span><%= buyer.timeline %></span></div>
     <div class="sumrow"><span>Search areas</span><span><%= buyer.search_areas %></span></div>
     <div class="sumrow"><span>Current home</span><span><%= buyer.current_situation %><%= buyer.need_to_sell !== 'No' ? ' · Must sell first (' + buyer.need_to_sell.replace('Yes — ','') + ')' : '' %></span></div>
-    <% if (!buyer.in_utah) { %><div class="sumrow"><span>Relocation</span><span>From <%= buyer.origin_state %><%= buyer.move_reason ? ' · ' + buyer.move_reason : '' %><%= buyer.visit_dates ? ' · visiting ' + buyer.visit_dates : '' %><%= buyer.video_tours ? ' · wants video tours' : '' %></span></div><% } %>
+    <% if (!buyer.in_utah) { %><div class="sumrow"><span>Relocation</span><span>From <%= buyer.origin_state %><%= buyer.move_reason ? ' · ' + buyer.move_reason : '' %><%= buyer.visit_dates ? ' · visiting ' + buyer.visit_dates : '' %></span></div><% } %>
+    <% if (buyer.video_tours) { %><div class="sumrow"><span>Video tours</span><span>Yes — this buyer would like video / virtual tours</span></div><% } %>
     <% if (buyer.property_prefs) { %><div class="sumrow"><span>Looking for</span><span><%= buyer.property_prefs %></span></div><% } %>
     <% if (buyer.priorities) { %><div class="sumrow"><span>Top priorities</span><span><%= buyer.priorities %></span></div><% } %>
     <% if (buyer.availability) { %><div class="sumrow"><span>Tour availability</span><span><%= buyer.availability %></span></div><% } %>

@@ -2,11 +2,36 @@
 <h1>My dashboard</h1>
 <p class="sub">Selling, buying, or both — verified professionals compete for your business either way.</p>
 
-<div class="card" style="border-left:4px solid var(--blue);">
-  <h2 style="font-size:16px;">Buying a home? <span class="badge open" style="vertical-align:2px;">New</span></h2>
-  <p class="sub" style="margin-bottom:10px;">Find Your Buyer's Agent: verified buyer's agents send you sealed proposals — fees, tours, and services side by side. Anonymous until you choose.</p>
-  <a class="btn ghost sm" href="/buyer">Find my buyer's agent</a>
-</div>
+<% if (buyerLive) { %>
+  <div class="success" style="margin-bottom:14px;">🎉 <b>Your buyer request is live!</b> Verified buyer's agents near your search areas are being notified now, and you'll get an email as each sealed proposal arrives (up to 10 this round). Want stronger proposals? <a href="/buyer/boost" style="font-weight:600;">Boost your profile</a> — it takes one minute.</div>
+<% } %>
+
+<% if (buyerRequests.length > 0) { %>
+  <h2 style="margin-top:8px;">My buying requests</h2>
+  <div class="card">
+    <% buyerRequests.forEach(b => { %>
+      <div class="rowline">
+        <div>
+          <b style="color:var(--navy);">Buying · <%= b.search_areas %></b>
+          <div class="meta"><%= b.price_range %> · <%= b.timeline %> · created <%= new Date(b.created_at).toLocaleDateString('en-US') %></div>
+        </div>
+        <div class="actions">
+          <% if (b.status === 'connected') { %><span class="badge connected">Connected</span>
+          <% } else if (!b.published) { %><span class="badge pending">Not published — finish Get Ready</span>
+          <% } else { %><span class="badge open">Live — agents proposing</span><% } %>
+          <span class="pill"><%= b.proposal_count %> proposal<%= b.proposal_count === 1 ? '' : 's' %></span>
+          <a class="btn sm" href="/buyer">View</a>
+        </div>
+      </div>
+    <% }) %>
+  </div>
+<% } else { %>
+  <div class="card" style="border-left:4px solid var(--blue);">
+    <h2 style="font-size:16px;">Buying a home? <span class="badge open" style="vertical-align:2px;">New</span></h2>
+    <p class="sub" style="margin-bottom:10px;">Find Your Buyer's Agent: verified buyer's agents send you sealed proposals — fees, tours, and services side by side. Anonymous until you choose.</p>
+    <a class="btn ghost sm" href="/buyer">Find my buyer's agent</a>
+  </div>
+<% } %>
 
 <h2 style="margin-top:24px;">My selling requests</h2>
 
