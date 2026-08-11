@@ -40,7 +40,9 @@ const B_TIMELINE = ['ASAP', 'Within 30 days', '1–3 months', '3–6 months', '6
 const B_PURPOSE = ['Primary residence', 'Second home', 'Investment'];
 const B_BBA = ['No', "Yes — it's expired or cancelled", 'Yes — currently active'];
 const B_PRIORITIES = ['Schools', 'Commute', 'Yard/lot size', 'Main-level living', 'Updated/move-in ready', 'Fixer-upper potential', 'New construction', 'Quiet neighborhood', 'Walkability', 'Views', 'Room to grow', 'Investment value'];
-const BP_STRUCTURES = { pct: 'Percentage at closing', flat: 'Flat fee', hourly: 'Hourly', retainer: 'Retainer credited at closing' };
+// Buyer proposals: two structures only (Paul, Aug 11 — hourly/retainer removed
+// from the FORM for simplicity; legacy rows still display via buyerFeeLabel).
+const BP_STRUCTURES = { pct: 'Percentage at closing', flat: 'Flat fee at closing' };
 // For the relocating-buyer "moving from" dropdown (standardized, no free text).
 const US_STATES = ['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','District of Columbia','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming','Other / outside the U.S.'];
 const BP_TOURS = ['Up to 5 tours included', 'Up to 10 tours included', 'Up to 20 tours included', 'Unlimited tours'];
@@ -71,6 +73,21 @@ function buyerFeeLabel(p) {
 
 function midPrice(range) { return PRICE_RANGES[range] || 875000; }
 
+// Estimated buyer-agent fee at the midpoint of the buyer's price range.
+function estBuyerFee(p, priceRange) {
+  const amt = parseFloat(p.comp_amount);
+  if (p.comp_structure === 'pct') return midPrice(priceRange) * amt / 100;
+  if (p.comp_structure === 'flat') return amt;
+  return null; // hourly/retainer legacy rows: no midpoint estimate
+}
+
+// Window state helpers shared by seller requests and buyer profiles.
+function windowOpen(row) {
+  return new Date(row.closes_at).getTime() > Date.now() && row.proposal_count < row.proposal_cap;
+}
+function spotsLeft(row) { return Math.max(0, row.proposal_cap - row.proposal_count); }
+function takenThisRound(row) { return Math.max(0, row.proposal_count - (row.proposal_cap - 10)); }
+
 function money(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
 
 function estFee(proposal, priceRange) {
@@ -94,4 +111,5 @@ module.exports = {
   B_PURPOSE, B_BBA, B_PRIORITIES, BP_STRUCTURES, BP_TOURS, BP_RESPONSE, BP_SPECIALTIES, US_STATES,
   readiness, READINESS_LABELS, buyerFeeLabel,
   midPrice, money, estFee, feeLabel, clean, oneOf,
+  estBuyerFee, windowOpen, spotsLeft, takenThisRound,
 };

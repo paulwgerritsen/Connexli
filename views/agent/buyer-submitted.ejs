@@ -1,0 +1,25 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:640px;">
+  <div style="text-align:center; font-size:44px; margin-top:10px;">🔒</div>
+  <h1 style="text-align:center;"><%= wasUpdate ? 'Proposal updated' : 'Proposal submitted successfully' %></h1>
+  <p class="sub" style="text-align:center;">Your <%= wasUpdate ? 'changes have been saved' : 'proposal has been securely submitted' %>. It stays sealed — competing professionals never see your terms, and the buyer will not see your identity until they choose to connect with you.</p>
+
+  <div class="card">
+    <div class="sumrow"><span>Buyer</span><span>Searching in <%= buyer.search_areas %></span></div>
+    <div class="sumrow"><span>Price range / timeline</span><span><%= buyer.price_range %> · <%= buyer.timeline %></span></div>
+    <div class="sumrow"><span>Window closes</span><span><%= new Date(buyer.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain) — or when all spots fill</span></div>
+    <div class="sumrow"><span>Status</span><span style="color:var(--good);">Sealed until the window closes</span></div>
+  </div>
+
+  <div class="sealed" style="margin-top:14px;">✏️ <span>Until the proposal window closes, you can review, edit, or withdraw your proposal any time. After it closes, proposals are locked and revealed to the buyer together.</span></div>
+
+  <div class="actions" style="justify-content:center; margin-top:18px; display:flex; gap:10px; flex-wrap:wrap;">
+    <a class="btn ghost" href="/agent/buyers/<%= buyer.id %>">Edit proposal</a>
+    <form method="POST" action="/agent/buyers/<%= buyer.id %>/withdraw" onsubmit="return confirm('Withdraw your proposal for this buyer?');">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn ghost danger" type="submit">Withdraw proposal</button>
+    </form>
+    <a class="btn" href="/agent">Return to dashboard</a>
+  </div>
+</div>
+<%- include('../partials/foot') %>

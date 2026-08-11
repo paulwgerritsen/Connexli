@@ -2,7 +2,24 @@
 <a href="/agent" style="font-size:14px;">‹ Back to opportunities</a>
 <div class="narrow" style="max-width:720px; margin:0;">
   <h1 style="margin-top:8px;">Buyer Snapshot <span class="badge <%= buyer.readiness === 'ready_now' ? 'connected' : 'open' %>" style="vertical-align:4px;"><%= H.READINESS_LABELS[buyer.readiness] %></span></h1>
-  <p class="sub"><%= Math.max(0, buyer.proposal_count - (buyer.round - 1) * H.ROUND_CAP) %>/<%= H.ROUND_CAP %> sealed proposals this round<% if (buyer.round > 1) { %> (round <%= buyer.round %>)<% } %> · active until <%= new Date(buyer.expires_at).toLocaleDateString('en-US') %> · anonymous until they choose</p>
+  <p class="sub" id="oppMeta" data-closes="<%= new Date(buyer.closes_at).toISOString() %>">
+    <b style="color:var(--blue);"><%= H.takenThisRound(buyer) %> proposal<%= H.takenThisRound(buyer) === 1 ? '' : 's' %> submitted · <%= H.spotsLeft(buyer) %> spot<%= H.spotsLeft(buyer) === 1 ? '' : 's' %> remaining</b><% if (buyer.round > 1) { %> (round <%= buyer.round %>)<% } %> · anonymous until they choose<br>
+    <span id="oppCountdown">…</span> · closes <%= new Date(buyer.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain) — or the moment all spots fill
+  </p>
+  <script>
+  (function(){
+    var el = document.getElementById('oppMeta');
+    var cd = document.getElementById('oppCountdown');
+    var closes = new Date(el.dataset.closes).getTime();
+    function tick(){
+      var left = closes - Date.now();
+      if (left <= 0) { cd.textContent = 'This window has closed.'; return; }
+      var d = Math.floor(left/86400000), h = Math.floor(left%86400000/3600000), m = Math.floor(left%3600000/60000);
+      cd.textContent = '⏱ ' + (d > 0 ? d + (d === 1 ? ' day ' : ' days ') + h + ' hrs' : h + (h === 1 ? ' hour ' : ' hours ') + m + ' min') + ' left';
+    }
+    tick(); setInterval(tick, 30000);
+  })();
+  </script>
   <% if (typeof error === 'string' && error) { %><div class="error"><%= error %></div><% } %>
 
   <div class="card">
@@ -31,18 +48,21 @@
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <div class="card">
       <p class="note" style="margin-top:2px;">The amount below is your <b>proposed buyer-agent compensation</b> — presented to the buyer with a reminder that the source of payment can vary by transaction and that their own agreement governs what they owe.</p>
-      <label for="comp_structure">Fee structure</label>
-      <select id="comp_structure" name="comp_structure">
-        <% Object.entries(H.BP_STRUCTURES).forEach(([k, v]) => { %>
-          <option value="<%= k %>" <%= proposal && proposal.comp_structure === k ? 'selected' : '' %>><%= v %></option>
-        <% }) %>
-      </select>
-      <label for="comp_amount">Amount (percent for percentage, dollars otherwise)</label>
-      <input type="text" id="comp_amount" name="comp_amount" placeholder="e.g. 2.5 or 6000" value="<%= proposal ? proposal.comp_amount : '' %>" required>
+      <label>Fee structure</label>
+      <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+        <label class="opt"><input type="radio" name="comp_structure" value="pct" <%= (!proposal || proposal.comp_structure === 'pct' || !['pct','flat'].includes(proposal.comp_structure)) ? 'checked' : '' %> onchange="bFee()"><span class="tile"><b>% of purchase price</b><span class="desc">at closing</span></span></label>
+        <label class="opt"><input type="radio" name="comp_structure" value="flat" <%= (proposal && proposal.comp_structure === 'flat') ? 'checked' : '' %> onchange="bFee()"><span class="tile"><b>Flat fee ($)</b><span class="desc">at closing</span></span></label>
+      </div>
+      <label for="comp_amount" id="bFeeLbl">Your proposed buyer-agent compensation</label>
+      <input type="text" id="comp_amount" name="comp_amount" inputmode="decimal" placeholder="e.g. 2.5 or 6000" value="<%= proposal ? parseFloat(proposal.comp_amount) || '' : '' %>" required>
+      <p class="note" id="bFeePrev"></p>
       <label for="min_fee">Minimum fee in dollars (optional)</label>
-      <input type="text" id="min_fee" name="min_fee" placeholder="e.g. 5000" value="<%= proposal && proposal.min_fee ? proposal.min_fee : '' %>">
-      <label for="seller_contribution">How you handle seller contributions</label>
-      <input type="text" id="seller_contribution" name="seller_contribution" placeholder="e.g. Any seller contribution reduces what you pay dollar-for-dollar" value="<%= proposal ? proposal.seller_contribution : 'Any seller contribution reduces what you pay dollar-for-dollar' %>">
+      <input type="text" id="min_fee" name="min_fee" placeholder="e.g. 5000" value="<%= proposal && proposal.min_fee ? parseFloat(proposal.min_fee) : '' %>">
+      <label>If the seller does not pay the full buyer-agent compensation agreed between you and your client, will the buyer be responsible for paying the remaining balance at closing?</label>
+      <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+        <label class="opt"><input type="radio" name="gap_responsibility" value="Yes" <%= (!proposal || proposal.gap_responsibility !== 'No') ? 'checked' : '' %>><span class="tile"><b>Yes</b><span class="desc">buyer covers any remaining balance</span></span></label>
+        <label class="opt"><input type="radio" name="gap_responsibility" value="No" <%= (proposal && proposal.gap_responsibility === 'No') ? 'checked' : '' %>><span class="tile"><b>No</b><span class="desc">I won't ask the buyer to cover a shortfall</span></span></label>
+      </div>
       <label for="rebate">Rebate offer, if any (optional — rebates are legal in Utah)</label>
       <input type="text" id="rebate" name="rebate" value="<%= proposal ? proposal.rebate : '' %>">
     </div>
@@ -51,7 +71,9 @@
       <select id="included_tours" name="included_tours">
         <% H.BP_TOURS.forEach(t => { %><option <%= proposal && proposal.included_tours === t ? 'selected' : '' %>><%= t %></option><% }) %>
       </select>
-      <label class="opt" style="margin-top:8px;"><input type="checkbox" name="video_tours" value="yes" <%= proposal && proposal.video_tours ? 'checked' : '' %>> I offer video / virtual tours (important for relocating buyers)</label>
+      <div class="optgrid" style="margin-top:8px;">
+        <label class="opt"><input type="checkbox" name="video_tours" value="yes" <%= proposal && proposal.video_tours ? 'checked' : '' %>><span class="tile"><b style="font-weight:600;">I offer video / virtual tours</b><span class="desc">important for relocating buyers</span></span></label>
+      </div>
       <label for="response_time">Response-time commitment</label>
       <select id="response_time" name="response_time">
         <% H.BP_RESPONSE.forEach(r => { %><option <%= proposal && proposal.response_time === r ? 'selected' : '' %>><%= r %></option><% }) %>
@@ -59,7 +81,7 @@
       <label>Your specialties</label>
       <div class="optgrid cols">
         <% H.BP_SPECIALTIES.forEach(s => { %>
-          <label class="opt"><input type="checkbox" name="specialties" value="<%= s %>" <%= proposal && (proposal.specialties || '').includes(s) ? 'checked' : '' %>> <%= s %></label>
+          <label class="opt"><input type="checkbox" name="specialties" value="<%= s %>" <%= proposal && (proposal.specialties || '').includes(s) ? 'checked' : '' %>><span class="tile"><b style="font-weight:500;"><%= s %></b></span></label>
         <% }) %>
       </div>
       <label for="plan">Your plan for this buyer</label>
@@ -76,4 +98,23 @@
   <% } %>
   <div class="sealed" style="margin-top:14px;">🔒 <span>Sealed means sealed: competing professionals never see your terms, and the buyer's identity stays hidden until they choose to connect with you.</span></div>
 </div>
+<script>
+// Live estimated-compensation preview at the midpoint of the buyer's range.
+var B_MID = <%= H.midPrice(buyer.price_range) %>;
+function bFee(){
+  var pct = document.querySelector('input[name="comp_structure"][value="pct"]').checked;
+  document.getElementById('bFeeLbl').textContent = pct ? 'Your proposed buyer-agent compensation (%)' : 'Your proposed buyer-agent compensation (flat $)';
+  bPrev();
+}
+function bPrev(){
+  var pct = document.querySelector('input[name="comp_structure"][value="pct"]').checked;
+  var v = parseFloat(String(document.getElementById('comp_amount').value).replace(/[^0-9.]/g,'')) || 0;
+  var est = pct ? Math.round(B_MID * v / 100) : Math.round(v);
+  document.getElementById('bFeePrev').textContent = v > 0
+    ? 'The buyer sees: ' + (pct ? v + '% at closing' : '$' + est.toLocaleString() + ' flat') + ' · estimated compensation ≈ $' + est.toLocaleString() + (pct ? ' at their range midpoint ($' + B_MID.toLocaleString() + ')' : '')
+    : 'Estimated compensation preview appears as you type.';
+}
+document.getElementById('comp_amount').addEventListener('input', bPrev);
+bFee();
+</script>
 <%- include('../partials/foot') %>

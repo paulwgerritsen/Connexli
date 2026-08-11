@@ -1,0 +1,49 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;">Buyer request · <%= buyer.search_areas %>
+  <span class="badge <%= buyer.status === 'connected' ? 'connected' : buyer.status === 'active' ? (buyer.published ? 'open' : 'pending') : 'closed' %>" style="vertical-align:4px;"><%= buyer.status === 'active' ? (buyer.published ? 'live' : 'get ready') : buyer.status %></span>
+</h1>
+<p class="sub"><%= buyer.buyer_name %> · <%= buyer.buyer_email %><% if (buyer.buyer_phone) { %> · <%= buyer.buyer_phone %><% } %> · created <%= new Date(buyer.created_at).toLocaleDateString('en-US') %></p>
+
+<div class="card">
+  <h2 style="font-size:16px;">Complete buyer profile</h2>
+  <div class="sumrow"><span>Readiness</span><span><b><%= H.READINESS_LABELS[buyer.readiness] %></b></span></div>
+  <div class="sumrow"><span>Financing</span><span><%= buyer.financing_type %> · <%= buyer.lender_status %> · <%= buyer.down_payment %> down</span></div>
+  <div class="sumrow"><span>Search / price / timeline</span><span><%= buyer.search_areas %> · <%= buyer.price_range %> · <%= buyer.timeline %></span></div>
+  <div class="sumrow"><span>Purpose / situation</span><span><%= buyer.purchase_purpose %> · <%= buyer.current_situation %><% if (buyer.need_to_sell !== 'No') { %> · must sell first<% } %></span></div>
+  <% if (!buyer.in_utah) { %><div class="sumrow"><span>Relocation</span><span>From <%= buyer.origin_state %><%= buyer.move_reason ? ' · ' + buyer.move_reason : '' %></span></div><% } %>
+  <% if (buyer.video_tours) { %><div class="sumrow"><span>Video tours</span><span>Requested</span></div><% } %>
+  <% if (buyer.property_prefs) { %><div class="sumrow"><span>Looking for</span><span><%= buyer.property_prefs %></span></div><% } %>
+  <% if (buyer.priorities) { %><div class="sumrow"><span>Priorities</span><span><%= buyer.priorities %></span></div><% } %>
+  <div class="sumrow"><span>BBA screening</span><span><%= buyer.bba %></span></div>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Proposal window</h2>
+  <div class="sumrow"><span>Window</span><span><%= buyer.window_hours %> hours · round <%= buyer.round %> · cap <%= buyer.proposal_cap %></span></div>
+  <div class="sumrow"><span>Closes</span><span><%= new Date(buyer.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain) — <%= new Date(buyer.closes_at) > new Date() && buyer.proposal_count < buyer.proposal_cap ? 'OPEN' : 'CLOSED' %></span></div>
+  <div class="sumrow"><span>Proposals</span><span><%= buyer.proposal_count %> of <%= buyer.proposal_cap %></span></div>
+  <div class="sumrow"><span>Profile expires</span><span><%= new Date(buyer.expires_at).toLocaleDateString('en-US') %></span></div>
+</div>
+
+<h2 style="margin-top:22px;">Proposals (<%= proposals.length %>)</h2>
+<% if (proposals.length === 0) { %>
+  <div class="card"><p class="sub">No proposals yet.</p></div>
+<% } else { %>
+<div class="tblwrap">
+  <table class="dt">
+    <tr><th>Agent</th><th>Brokerage</th><th>Compensation</th><th>Round</th><th>Submitted</th><th>Outcome</th></tr>
+    <% proposals.forEach(p => { %>
+      <tr>
+        <td><a href="/admin/agents/<%= p.agent_id %>"><%= p.agent_name %></a> · <span style="color:var(--muted);"><%= p.agent_email %></span></td>
+        <td><%= p.brokerage %></td>
+        <td><%= H.buyerFeeLabel(p) %></td>
+        <td><%= p.round %></td>
+        <td data-sort="<%= new Date(p.created_at).toISOString() %>"><%= new Date(p.created_at).toLocaleDateString('en-US') %></td>
+        <td><% if (p.connected) { %><span class="badge connected">SELECTED ✓</span><% } else if (buyer.status === 'connected') { %><span class="badge closed">not selected</span><% } else { %><span class="badge pending">awaiting decision</span><% } %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+<% } %>
+<%- include('../partials/foot') %>

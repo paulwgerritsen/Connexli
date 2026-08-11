@@ -27,6 +27,15 @@ header{background:var(--navy); color:#fff;}
 .nav-right{display:flex; align-items:center; gap:16px; font-size:13.5px;}
 .nav-right .who{color:#B9C8DE;}
 .nav-right form{display:inline;}
+.homelink{text-decoration:none;}
+.homelink:hover{color:#fff !important;}
+.hl-short{display:none;}
+@media (max-width:640px){
+  .hl-full{display:none;}
+  .hl-short{display:inline;}
+  .nav-right{gap:12px;}
+  .nav-right .who{display:none;}
+}
 .linkbtn{background:none; border:none; color:#B9C8DE; cursor:pointer; font-family:inherit; font-size:13.5px; text-decoration:underline;}
 .linkbtn:hover{color:#fff;}
 
@@ -87,6 +96,32 @@ input:focus, select:focus, textarea:focus{outline:3px solid var(--lightblue); bo
 .opt .tile .desc{font-size:12.5px; color:var(--muted); display:block;}
 .opt input:checked + .tile{border-color:var(--blue); background:#F0F5FF;}
 .opt input:focus-visible + .tile{outline:3px solid var(--lightblue);}
+/* Explicit selection indicator (Paul, Aug 10): every choice tile carries a
+   circle that fills with a checkmark when selected — no ambiguity. */
+.opt .tile::before{content:""; flex:0 0 18px; height:18px; border:2px solid var(--line);
+  border-radius:50%; background:#fff; margin-top:1px; display:flex; align-items:center;
+  justify-content:center; font-size:11px; font-weight:700; line-height:1;}
+.opt input:checked + .tile::before{content:"✓"; color:#fff; background:var(--blue); border-color:var(--blue);}
+
+/* ---- reusable data tables (tables.js) ---- */
+.dt-controls{display:flex; align-items:center; gap:10px; margin:10px 0 8px; flex-wrap:wrap;}
+.dt-controls input[type=search]{flex:1; min-width:160px; max-width:280px; padding:8px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px;}
+.dt-controls select{width:auto; padding:8px 10px; font-size:13px;}
+.dt-controls .dt-info{font-size:12.5px; color:var(--muted); margin-left:auto;}
+.dt-controls button{border:1.5px solid var(--line); background:#fff; border-radius:8px; padding:6px 12px; cursor:pointer; font-size:14px;}
+.dt-controls button:disabled{opacity:.35; cursor:default;}
+th.dt-sortable{cursor:pointer; user-select:none; white-space:nowrap;}
+th.dt-sortable::after{content:"↕"; opacity:.35; margin-left:5px; font-size:11px;}
+th.dt-asc::after{content:"↑"; opacity:1;}
+th.dt-desc::after{content:"↓"; opacity:1;}
+
+/* ---- collapsible dashboard sections ---- */
+details.sect{margin-top:22px;}
+details.sect > summary{cursor:pointer; list-style:none; display:flex; align-items:center; gap:10px;}
+details.sect > summary::-webkit-details-marker{display:none;}
+details.sect > summary h2{margin:0;}
+details.sect > summary::before{content:"▸"; color:var(--blue); font-size:15px; transition:transform .15s ease;}
+details.sect[open] > summary::before{transform:rotate(90deg);}
 .rec{position:absolute; top:-9px; right:12px; background:var(--blue); color:#fff; font-size:10px; font-weight:700; letter-spacing:.5px; padding:2px 9px; border-radius:999px;}
 
 /* proposal cards */

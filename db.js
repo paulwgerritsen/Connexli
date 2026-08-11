@@ -172,6 +172,23 @@ ALTER TABLE requests ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE proposals ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE buyer_proposals ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
+
+-- Buyer requests mirror seller requests (Paul, Aug 11): a timed sealed window
+-- (default 48h) that closes at expiry OR when the proposal cap fills, then
+-- reveals proposals. "Receive 10 more" opens a fresh round: cap = current
+-- count + 10, so every round adds exactly 10 slots regardless of how the
+-- previous round ended.
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS window_hours INTEGER NOT NULL DEFAULT 48;
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS closes_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '48 hours';
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS window_notified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS proposal_cap INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS proposal_cap INTEGER NOT NULL DEFAULT 10;
+UPDATE requests SET proposal_cap = round * 10 WHERE proposal_cap < round * 10;
+UPDATE buyer_profiles SET proposal_cap = round * 10 WHERE proposal_cap < round * 10;
+
+-- Buyer proposal clarity (Paul, Aug 11): the direct question replaces the
+-- free-text "how do you handle seller contributions".
+ALTER TABLE buyer_proposals ADD COLUMN IF NOT EXISTS gap_responsibility TEXT NOT NULL DEFAULT '';
 `;
 
 async function init() {

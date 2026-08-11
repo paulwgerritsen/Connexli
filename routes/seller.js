@@ -8,14 +8,23 @@ const mailer = require('../mailer');
 const router = require('../middleware').safeRouter(express.Router());
 const seller = requireRole('seller');
 
-// My requests
+// My requests — selling AND buying, side by side.
 router.get('/dashboard', seller, async (req, res) => {
-  const { rows: requests } = await pool.query(
-    `SELECT r.*, (SELECT COUNT(*) FROM proposals p WHERE p.request_id = r.id)::int AS proposal_count
-     FROM requests r WHERE r.seller_id=$1 ORDER BY r.created_at DESC`,
-    [req.session.user.id]
-  );
-  res.render('seller/dashboard', { title: 'My requests', requests, H });
+  const [{ rows: requests }, { rows: buyerRequests }] = await Promise.all([
+    pool.query(
+      `SELECT r.*, (SELECT COUNT(*) FROM proposals p WHERE p.request_id = r.id)::int AS proposal_count
+       FROM requests r WHERE r.seller_id=$1 ORDER BY r.created_at DESC`,
+      [req.session.user.id]),
+    pool.query(
+      `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id = b.id)::int AS proposal_count
+       FROM buyer_profiles b WHERE b.user_id=$1 AND b.status IN ('active','connected')
+       ORDER BY b.created_at DESC`,
+      [req.session.user.id]),
+  ]);
+  res.render('seller/dashboard', {
+    title: 'My requests', requests, buyerRequests, H,
+    buyerLive: req.query.buyerlive === '1', // success banner right after publishing
+  });
 });
 
 // New request form
@@ -88,7 +97,7 @@ router.get('/requests/:id(\\d+)', seller, async (req, res) => {
     const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
     return res.render('seller/request-open', {
       title: 'Your request is live', request, proposalCount: rows[0].n, H,
-      roundCap: request.round * H.ROUND_CAP, // window auto-closes at this count
+      roundCap: request.proposal_cap, // window auto-closes at this count
     });
   }
 
@@ -139,7 +148,8 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   if (request.status !== 'closed') return res.redirect('/requests/' + request.id);
 
   const { rows } = await pool.query(
-    `UPDATE requests SET round = round + 1, status='open', closes_at = now() + make_interval(hours => window_hours)
+    `UPDATE requests SET round = round + 1, status='open', closes_at = now() + make_interval(hours => window_hours),
+       proposal_cap = (SELECT COUNT(*) FROM proposals WHERE request_id=$1) + 10
      WHERE id=$1 AND status='closed' RETURNING *`, [request.id]);
   if (!rows[0]) return res.redirect('/requests/' + request.id);
 

@@ -156,8 +156,8 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
           newRound
             ? `A <b>${badgeLabel}</b> buyer looking in <b>${profile.search_areas}</b> opened a new round of sealed proposals — reserved for professionals who haven't proposed yet, like you.`
             : `A <b>${badgeLabel}</b> buyer is looking in <b>${profile.search_areas}</b>.`,
-          `Price range: <b>${profile.price_range}</b><br>Timeline: <b>${profile.timeline}</b>${profile.in_utah ? '' : '<br>Relocating from: <b>' + (profile.origin_state || 'out of state') + '</b>'}`,
-          'Review the anonymous Buyer Snapshot and submit a sealed proposal. Up to 10 professionals may propose per round; competing professionals never see your terms.',
+          `Price range: <b>${profile.price_range}</b><br>Timeline: <b>${profile.timeline}</b>${profile.in_utah ? '' : '<br>Relocating from: <b>' + (profile.origin_state || 'out of state') + '</b>'}${profile.closes_at ? '<br>Proposal window closes: <b>' + new Date(profile.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) + ' (Mountain)</b>' : ''}`,
+          'Review the anonymous Buyer Snapshot and submit a sealed proposal before the window closes — it ends early once 10 proposals arrive. Competing professionals never see your terms.',
         ], 'View Buyer Snapshot', APP_URL + '/login'));
     }
     console.log(`Buyer-profile emails: ${notified}/${agents.length} approved professionals for areas "${profile.search_areas}"${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}`);
@@ -173,6 +173,19 @@ function buyerNewProposal(email, name, count, roundFull = false) {
       roundFull
         ? `That fills all <b>10</b> proposal spots for this round — your full set is ready to compare now, sooner than expected. If you'd like even more options after reviewing, you can open another round anytime.`
         : `You now have <b>${count}</b> proposal${count === 1 ? '' : 's'} to compare. Your name and contact info remain hidden until you choose to connect.`,
+    ], 'Compare my proposals', APP_URL + '/buyer'));
+}
+
+// Mirrors sellerProposalsReady: the buyer's window ended (time or cap) and
+// their sealed proposals are ready to compare.
+function buyerProposalsReady(email, name, profile, filledEarly = false) {
+  return send(email, filledEarly ? 'All proposals are in — ready early' : 'Your buyer-agent proposals are ready',
+    template(filledEarly ? 'All proposals are in 🎉' : 'Your proposals are ready 🎉', [
+      filledEarly
+        ? `${name.split(' ')[0]}, your buyer request filled every proposal spot before the window even ended — so we closed it and your proposals are ready now, sooner than expected.`
+        : `${name.split(' ')[0]}, the proposal window for your home search in ${profile.search_areas} has closed.`,
+      'Log in to compare every sealed proposal side by side: compensation, tours, response times, and each agent\'s plan for you.',
+      'Want more options after reviewing? You can receive 10 more proposals — shown only to agents who haven\'t proposed yet. Your name and contact info stay hidden until you choose to connect.',
     ], 'Compare my proposals', APP_URL + '/buyer'));
 }
 
@@ -242,6 +255,6 @@ module.exports = {
   adminNewAgent, agentApproved, agentRejected, agentsNewRequest,
   sellerRequestReceived, buyerProfileLive,
   sellerProposalsReady, agentWon, passwordReset,
-  agentsNewBuyerProfile, buyerNewProposal, buyerAgentWon, cityDistance,
+  agentsNewBuyerProfile, buyerNewProposal, buyerProposalsReady, buyerAgentWon, cityDistance,
   zipInfo, zipDistance, RADIUS_MILES,
 };

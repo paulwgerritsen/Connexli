@@ -84,6 +84,23 @@
     </div>
 
     <div class="card">
+      <h2 style="font-size:16px;">Choose your proposal window</h2>
+      <p class="note" style="margin-top:2px;">Verified buyer's agents compete during this window. Proposals stay sealed until it closes — then you compare everything at once. If all 10 spots fill early, it closes right then and your comparison is ready sooner.</p>
+      <div class="optgrid">
+        <% H.WINDOWS.forEach(w => { %>
+          <label class="opt">
+            <input type="radio" name="window_hours" value="<%= w.hours %>" <%= (parseInt(form.window_hours) || 48) === w.hours ? 'checked' : '' %>>
+            <span class="tile"><span>
+              <% if (w.hours === 48) { %><span class="rec">RECOMMENDED</span><% } %>
+              <b><%= w.label %></b>
+              <span class="desc"><%= w.hours === 48 ? 'Our recommendation for buyers — fast answers with time for thoughtful proposals.' : w.desc %></span>
+            </span></span>
+          </label>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="card">
       <h2 style="font-size:16px;">One important question</h2>
       <label for="bba">Have you signed a Buyer Broker Agreement with another agent?</label>
       <select id="bba" name="bba">

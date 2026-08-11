@@ -19,19 +19,27 @@ async function activeProfile(userId) {
 }
 
 // ---------- my buyer profile (hub page) ----------
+// Mirrors the seller flow: while the window is open the buyer sees only the
+// sealed count + countdown; proposals reveal together when the window closes.
 router.get('/buyer', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile) return res.render('buyer/start', { title: "Find Your Buyer's Agent", H });
 
-  const { rows: proposals } = await pool.query(
-    `SELECT bp.*, u.name AS agent_name, u.email AS agent_email, u.phone AS agent_phone,
-            ap.brokerage, ap.license_number, ap.transactions_seller_12mo, ap.transactions_buyer_12mo
-     FROM buyer_proposals bp
-     JOIN users u ON u.id = bp.agent_id
-     JOIN agent_profiles ap ON ap.user_id = bp.agent_id
-     WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]);
+  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
+  profile.proposal_count = cnt[0].n;
+  const open = profile.status === 'active' && profile.published && H.windowOpen(profile);
 
-  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, H });
+  let proposals = [];
+  if (!open) {
+    ({ rows: proposals } = await pool.query(
+      `SELECT bp.*, u.name AS agent_name, u.email AS agent_email, u.phone AS agent_phone,
+              ap.brokerage, ap.license_number, ap.transactions_seller_12mo, ap.transactions_buyer_12mo
+       FROM buyer_proposals bp
+       JOIN users u ON u.id = bp.agent_id
+       JOIN agent_profiles ap ON ap.user_id = bp.agent_id
+       WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]));
+  }
+  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H });
 });
 
 // ---------- create (Step 1: the ~2-minute core) ----------
@@ -53,13 +61,14 @@ router.post('/buyer/new', consumer, async (req, res) => {
     price_range: Object.keys(H.PRICE_RANGES).includes(req.body.price_range) ? req.body.price_range : null,
     timeline: H.oneOf(req.body.timeline, H.B_TIMELINE, null),
     in_utah: req.body.in_utah !== 'no',
-    origin_state: H.clean(req.body.origin_state, 40),
+    origin_state: H.oneOf(req.body.origin_state, H.US_STATES, ''), // dropdown: standardized state names only
     move_reason: H.clean(req.body.move_reason, 120),
     visit_dates: H.clean(req.body.visit_dates, 80),
     video_tours: req.body.video_tours === 'yes',
     purchase_purpose: H.oneOf(req.body.purchase_purpose, H.B_PURPOSE, 'Primary residence'),
     bba: H.oneOf(req.body.bba, H.B_BBA, 'No'),
     bba_expires: H.clean(req.body.bba_expires, 40),
+    window_hours: [24, 48, 72, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 48,
   };
   const fail = (msg) => res.status(400).render('buyer/new', { title: "Find Your Buyer's Agent", H, error: msg, form: { ...f, in_utah: f.in_utah ? 'yes' : 'no', video_tours: f.video_tours ? 'yes' : 'no' } });
 
@@ -81,11 +90,14 @@ router.post('/buyer/new', consumer, async (req, res) => {
   const { rows } = await pool.query(
     `INSERT INTO buyer_profiles (user_id, readiness, published, financing_type, lender_status, down_payment,
        current_situation, need_to_sell, search_areas, price_range, timeline, in_utah, origin_state,
-       move_reason, visit_dates, video_tours, purchase_purpose, bba, bba_expires)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+       move_reason, visit_dates, video_tours, purchase_purpose, bba, bba_expires,
+       window_hours, closes_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+       $20, now() + make_interval(hours => $20)) RETURNING *`,
     [req.session.user.id, badge, published, f.financing_type, f.lender_status, f.down_payment,
      f.current_situation, f.need_to_sell, f.search_areas, f.price_range, f.timeline, f.in_utah,
-     f.origin_state, f.move_reason, f.visit_dates, f.video_tours, f.purchase_purpose, f.bba, f.bba_expires]
+     f.origin_state, f.move_reason, f.visit_dates, f.video_tours, f.purchase_purpose, f.bba, f.bba_expires,
+     f.window_hours]
   );
   const profile = rows[0];
 
@@ -99,9 +111,12 @@ router.post('/buyer/new', consumer, async (req, res) => {
     mailer.buyerProfileLive(req.session.user.email, req.session.user.name, profile); // instant confirmation
   }
 
-  // Sell-then-buy cross-sell: owners who must sell get the one-tap bridge.
+  // Published buyers land back on the dashboard, where their new buying
+  // request is immediately visible (Paul, Aug 10). Exploring buyers still get
+  // the Get Ready guidance page.
+  if (published) return res.redirect('/dashboard?buyerlive=1');
   const crossSell = f.need_to_sell.startsWith('Yes');
-  res.render('buyer/created', { title: published ? 'Your profile is live' : "Let's get you ready", H, profile, published, badge, crossSell });
+  res.render('buyer/created', { title: "Let's get you ready", H, profile, published, badge, crossSell });
 });
 
 // ---------- Step 2: optional profile booster ----------
@@ -141,7 +156,10 @@ router.post('/buyer/upgrade', consumer, async (req, res) => {
   const updated = { ...profile, lender_status: 'Yes — preapproved' };
   const badge = H.readiness(updated);
   const published = badge !== 'exploring';
-  await pool.query(`UPDATE buyer_profiles SET lender_status='Yes — preapproved', readiness=$1, published=$2 WHERE id=$3`,
+  // Publishing starts the proposal window fresh from this moment.
+  await pool.query(`UPDATE buyer_profiles SET lender_status='Yes — preapproved', readiness=$1, published=$2,
+      closes_at = CASE WHEN $2 AND NOT published THEN now() + make_interval(hours => window_hours) ELSE closes_at END
+    WHERE id=$3`,
     [badge, published, profile.id]);
   logEvent('buyer_upgraded_ready', { userId: req.session.user.id, meta: { readiness: badge } });
   if (published && !profile.published) {
@@ -152,19 +170,22 @@ router.post('/buyer/upgrade', consumer, async (req, res) => {
   res.redirect('/buyer');
 });
 
-// ---------- request another round of proposals ----------
-// Available once the current round is full (10 sealed proposals). Opens 10
-// more slots reserved for agents who haven't proposed yet, extends the
-// profile 30 days, and re-notifies nearby agents (excluding prior bidders).
+// ---------- receive 10 more proposals ----------
+// Available whenever the window has CLOSED (time or cap) and no agent has
+// been chosen — mirrors the seller "request another round". Opens exactly 10
+// fresh slots (cap = current count + 10), restarts the same window length,
+// extends the profile, and notifies only agents who haven't proposed yet.
 router.post('/buyer/rebid', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile || profile.status !== 'active' || !profile.published) return res.redirect('/buyer');
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
-  if (cnt[0].n < profile.round * H.ROUND_CAP) return res.redirect('/buyer'); // round not full yet
+  profile.proposal_count = cnt[0].n;
+  if (H.windowOpen(profile)) return res.redirect('/buyer'); // window still open — nothing to reopen
 
   const { rows } = await pool.query(
-    `UPDATE buyer_profiles SET round = round + 1, expires_at = now() + interval '30 days'
-     WHERE id=$1 AND status='active' RETURNING *`, [profile.id]);
+    `UPDATE buyer_profiles SET round = round + 1, proposal_cap = $2 + 10, window_notified = false,
+       closes_at = now() + make_interval(hours => window_hours), expires_at = now() + interval '30 days'
+     WHERE id=$1 AND status='active' RETURNING *`, [profile.id, cnt[0].n]);
   if (!rows[0]) return res.redirect('/buyer');
 
   const { rows: prior } = await pool.query(`SELECT agent_id FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
@@ -193,6 +214,10 @@ router.post('/buyer/withdraw', consumer, async (req, res) => {
 router.post('/buyer/connect/:pid(\\d+)', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile) return res.redirect('/buyer');
+  // Mirror the seller flow: connecting happens after the window closes.
+  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
+  profile.proposal_count = cnt[0].n;
+  if (profile.published && H.windowOpen(profile)) return res.redirect('/buyer');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

@@ -186,14 +186,50 @@ router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
   const submitted = proposals.rows.length;
   const wins = proposals.rows.filter(p => p.connected).length;
 
+  // Buyer-side statistics (Paul, Aug 11): opportunities in reach since
+  // approval, proposals submitted, and buyer clients won.
+  const [buyerOppsRows, buyerProps] = await Promise.all([
+    pool.query(`SELECT search_areas FROM buyer_profiles WHERE published AND created_at >= COALESCE(
+      (SELECT reviewed_at FROM agent_profiles WHERE user_id=$1), now())`, [req.params.id]),
+    pool.query(
+      `SELECT bp.*, b.search_areas, b.price_range FROM buyer_proposals bp
+       JOIN buyer_profiles b ON b.id=bp.profile_id WHERE bp.agent_id=$1 ORDER BY bp.created_at DESC`, [req.params.id]),
+  ]);
+  const buyerOpportunities = buyerOppsRows.rows.filter(b => {
+    const cities = String(b.search_areas).split(',').map(s => s.trim()).filter(Boolean);
+    const dists = cities.map(c => mailer.cityDistance(agent.service_zip, c)).filter(d => d !== null);
+    return !dists.length || Math.min(...dists) <= mailer.RADIUS_MILES;
+  }).length;
+  const buyerSubmitted = buyerProps.rows.length;
+  const buyerWins = buyerProps.rows.filter(p => p.connected).length;
+
   res.render('admin/agent-detail', {
     title: agent.name, agent, H,
     proposals: proposals.rows,
+    buyerProposals: buyerProps.rows,
     stats: {
       opportunities, submitted, wins,
+      buyerOpportunities, buyerSubmitted, buyerWins,
       successRate: submitted ? Math.round(100 * wins / submitted) + '%' : 'n/a',
     },
   });
+});
+
+// ---------- buyer request detail (mirrors the seller request detail) ----------
+router.get('/admin/buyers/:id(\\d+)', admin, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT b.*, u.name AS buyer_name, u.email AS buyer_email, u.phone AS buyer_phone,
+       (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
+     FROM buyer_profiles b JOIN users u ON u.id=b.user_id WHERE b.id=$1`, [req.params.id]);
+  const buyer = rows[0];
+  if (!buyer) return res.status(404).render('error', { title: 'Not found', message: 'That buyer request does not exist.' });
+
+  const { rows: proposals } = await pool.query(
+    `SELECT bp.*, u.name AS agent_name, u.email AS agent_email, ap.brokerage
+     FROM buyer_proposals bp JOIN users u ON u.id=bp.agent_id JOIN agent_profiles ap ON ap.user_id=bp.agent_id
+     WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [req.params.id]);
+
+  res.render('admin/buyer-detail', { title: 'Buyer request', buyer, proposals, H });
 });
 
 // ---------- professional actions ----------

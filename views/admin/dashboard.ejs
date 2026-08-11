@@ -17,7 +17,7 @@
   <div class="stat"><b><%= m.buyer_connections %></b><span>Buyer connections</span></div>
 </div>
 
-<h2 style="margin-top:26px;">Verification queue<% if (pending.length) { %> · <%= pending.length %> waiting<% } %></h2>
+<details class="sect" open><summary><h2>Verification queue<% if (pending.length) { %> · <%= pending.length %> waiting<% } %></h2></summary>
 <% if (pending.length === 0) { %>
   <div class="card"><p class="sub">No professionals waiting for review. 🎉</p></div>
 <% } else { %>
@@ -44,9 +44,11 @@
   </div>
 <% } %>
 
-<h2 style="margin-top:26px;">Recent requests</h2>
+</details>
+
+<details class="sect" open><summary><h2>Seller requests · <%= requests.length %></h2></summary>
 <div class="tblwrap">
-  <table>
+  <table class="dt">
     <tr><th>Request</th><th>Seller</th><th>Window</th><th>Status</th><th>Proposals</th><th>Created</th></tr>
     <% requests.forEach(r => { %>
       <tr>
@@ -61,20 +63,23 @@
   </table>
 </div>
 
-<h2 style="margin-top:26px;">Buyer profiles</h2>
+</details>
+
+<details class="sect" open><summary><h2>Buyer requests · <%= buyers.length %></h2></summary>
 <% if (buyers.length === 0) { %>
   <div class="card"><p class="sub">No buyer profiles yet. They'll appear here as buyers use Find Your Buyer's Agent.</p></div>
 <% } else { %>
 <div class="tblwrap">
-  <table>
-    <tr><th>Buyer</th><th>Search</th><th>Readiness</th><th>Status</th><th>Proposals</th><th>Created</th></tr>
+  <table class="dt">
+    <tr><th>Buyer</th><th>Search</th><th>Readiness</th><th>Status</th><th>Window</th><th>Proposals</th><th>Created</th></tr>
     <% buyers.forEach(b => { %>
       <tr>
-        <td><%= b.buyer_name %> · <span style="color:var(--muted);"><%= b.buyer_email %></span></td>
+        <td><a href="/admin/buyers/<%= b.id %>"><%= b.buyer_name %></a> · <span style="color:var(--muted);"><%= b.buyer_email %></span></td>
         <td><%= b.search_areas %> · <%= b.price_range %><% if (!b.in_utah) { %> · from <%= b.origin_state %><% } %></td>
         <td><span class="badge <%= b.readiness === 'ready_now' ? 'connected' : b.readiness === 'preparing' ? 'open' : 'pending' %>"><%= H.READINESS_LABELS[b.readiness] %></span></td>
         <td><span class="badge <%= b.status === 'connected' ? 'connected' : b.status === 'active' ? (b.published ? 'open' : 'pending') : 'closed' %>"><%= b.status === 'active' ? (b.published ? 'live' : 'get ready') : b.status %></span></td>
-        <td><%= b.proposal_count %>/5</td>
+        <td><%= b.window_hours %> hrs<%= new Date(b.closes_at) > new Date() && b.proposal_count < b.proposal_cap ? '' : ' · closed' %></td>
+        <td><%= b.proposal_count %>/<%= b.proposal_cap %></td>
         <td><%= new Date(b.created_at).toLocaleDateString('en-US') %></td>
       </tr>
     <% }) %>
@@ -82,9 +87,11 @@
 </div>
 <% } %>
 
-<h2 style="margin-top:26px;">Reviewed professionals</h2>
+</details>
+
+<details class="sect" open><summary><h2>Reviewed professionals · <%= agents.length %></h2></summary>
 <div class="tblwrap">
-  <table>
+  <table class="dt">
     <tr><th>Name</th><th>License</th><th>Brokerage</th><th>Status</th><th>Reviewed</th></tr>
     <% agents.forEach(a => { %>
       <tr>
@@ -97,4 +104,5 @@
     <% }) %>
   </table>
 </div>
+</details>
 <%- include('../partials/foot') %>

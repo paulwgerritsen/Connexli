@@ -4,7 +4,7 @@
   <h1 style="margin-top:8px;"><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %></h1>
   <p class="sub" data-closes="<%= new Date(request.closes_at).toISOString() %>" id="closesLine">Window status…</p>
   <% if (request.status === 'open' && request.proposal_count != null) { %>
-    <p class="note"><%= Math.max(0, request.proposal_count - (request.round - 1) * H.ROUND_CAP) %> of <%= H.ROUND_CAP %> proposal spots taken this round<% if (request.round > 1) { %> (round <%= request.round %> — fresh competition only)<% } %>. The window closes the moment all <%= H.ROUND_CAP %> fill, so don't wait until the deadline.</p>
+    <p class="note"><%= H.takenThisRound(request) %> of <%= H.ROUND_CAP %> proposal spots taken this round · <%= H.spotsLeft(request) %> remaining<% if (request.round > 1) { %> (round <%= request.round %> — fresh competition only)<% } %>. The window closes the moment all spots fill, so don't wait until the deadline.</p>
   <% } %>
   <% if (error) { %><div class="error"><%= error %></div><% } %>
 

@@ -30,23 +30,50 @@
     <a class="btn" href="/buyer/get-ready">Get ready to buy</a>
   </div>
 <% } else { %>
-  <div class="checkrow"><span class="c">🔒</span><span>Your profile is live and anonymous. Agents see your search, never your name — up to 10 sealed proposals per round, and competing agents never see each other's terms. If all 10 arrive early, your set is complete sooner.</span></div>
+  <div class="checkrow"><span class="c">🔒</span><span>Your profile is live and anonymous. Agents see your search, never your name — sealed proposals reveal together when your window closes, and competing agents never see each other's terms.</span></div>
 <% } %>
 
-<% if (profile.status === 'active' && profile.published && proposals.length >= profile.round * H.ROUND_CAP) { %>
+<% if (profile.status === 'active' && profile.published && windowIsOpen) { %>
+  <div class="card" style="text-align:center; margin-top:14px;">
+    <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;">Proposal window closes in</div>
+    <div class="count" id="clock" data-closes="<%= new Date(profile.closes_at).toISOString() %>">…</div>
+    <div class="bar"><i id="clockbar" style="width:0%"></i></div>
+    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= profile.proposal_count %></b> of <b><%= profile.proposal_cap %></b> sealed proposals received</p>
+    <p class="note" style="margin-top:4px;">If all 10 spots for this round fill before the countdown ends, the window closes early and your comparison is ready sooner.</p>
+    <div class="sealed">🔒 <span><b>Why sealed?</b> Agents can't see each other's offers, so each one gives you their best proposal, not the minimum needed to beat a rival. You'll see everything the moment the window closes.</span></div>
+  </div>
+  <script>
+  (function(){
+    var el = document.getElementById('clock');
+    var closes = new Date(el.dataset.closes).getTime();
+    var total = <%= profile.window_hours %> * 3600 * 1000;
+    function tick(){
+      var left = closes - Date.now();
+      if (left <= 0) { location.reload(); return; }
+      var h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000), s = Math.floor(left%60000/1000);
+      el.textContent = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+      document.getElementById('clockbar').style.width = Math.min(100, Math.round(100*(1-left/total)))+'%';
+    }
+    tick(); setInterval(tick, 1000);
+    setInterval(function(){ location.reload(); }, 120000);
+  })();
+  </script>
+<% } %>
+
+<% if (profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal) { %>
   <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
-    <h2 style="font-size:16px;">All <%= H.ROUND_CAP %> proposals are in — this round is complete 🎉</h2>
-    <p class="sub" style="margin-bottom:10px;">Your full set is ready to compare below. Want even more options? Open another round: up to 10 additional verified agents can propose, and only agents who <b>haven't</b> proposed yet will see your profile. Everything you already have stays saved.</p>
-    <form method="POST" action="/buyer/rebid" onsubmit="return confirm('Open a new proposal round? Up to 10 additional agents (who haven\'t proposed yet) will be invited, and your current proposals remain saved.');">
+    <h2 style="font-size:16px;">Want more options?</h2>
+    <p class="sub" style="margin-bottom:10px;">Receive <b>10 more proposals</b>: your request goes live again for <%= profile.window_hours >= 24 ? (profile.window_hours / 24) + ' day' + (profile.window_hours > 24 ? 's' : '') : profile.window_hours + ' hours' %>, and only verified agents who <b>haven't</b> proposed yet will see it. Every proposal you already have stays right here. This continues until you choose an agent — only then is your contact information released.</p>
+    <form method="POST" action="/buyer/rebid" onsubmit="return confirm('Receive 10 more proposals? Your window reopens for additional agents (who haven\'t proposed yet), and your current proposals remain saved.');">
       <input type="hidden" name="_csrf" value="<%= csrf %>">
-      <button class="btn ghost" type="submit">Invite another round of proposals</button>
+      <button class="btn ghost" type="submit">Receive 10 more proposals</button>
     </form>
   </div>
 <% } %>
 
-<% if (profile.status === 'active') { %>
-  <h2 style="margin-top:24px;">Proposals (<%= proposals.length %> of <%= profile.round * H.ROUND_CAP %><% if (profile.round > 1) { %> across <%= profile.round %> rounds<% } %>)</h2>
-  <p class="note">ⓘ Each amount shown is that professional's <b>proposed buyer-agent compensation</b>. Who ultimately pays it can vary by transaction — a seller or listing side may contribute — and your own written agreement governs what you're responsible for. Review those terms before signing anything. Connexli does not set or recommend commissions.</p>
+<% if (profile.status === 'active' && !windowIsOpen) { %>
+  <h2 style="margin-top:24px;">Proposals (<%= proposals.length %><% if (profile.round > 1) { %> across <%= profile.round %> rounds<% } %>)</h2>
+  <p class="note">ⓘ Each amount shown is that professional's <b>proposed buyer-agent compensation</b>. Sellers often contribute toward it — but if the seller does not cover the full amount you agree to with your agent, <b>you may be responsible for the remaining balance at closing</b>, depending on your written agreement. Each proposal states that agent's answer below. Review your agreement's terms before signing anything. Connexli does not set or recommend commissions.</p>
   <% if (proposals.length === 0) { %>
     <div class="card"><p class="sub">No proposals yet. Verified agents in your areas have been notified — most buyers hear back within a day or two. Proposals appear here the moment they arrive.</p></div>
   <% } else { %>
@@ -62,8 +89,13 @@
               <p class="note" style="margin-top:6px;"><b>Last 12 months:</b> <%= p.transactions_buyer_12mo ?? 0 %> buyer-side · <%= p.transactions_seller_12mo ?? 0 %> seller-side transactions <span style="color:var(--muted);">(reported by the professional)</span></p>
             <% } %>
             <div class="complbl">Proposed buyer-agent compensation ⓘ</div>
-            <div><span class="fee"><%= H.buyerFeeLabel(p) %></span></div>
+            <div><span class="fee"><%= H.buyerFeeLabel(p) %></span>
+              <% const est = H.estBuyerFee(p, profile.price_range); %>
+              <% if (est !== null) { %><span class="est">Est. compensation: ≈ <%= H.money(est) %><% if (p.comp_structure === 'pct') { %> at your range midpoint (<%= H.money(H.midPrice(profile.price_range)) %>)<% } %></span><% } %>
+            </div>
             <% if (p.min_fee) { %><p class="note">Minimum fee: <%= H.money(p.min_fee) %></p><% } %>
+            <% if (p.gap_responsibility === 'Yes') { %><p class="note"><b>If the seller doesn't cover the full amount:</b> you would be responsible for the remaining balance at closing.</p>
+            <% } else if (p.gap_responsibility === 'No') { %><p class="note"><b>If the seller doesn't cover the full amount:</b> this agent will not ask you to pay the difference.</p><% } %>
             <div class="pillrow">
               <% if (p.included_tours) { %><span class="pill"><%= p.included_tours %></span><% } %>
               <% if (p.video_tours) { %><span class="pill">Video tours</span><% } %>
@@ -85,7 +117,9 @@
     </div>
     <p class="note">Connecting releases your contact info to that one professional only. The buyer representation agreement is signed with their brokerage, outside Connexli. No obligation.</p>
   <% } %>
+<% } %>
 
+<% if (profile.status === 'active') { %>
   <div class="card" style="margin-top:20px;">
     <h2 style="font-size:16px;">Manage my profile</h2>
     <p class="sub" style="margin-bottom:10px;">Active until <%= new Date(profile.expires_at).toLocaleDateString('en-US') %>. <% if (!profile.priorities && !profile.property_prefs) { %>Complete profiles get stronger, more specific proposals.<% } %></p>
