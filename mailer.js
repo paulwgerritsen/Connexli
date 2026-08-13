@@ -104,11 +104,16 @@ async function agentsNewRequest(request, excludeAgentIds = []) {
        JOIN agent_profiles ap ON ap.user_id = u.id WHERE ap.status = 'approved'`);
     const excluded = new Set(excludeAgentIds.map(Number));
     const newRound = (request.round || 1) > 1;
-    let notified = 0;
+    let notified = 0, unresolved = 0;
     for (const a of agents) {
       if (excluded.has(Number(a.id))) continue;
       const dist = zipDistance(request.zip, a.service_zip);
-      if (dist !== null && dist > RADIUS_MILES) continue;
+      // FAIL CLOSED (Paul, Aug 12): if we cannot compute the distance, we do
+      // NOT email — a professional far outside the radius must never be
+      // notified because of a data gap. Unresolved ZIPs are counted and
+      // logged so they can be fixed in the agent's settings.
+      if (dist === null) { unresolved++; continue; }
+      if (dist > RADIUS_MILES) continue;
       notified++;
       await send(a.email, newRound ? 'Fresh Round: Connexli Opportunity Near You' : 'New Connexli Opportunity Near You',
         template(newRound ? 'A fresh round just opened near you' : 'New opportunity near you', [
@@ -119,7 +124,8 @@ async function agentsNewRequest(request, excludeAgentIds = []) {
           'Submit your sealed proposal before the window closes — it ends early once 10 proposals arrive. Competing professionals never see your pricing.',
         ], 'View Opportunity', APP_URL + '/login'));
     }
-    console.log(`Opportunity emails: ${notified}/${agents.length} approved professionals within ${RADIUS_MILES} miles of ${request.zip}${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}`);
+    console.log(`Opportunity emails: ${notified}/${agents.length} approved professionals within ${RADIUS_MILES} miles of ${request.zip}${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}${unresolved ? ` (${unresolved} skipped: service ZIP unresolvable)` : ''}`);
+    if (notified === 0) console.warn(`WARNING: no professionals within ${RADIUS_MILES} miles of ${request.zip} — request ${request.id} will get no notifications.`);
   } catch (e) {
     console.error('agentsNewRequest failed:', e.message);
   }
@@ -145,11 +151,13 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
     const excluded = new Set(excludeAgentIds.map(Number));
     const newRound = (profile.round || 1) > 1;
     const cities = String(profile.search_areas).split(',').map(s => s.trim()).filter(Boolean);
-    let notified = 0;
+    let notified = 0, unresolved = 0;
     for (const a of agents) {
       if (excluded.has(Number(a.id))) continue;
       const dists = cities.map(c => cityDistance(a.service_zip, c)).filter(d => d !== null);
-      if (dists.length && Math.min(...dists) > RADIUS_MILES) continue; // fail-open when no city resolves
+      // FAIL CLOSED: no resolvable distance = no email (see agentsNewRequest).
+      if (!dists.length) { unresolved++; continue; }
+      if (Math.min(...dists) > RADIUS_MILES) continue;
       notified++;
       await send(a.email, newRound ? 'Fresh Round: Connexli Buyer Near You' : 'New Connexli Buyer Near You',
         template(newRound ? 'A buyer opened a fresh round near you' : 'New buyer profile near you', [
@@ -160,7 +168,8 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
           'Review the anonymous Buyer Snapshot and submit a sealed proposal before the window closes — it ends early once 10 proposals arrive. Competing professionals never see your terms.',
         ], 'View Buyer Snapshot', APP_URL + '/login'));
     }
-    console.log(`Buyer-profile emails: ${notified}/${agents.length} approved professionals for areas "${profile.search_areas}"${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}`);
+    console.log(`Buyer-profile emails: ${notified}/${agents.length} approved professionals for areas "${profile.search_areas}"${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}${unresolved ? ` (${unresolved} skipped: distance unresolvable)` : ''}`);
+    if (notified === 0) console.warn(`WARNING: no professionals matched buyer areas "${profile.search_areas}" — profile ${profile.id} will get no notifications.`);
   } catch (e) {
     console.error('agentsNewBuyerProfile failed:', e.message);
   }

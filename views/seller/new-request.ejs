@@ -55,10 +55,10 @@
       <div class="optgrid">
         <% H.WINDOWS.forEach(w => { %>
           <label class="opt">
-            <input type="radio" name="window_hours" value="<%= w.hours %>" <%= w.hours === 72 ? 'checked' : '' %>>
+            <input type="radio" name="window_hours" value="<%= w.hours %>" <%= w.hours === 48 ? 'checked' : '' %>>
             <span class="tile"><span>
-              <% if (w.hours === 72) { %><span class="rec">RECOMMENDED</span><% } %>
-              <b><%= w.label %> · <%= w.tag %></b>
+              <% if (w.hours === 48) { %><span class="rec">RECOMMENDED</span><% } %>
+              <b><%= w.label %><%= w.hours === 48 ? '' : ' · ' + w.tag %></b>
               <span class="desc"><%= w.desc %></span>
             </span></span>
           </label>

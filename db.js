@@ -189,6 +189,11 @@ UPDATE buyer_profiles SET proposal_cap = round * 10 WHERE proposal_cap < round *
 -- Buyer proposal clarity (Paul, Aug 11): the direct question replaces the
 -- free-text "how do you handle seller contributions".
 ALTER TABLE buyer_proposals ADD COLUMN IF NOT EXISTS gap_responsibility TEXT NOT NULL DEFAULT '';
+
+-- One-time 24-hour window extension (Paul, Aug 12): if a window expires with
+-- fewer than the cap, the owner may keep it open 24 more hours — once.
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
 `;
 
 async function init() {

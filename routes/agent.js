@@ -78,10 +78,27 @@ router.get('/agent', agent, async (req, res) => {
      FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id
      WHERE bp.agent_id=$1 ORDER BY bp.created_at DESC`, [uid]);
 
+  // Radius filter (Paul, Aug 12): opportunities outside the notification
+  // radius are hidden from the dashboard too, not just excluded from emails.
+  // Display fails OPEN on unresolvable distances (an agent with a data gap
+  // still sees opportunities and can fix their ZIP in settings) while emails
+  // fail closed — nobody far away gets spammed.
+  const inReach = (zip) => {
+    const d = mailer.zipDistance(zip, profile.service_zip);
+    return d === null || d <= mailer.RADIUS_MILES;
+  };
+  const buyerInReach = (areas) => {
+    const cities = String(areas).split(',').map(s => s.trim()).filter(Boolean);
+    const dists = cities.map(c => mailer.cityDistance(profile.service_zip, c)).filter(d => d !== null);
+    return !dists.length || Math.min(...dists) <= mailer.RADIUS_MILES;
+  };
+  const opportunities = opps.rows.filter(o => inReach(o.zip));
+  const buyerOppsNear = buyerOpps.filter(b => buyerInReach(b.search_areas));
+
   res.render('agent/dashboard', {
     title: 'Opportunities', profile, H,
-    opportunities: opps.rows, myProposals: mine.rows, stats: stats.rows[0], wins,
-    buyerOpps, buyerWins, myBuyerProposals,
+    opportunities, myProposals: mine.rows, stats: stats.rows[0], wins,
+    buyerOpps: buyerOppsNear, buyerWins, myBuyerProposals,
   });
 });
 

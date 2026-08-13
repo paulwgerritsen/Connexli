@@ -60,6 +60,17 @@
   </script>
 <% } %>
 
+<% if (profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal && !profile.extended && profile.proposal_count < profile.proposal_cap) { %>
+  <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
+    <h2 style="font-size:16px;">Your window ended with <%= profile.proposal_count %> proposal<%= profile.proposal_count === 1 ? '' : 's' %> — want to keep it open?</h2>
+    <p class="sub" style="margin-bottom:10px;">Keep this same request open for an additional <b>24 hours</b> — agents who already proposed stay in, and new ones can still join until the extension ends or all <%= profile.proposal_cap %> spots fill. Available once per request.</p>
+    <form method="POST" action="/buyer/extend">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn" type="submit">Keep request open for 24 more hours</button>
+    </form>
+  </div>
+<% } %>
+
 <% if (profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal) { %>
   <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
     <h2 style="font-size:16px;">Want more options?</h2>

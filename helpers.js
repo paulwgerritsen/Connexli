@@ -23,11 +23,12 @@ const PRICE_RANGES = {
 // most this many sealed proposals, then the window closes on the spot.
 const ROUND_CAP = 10;
 
+// Three windows (Paul, Aug 12): 72h removed; 48h is the single Recommended
+// option; 7 days explains its use cases without competing messaging.
 const WINDOWS = [
-  { hours: 24,  label: '24 hours', tag: 'Rush',         desc: 'Fastest turnaround. Many agents respond within hours.' },
-  { hours: 48,  label: '48 hours', tag: 'Fast track',   desc: "Great if you're ready to meet agents this week." },
-  { hours: 72,  label: '72 hours', tag: 'Recommended',  desc: 'Our recommendation. Gives agents enough time to prepare thoughtful proposals.' },
-  { hours: 168, label: '7 days',   tag: 'Extend',       desc: "Best for luxury homes, unique properties, rural areas, or if you're not in a hurry." },
+  { hours: 24,  label: '24 hours', tag: 'Rush',        desc: 'Fastest turnaround. Many agents respond within hours.' },
+  { hours: 48,  label: '48 hours', tag: 'Recommended', desc: 'Our recommendation. Fast answers, with enough time for thoughtful proposals.' },
+  { hours: 168, label: '7 days',   tag: 'Extended',    desc: 'Useful for luxury homes, unique properties, and rural areas.' },
 ];
 
 // ---------- buyer-side constants ----------

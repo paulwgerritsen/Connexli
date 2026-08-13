@@ -45,7 +45,7 @@ router.post('/requests/new', seller, async (req, res) => {
     hoa: req.body.hoa === 'Yes' ? 'Yes' : 'No',
     condition: H.oneOf(req.body.condition, H.CONDITIONS, 'Updated'),
     price_range: Object.keys(H.PRICE_RANGES).includes(req.body.price_range) ? req.body.price_range : null,
-    window_hours: [24, 48, 72, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 72,
+    window_hours: [24, 48, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 48,
   };
   let priorities = req.body.priorities || [];
   if (!Array.isArray(priorities)) priorities = [priorities];
@@ -158,6 +158,23 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   mailer.agentsNewRequest(rows[0], prior.map(p => p.agent_id)); // fire and forget
   logEvent('request_new_round', { userId: req.session.user.id, requestId: request.id,
     meta: { round: rows[0].round, prior_proposals: prior.length } });
+  res.redirect('/requests/' + request.id);
+});
+
+// One-time 24-hour extension (Paul, Aug 12): if the window expired with fewer
+// than the cap, the seller can keep the SAME request open 24 more hours.
+// Round and cap are unchanged; agents who already proposed can still edit.
+router.post('/requests/:id(\\d+)/extend', seller, async (req, res) => {
+  const request = await loadRequest(req, res);
+  if (!request) return;
+  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
+  if (request.status !== 'closed' || request.extended || cnt[0].n >= request.proposal_cap) {
+    return res.redirect('/requests/' + request.id);
+  }
+  const { rowCount } = await pool.query(
+    `UPDATE requests SET status='open', closes_at = now() + interval '24 hours', extended = true
+     WHERE id=$1 AND status='closed' AND extended = false`, [request.id]);
+  if (rowCount) logEvent('request_extended', { userId: req.session.user.id, requestId: request.id, meta: { proposals_at_extension: cnt[0].n } });
   res.redirect('/requests/' + request.id);
 });
 

@@ -73,6 +73,17 @@
     <p class="note">Connecting releases your contact info to that one professional only. The listing agreement is signed with their brokerage, outside Connexli. No obligation.</p>
   <% } %>
 
+  <% if (request.status === 'closed' && !request.extended && proposals.length < request.proposal_cap) { %>
+    <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
+      <h2 style="font-size:16px;">Your window ended with <%= proposals.length %> proposal<%= proposals.length === 1 ? '' : 's' %> — want to keep it open?</h2>
+      <p class="sub" style="margin-bottom:10px;">Keep this same request open for an additional <b>24 hours</b> — professionals who already proposed stay in, and new ones can still join until the extension ends or all <%= request.proposal_cap %> spots fill. Available once per request.</p>
+      <form method="POST" action="/requests/<%= request.id %>/extend">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn" type="submit">Keep request open for 24 more hours</button>
+      </form>
+    </div>
+  <% } %>
+
   <% if (request.status === 'closed') { %>
     <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
       <h2 style="font-size:16px;">Want more options?</h2>

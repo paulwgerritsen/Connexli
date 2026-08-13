@@ -60,15 +60,15 @@
 <% } else { %>
   <div class="tblwrap">
     <table class="dt">
-      <tr><th>Property</th><th>Area</th><th>Price range</th><th>Window</th><th>Spots</th><th>Status</th><th></th></tr>
+      <tr><th>Property</th><th>Area</th><th>Price</th><th>Closes</th><th></th></tr>
       <% opportunities.forEach(o => { %>
         <tr>
-          <td><b style="color:var(--navy);"><%= o.property_type %></b><br><span class="meta"><%= o.sqft_range %> sq ft · <%= o.beds %> bd/<%= o.baths %> ba</span></td>
-          <td><%= o.city %>, UT <%= o.zip %></td>
+          <td><b style="color:var(--navy);"><%= o.property_type %></b>
+            <% if (o.mine > 0) { %><span class="badge approved">In 🔒</span><% } else if (o.round > 1) { %><span class="badge open">Fresh round</span><% } %>
+            <br><span class="meta"><%= o.sqft_range %> sq ft · <%= o.beds %> bd/<%= o.baths %> ba</span></td>
+          <td><%= o.city %> <%= o.zip %></td>
           <td><%= o.price_range %></td>
-          <td data-sort="<%= new Date(o.closes_at).toISOString() %>"><span data-closes="<%= new Date(o.closes_at).toISOString() %>">⏱</span></td>
-          <td data-sort="<%= o.proposal_cap - o.proposal_count %>"><%= Math.max(0, o.proposal_cap - o.proposal_count) %> left</td>
-          <td><% if (o.mine > 0) { %><span class="badge approved">Proposal in 🔒</span><% } else if (o.round > 1) { %><span class="badge open">Fresh round</span><% } else { %><span class="badge open">Open</span><% } %></td>
+          <td data-sort="<%= new Date(o.closes_at).toISOString() %>"><span data-closes="<%= new Date(o.closes_at).toISOString() %>">⏱</span><br><span class="meta"><%= H.spotsLeft(o) %> spot<%= H.spotsLeft(o) === 1 ? '' : 's' %> left</span></td>
           <td><a class="btn sm <%= o.mine > 0 ? 'ghost' : '' %>" href="/agent/opportunities/<%= o.id %>"><%= o.mine > 0 ? 'Edit' : 'Propose' %></a></td>
         </tr>
       <% }) %>
@@ -83,16 +83,16 @@
 <% } else { %>
   <div class="tblwrap">
     <table class="dt">
-      <tr><th>Buyer</th><th>Area</th><th>Price range</th><th>Window</th><th>Spots</th><th>Status</th><th></th></tr>
+      <tr><th>Buyer</th><th>Area</th><th>Price</th><th>Closes</th><th></th></tr>
       <% buyerOpps.forEach(b => { %>
         <tr>
-          <td><b style="color:var(--navy);"><%= H.READINESS_LABELS[b.readiness] %></b><br><span class="meta"><%= b.timeline %> · <%= b.purchase_purpose %><% if (!b.in_utah) { %> · from <%= b.origin_state %><% } %></span></td>
+          <td><b style="color:var(--navy);"><%= H.READINESS_LABELS[b.readiness] %></b>
+            <% if (b.mine > 0) { %><span class="badge approved">In 🔒</span><% } else if (b.round > 1) { %><span class="badge open">Fresh round</span><% } %>
+            <br><span class="meta"><%= b.timeline %><% if (!b.in_utah) { %> · from <%= b.origin_state %><% } %></span></td>
           <td><%= b.search_areas %></td>
           <td><%= b.price_range %></td>
-          <td data-sort="<%= new Date(b.closes_at).toISOString() %>"><span data-closes="<%= new Date(b.closes_at).toISOString() %>">⏱</span></td>
-          <td data-sort="<%= H.spotsLeft(b) %>"><%= H.spotsLeft(b) %> left</td>
-          <td><% if (b.mine > 0) { %><span class="badge approved">Proposal in 🔒</span><% } else if (b.round > 1) { %><span class="badge open">Fresh round</span><% } else { %><span class="badge open">Open</span><% } %></td>
-          <td><a class="btn sm <%= b.mine > 0 ? 'ghost' : '' %>" href="/agent/buyers/<%= b.id %>"><%= b.mine > 0 ? 'Edit' : 'View'  %></a></td>
+          <td data-sort="<%= new Date(b.closes_at).toISOString() %>"><span data-closes="<%= new Date(b.closes_at).toISOString() %>">⏱</span><br><span class="meta"><%= H.spotsLeft(b) %> spot<%= H.spotsLeft(b) === 1 ? '' : 's' %> left</span></td>
+          <td><a class="btn sm <%= b.mine > 0 ? 'ghost' : '' %>" href="/agent/buyers/<%= b.id %>"><%= b.mine > 0 ? 'Edit' : 'Propose' %></a></td>
         </tr>
       <% }) %>
     </table>

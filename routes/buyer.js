@@ -68,7 +68,7 @@ router.post('/buyer/new', consumer, async (req, res) => {
     purchase_purpose: H.oneOf(req.body.purchase_purpose, H.B_PURPOSE, 'Primary residence'),
     bba: H.oneOf(req.body.bba, H.B_BBA, 'No'),
     bba_expires: H.clean(req.body.bba_expires, 40),
-    window_hours: [24, 48, 72, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 48,
+    window_hours: [24, 48, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 48,
   };
   const fail = (msg) => res.status(400).render('buyer/new', { title: "Find Your Buyer's Agent", H, error: msg, form: { ...f, in_utah: f.in_utah ? 'yes' : 'no', video_tours: f.video_tours ? 'yes' : 'no' } });
 
@@ -192,6 +192,22 @@ router.post('/buyer/rebid', consumer, async (req, res) => {
   mailer.agentsNewBuyerProfile(rows[0], H.READINESS_LABELS[rows[0].readiness], prior.map(p => p.agent_id)); // fire and forget
   logEvent('buyer_new_round', { userId: req.session.user.id,
     meta: { profile_id: profile.id, round: rows[0].round, prior_proposals: prior.length } });
+  res.redirect('/buyer');
+});
+
+// ---------- one-time 24-hour extension ----------
+// If the window expired with fewer proposals than the cap, keep the same
+// request open 24 more hours — once (mirrors the seller flow).
+router.post('/buyer/extend', consumer, async (req, res) => {
+  const profile = await activeProfile(req.session.user.id);
+  if (!profile || profile.status !== 'active' || !profile.published || profile.extended) return res.redirect('/buyer');
+  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
+  profile.proposal_count = cnt[0].n;
+  if (H.windowOpen(profile) || cnt[0].n >= profile.proposal_cap) return res.redirect('/buyer');
+  const { rowCount } = await pool.query(
+    `UPDATE buyer_profiles SET closes_at = now() + interval '24 hours', extended = true, window_notified = false
+     WHERE id=$1 AND status='active' AND extended = false`, [profile.id]);
+  if (rowCount) logEvent('buyer_request_extended', { userId: req.session.user.id, meta: { profile_id: profile.id, proposals_at_extension: cnt[0].n } });
   res.redirect('/buyer');
 });
 
