@@ -194,6 +194,10 @@ ALTER TABLE buyer_proposals ADD COLUMN IF NOT EXISTS gap_responsibility TEXT NOT
 -- fewer than the cap, the owner may keep it open 24 more hours — once.
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
+
+-- Standardized buyer geography (Paul, Aug 14): each selected city stored with
+-- lat/lng so notifications match on real distance, never on spelling.
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS search_geo JSONB;
 `;
 
 async function init() {

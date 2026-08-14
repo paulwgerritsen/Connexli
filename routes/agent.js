@@ -87,13 +87,22 @@ router.get('/agent', agent, async (req, res) => {
     const d = mailer.zipDistance(zip, profile.service_zip);
     return d === null || d <= mailer.RADIUS_MILES;
   };
-  const buyerInReach = (areas) => {
-    const cities = String(areas).split(',').map(s => s.trim()).filter(Boolean);
+  const buyerInReach = (b) => {
+    // Prefer the exact lat/lng stored with the profile (standardized city
+    // selector, Aug 14); legacy free-text rows fall back to name lookup.
+    let geo = b.search_geo;
+    if (typeof geo === 'string') { try { geo = JSON.parse(geo); } catch (e) { geo = null; } }
+    if (Array.isArray(geo) && geo.length) {
+      const z = mailer.zipInfo(profile.service_zip);
+      if (!z) return true; // agent-side data gap: fail open for display
+      return Math.min(...geo.map(g => H.geoMiles(z.latitude, z.longitude, g.lat, g.lng))) <= mailer.RADIUS_MILES;
+    }
+    const cities = String(b.search_areas).split(',').map(s => s.trim()).filter(Boolean);
     const dists = cities.map(c => mailer.cityDistance(profile.service_zip, c)).filter(d => d !== null);
     return !dists.length || Math.min(...dists) <= mailer.RADIUS_MILES;
   };
   const opportunities = opps.rows.filter(o => inReach(o.zip));
-  const buyerOppsNear = buyerOpps.filter(b => buyerInReach(b.search_areas));
+  const buyerOppsNear = buyerOpps.filter(b => buyerInReach(b));
 
   res.render('agent/dashboard', {
     title: 'Opportunities', profile, H,
@@ -195,7 +204,7 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     response_time: H.oneOf(req.body.response_time, H.BP_RESPONSE, H.BP_RESPONSE[1]),
     seller_contribution: H.clean(req.body.seller_contribution, 300),
     rebate: H.clean(req.body.rebate, 200),
-    plan: H.clean(req.body.plan, 1000),
+    plan: H.clean(req.body.plan, 2000),
   };
 
   const bad = !comp_amount || comp_amount <= 0 ||
@@ -408,7 +417,7 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
   let services = req.body.services || [];
   if (!Array.isArray(services)) services = [services];
   services = services.filter(s => H.SERVICES.includes(s));
-  const marketing_plan = H.clean(req.body.marketing_plan, 1000);
+  const marketing_plan = H.clean(req.body.marketing_plan, 2000);
   const cancellation_terms = H.oneOf(req.body.cancellation_terms, H.CANCELLATION, H.CANCELLATION[0]);
 
   const mineBefore = await pool.query(

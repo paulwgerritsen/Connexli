@@ -41,7 +41,15 @@
         </div>
 
         <label for="marketing_plan">Marketing plan <span class="hint">(the homeowner sees this)</span></label>
-        <textarea id="marketing_plan" name="marketing_plan" rows="3" maxlength="1000"><%= proposal ? proposal.marketing_plan : '' %></textarea>
+        <textarea id="marketing_plan" name="marketing_plan" rows="4" maxlength="2000"><%= proposal ? proposal.marketing_plan : '' %></textarea>
+        <p class="note" style="text-align:right; margin-top:2px;"><span id="mpCount">0</span> / 2000 characters</p>
+        <script>
+        (function(){
+          var t = document.getElementById('marketing_plan'), c = document.getElementById('mpCount');
+          function upd(){ c.textContent = t.value.length; c.parentNode.style.color = t.value.length >= 2000 ? '#B42318' : ''; }
+          t.addEventListener('input', upd); upd();
+        })();
+        </script>
 
         <label for="cancellation_terms">Cancellation terms</label>
         <select id="cancellation_terms" name="cancellation_terms">

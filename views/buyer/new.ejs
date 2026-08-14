@@ -30,8 +30,50 @@
 
     <div class="card">
       <h2 style="font-size:16px;">Your search</h2>
-      <label for="search_areas">Cities or areas you're searching (separate with commas)</label>
-      <input type="text" id="search_areas" name="search_areas" placeholder="e.g. Lehi, Saratoga Springs, American Fork" value="<%= form.search_areas || '' %>" required>
+      <label for="city_input">Cities you're searching <span class="hint">(start typing, pick from the list, add as many as you like)</span></label>
+      <div id="cityTags" class="pillrow" style="margin:6px 0;"></div>
+      <%# The inline onkeydown guard runs the instant the element parses, so an
+          early Enter press can never submit the form before the tag script
+          below has attached its listeners. %>
+      <input type="text" id="city_input" list="utcities" placeholder="e.g. Lehi — press Enter to add" autocomplete="off"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();}">
+      <datalist id="utcities">
+        <% H.UT_CITIES.forEach(c => { %><option value="<%= c %>"></option><% }) %>
+      </datalist>
+      <input type="hidden" id="search_areas" name="search_areas" value="<%= form.search_areas || '' %>">
+      <p class="note" id="cityNote">Each city is added as a tag — click × to remove it.</p>
+      <script>
+      (function(){
+        var tags = [];
+        var hidden = document.getElementById('search_areas');
+        var input = document.getElementById('city_input');
+        var wrap = document.getElementById('cityTags');
+        (hidden.value || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(c){ tags.push(c); });
+        function render(){
+          hidden.value = tags.join(', ');
+          wrap.innerHTML = tags.map(function(c, i){
+            return '<span class="pill" style="cursor:pointer;" data-i="' + i + '">' + c.replace(/</g,'&lt;') + ' ×</span>';
+          }).join('');
+          wrap.querySelectorAll('.pill').forEach(function(el){
+            el.addEventListener('click', function(){ tags.splice(parseInt(el.dataset.i), 1); render(); });
+          });
+        }
+        function add(){
+          var v = input.value.replace(/,/g, '').trim();
+          if (!v) return;
+          if (!tags.some(function(t){ return t.toLowerCase() === v.toLowerCase(); })) tags.push(v);
+          input.value = '';
+          render();
+        }
+        input.addEventListener('change', add);            // datalist selection
+        input.addEventListener('keydown', function(e){
+          if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(); }
+        });
+        input.form && input.form.addEventListener('submit', function(){ add(); });
+        render();
+        window.__cityTagsReady = true; // marker for automated tests
+      })();
+      </script>
       <label for="price_range">Price range</label>
       <select id="price_range" name="price_range" required>
         <option value="" disabled <%= !form.price_range ? 'selected' : '' %>>Choose one…</option>

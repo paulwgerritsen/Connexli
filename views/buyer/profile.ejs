@@ -3,6 +3,12 @@
 <h1 style="margin-top:8px;">My buyer profile <span class="badge <%= profile.readiness === 'ready_now' ? 'connected' : profile.readiness === 'preparing' ? 'open' : 'pending' %>" style="vertical-align:4px;"><%= H.READINESS_LABELS[profile.readiness] %></span></h1>
 <p class="sub"><%= profile.search_areas %> · <%= profile.price_range %> · <%= profile.timeline %><% if (!profile.in_utah) { %> · Relocating from <%= profile.origin_state %><% } %></p>
 
+<% if (typeof existingNote !== 'undefined' && existingNote) { %>
+  <div class="card" style="border-left:4px solid var(--blue); margin-bottom:14px;">
+    <p class="sub" style="margin:0;">You already have an active buying request — it's shown below. To keep agent proposals in one place (and avoid duplicate notifications), each account runs one buying request at a time. Want different cities or a different price range? Update this request, or connect / let it expire and start a fresh one.</p>
+  </div>
+<% } %>
+
 <% const connectedProposal = proposals.find(p => p.connected); %>
 
 <% if (profile.status === 'connected' && connectedProposal) { %>

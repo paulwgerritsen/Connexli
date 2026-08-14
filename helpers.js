@@ -1,6 +1,7 @@
 // helpers.js — shared constants and small utilities.
+const zipcodes = require('zipcodes');
 
-const PROPERTY_TYPES = ['Single Family', 'Townhome', 'Condo', 'Duplex', 'Land'];
+const PROPERTY_TYPES = ['Single Family', 'Townhome', 'Condo', 'Duplex', 'Multi-Unit', 'Land'];
 const BEDS = ['1', '2', '3', '4', '5', '6+'];
 const BATHS = ['1', '2', '3', '4', '5+'];
 const SQFT = ['Under 1,500', '1,500–2,000', '2,000–2,500', '2,500–3,000', '3,000–4,000', '4,000+'];
@@ -82,6 +83,31 @@ function estBuyerFee(p, priceRange) {
   return null; // hourly/retainer legacy rows: no midpoint estimate
 }
 
+// ---------- standardized Utah city data (Paul, Aug 14) ----------
+// Built once at boot from the same ZIP database the mailer uses. Each city
+// carries a representative lat/lng so buyer locations become real geography
+// instead of free text.
+const UT_CITY_INDEX = (() => {
+  const map = new Map();
+  for (const zip of Object.keys(zipcodes.codes)) {
+    const c = zipcodes.codes[zip];
+    if (c && c.state === 'UT' && c.city && !map.has(c.city.toLowerCase())) {
+      map.set(c.city.toLowerCase(), { name: c.city, state: 'UT', lat: c.latitude, lng: c.longitude });
+    }
+  }
+  return map;
+})();
+const UT_CITIES = [...UT_CITY_INDEX.values()].map(c => c.name).sort();
+function utCity(name) { return UT_CITY_INDEX.get(String(name || '').trim().toLowerCase()) || null; }
+
+// Great-circle distance in miles between two lat/lng points.
+function geoMiles(lat1, lng1, lat2, lng2) {
+  const R = 3958.8, toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 // Window state helpers shared by seller requests and buyer profiles.
 function windowOpen(row) {
   return new Date(row.closes_at).getTime() > Date.now() && row.proposal_count < row.proposal_cap;
@@ -113,4 +139,5 @@ module.exports = {
   readiness, READINESS_LABELS, buyerFeeLabel,
   midPrice, money, estFee, feeLabel, clean, oneOf,
   estBuyerFee, windowOpen, spotsLeft, takenThisRound,
+  UT_CITIES, utCity, geoMiles,
 };

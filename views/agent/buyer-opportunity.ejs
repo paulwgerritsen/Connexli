@@ -85,7 +85,15 @@
         <% }) %>
       </div>
       <label for="plan">Your plan for this buyer</label>
-      <textarea id="plan" name="plan" rows="4" maxlength="1000" placeholder="What you'd do for this buyer specifically — their areas, their timeline, their situation."><%= proposal ? proposal.plan : '' %></textarea>
+      <textarea id="plan" name="plan" rows="4" maxlength="2000" placeholder="What you'd do for this buyer specifically — their areas, their timeline, their situation."><%= proposal ? proposal.plan : '' %></textarea>
+      <p class="note" style="text-align:right; margin-top:2px;"><span id="planCount">0</span> / 2000 characters</p>
+      <script>
+      (function(){
+        var t = document.getElementById('plan'), c = document.getElementById('planCount');
+        function upd(){ c.textContent = t.value.length; c.parentNode.style.color = t.value.length >= 2000 ? '#B42318' : ''; }
+        t.addEventListener('input', upd); upd();
+      })();
+      </script>
     </div>
     <button class="btn full" type="submit"><%= proposal && proposal.id ? 'Update my sealed proposal' : 'Submit my sealed proposal' %></button>
   </form>

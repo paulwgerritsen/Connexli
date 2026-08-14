@@ -4,6 +4,7 @@
 // because of email.
 const zipcodes = require('zipcodes');
 const { pool } = require('./db');
+const H = require('./helpers');
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.MAIL_FROM || 'Connexli <onboarding@resend.dev>';
@@ -151,10 +152,22 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
     const excluded = new Set(excludeAgentIds.map(Number));
     const newRound = (profile.round || 1) > 1;
     const cities = String(profile.search_areas).split(',').map(s => s.trim()).filter(Boolean);
+    // Prefer the stored lat/lng saved with the profile (standardized city
+    // selector, Aug 14) — exact geography, no name-lookup guesswork. Legacy
+    // rows without search_geo fall back to the city-name lookup.
+    let geo = profile.search_geo;
+    if (typeof geo === 'string') { try { geo = JSON.parse(geo); } catch (e) { geo = null; } }
+    if (!Array.isArray(geo) || !geo.length) geo = null;
     let notified = 0, unresolved = 0;
     for (const a of agents) {
       if (excluded.has(Number(a.id))) continue;
-      const dists = cities.map(c => cityDistance(a.service_zip, c)).filter(d => d !== null);
+      let dists;
+      if (geo) {
+        const z = zipInfo(a.service_zip);
+        dists = z ? geo.map(g => H.geoMiles(z.latitude, z.longitude, g.lat, g.lng)) : [];
+      } else {
+        dists = cities.map(c => cityDistance(a.service_zip, c)).filter(d => d !== null);
+      }
       // FAIL CLOSED: no resolvable distance = no email (see agentsNewRequest).
       if (!dists.length) { unresolved++; continue; }
       if (Math.min(...dists) > RADIUS_MILES) continue;

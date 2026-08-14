@@ -39,12 +39,15 @@ router.get('/buyer', consumer, async (req, res) => {
        JOIN agent_profiles ap ON ap.user_id = bp.agent_id
        WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]));
   }
-  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H });
+  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H, existingNote: req.query.existing === '1' });
 });
 
 // ---------- create (Step 1: the ~2-minute core) ----------
 router.get('/buyer/new', consumer, async (req, res) => {
-  if (await activeProfile(req.session.user.id)) return res.redirect('/buyer');
+  // One active buying request per account (BBA / procuring-cause safety and
+  // no duplicate agent notifications). "+ New buying request" therefore lands
+  // on the existing request's hub with an explanatory note.
+  if (await activeProfile(req.session.user.id)) return res.redirect('/buyer?existing=1');
   res.render('buyer/new', { title: "Find Your Buyer's Agent", H, error: null, form: {} });
 });
 
@@ -78,6 +81,21 @@ router.post('/buyer/new', consumer, async (req, res) => {
   if (!f.search_areas) return fail('Please list at least one city or area you want to search in.');
   if (!f.in_utah && !f.origin_state) return fail("Please tell us which state you're moving from.");
 
+  // Standardize cities (Paul, Aug 14): canonicalize each entry against the
+  // Utah city index and store lat/lng behind the scenes. Unrecognized entries
+  // are kept (a buyer's local area name is better than a dead end) but carry
+  // no geography, so they simply can't drive notifications.
+  const cityEntries = f.search_areas.split(',').map(s => s.trim()).filter(Boolean);
+  const searchGeo = [];
+  f.search_areas = cityEntries.map(c => {
+    const known = H.utCity(c);
+    if (known) { searchGeo.push(known); return known.name; }
+    return c;
+  }).join(', ');
+  if (cityEntries.length && !searchGeo.length) {
+    return fail("We couldn't recognize those city names. Please pick at least one Utah city from the suggestion list so nearby agents can be notified.");
+  }
+
   // Buyer Broker Agreement screening: an active exclusive agreement blocks a
   // new profile (protects agents from procuring-cause disputes).
   if (f.bba === 'Yes — currently active') {
@@ -91,13 +109,13 @@ router.post('/buyer/new', consumer, async (req, res) => {
     `INSERT INTO buyer_profiles (user_id, readiness, published, financing_type, lender_status, down_payment,
        current_situation, need_to_sell, search_areas, price_range, timeline, in_utah, origin_state,
        move_reason, visit_dates, video_tours, purchase_purpose, bba, bba_expires,
-       window_hours, closes_at)
+       window_hours, closes_at, search_geo)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-       $20, now() + make_interval(hours => $20)) RETURNING *`,
+       $20, now() + make_interval(hours => $20), $21) RETURNING *`,
     [req.session.user.id, badge, published, f.financing_type, f.lender_status, f.down_payment,
      f.current_situation, f.need_to_sell, f.search_areas, f.price_range, f.timeline, f.in_utah,
      f.origin_state, f.move_reason, f.visit_dates, f.video_tours, f.purchase_purpose, f.bba, f.bba_expires,
-     f.window_hours]
+     f.window_hours, JSON.stringify(searchGeo)]
   );
   const profile = rows[0];
 
