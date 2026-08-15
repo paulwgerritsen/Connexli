@@ -224,12 +224,17 @@ router.get('/admin/buyers/:id(\\d+)', admin, async (req, res) => {
   const buyer = rows[0];
   if (!buyer) return res.status(404).render('error', { title: 'Not found', message: 'That buyer request does not exist.' });
 
-  const { rows: proposals } = await pool.query(
-    `SELECT bp.*, u.name AS agent_name, u.email AS agent_email, ap.brokerage
-     FROM buyer_proposals bp JOIN users u ON u.id=bp.agent_id JOIN agent_profiles ap ON ap.user_id=bp.agent_id
-     WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [req.params.id]);
+  const [{ rows: proposals }, { rows: notifyRounds }] = await Promise.all([
+    pool.query(
+      `SELECT bp.*, u.name AS agent_name, u.email AS agent_email, ap.brokerage
+       FROM buyer_proposals bp JOIN users u ON u.id=bp.agent_id JOIN agent_profiles ap ON ap.user_id=bp.agent_id
+       WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [req.params.id]),
+    pool.query(
+      `SELECT round, COUNT(*)::int AS n FROM agent_notifications
+       WHERE opportunity_type='buyer' AND opportunity_id=$1 GROUP BY round ORDER BY round`, [req.params.id]),
+  ]);
 
-  res.render('admin/buyer-detail', { title: 'Buyer request', buyer, proposals, H });
+  res.render('admin/buyer-detail', { title: 'Buyer request', buyer, proposals, notifyRounds, H });
 });
 
 // ---------- professional actions ----------
@@ -265,12 +270,15 @@ router.get('/admin/requests/:id(\\d+)', admin, async (req, res) => {
   const request = rows[0];
   if (!request) return res.status(404).render('error', { title: 'Not found', message: 'That request does not exist.' });
 
-  const [proposals, approvedAgents] = await Promise.all([
+  const [proposals, approvedAgents, notifyRoundsQ] = await Promise.all([
     pool.query(
       `SELECT p.*, u.name AS agent_name, ap.brokerage FROM proposals p
        JOIN users u ON u.id=p.agent_id JOIN agent_profiles ap ON ap.user_id=p.agent_id
        WHERE p.request_id=$1 ORDER BY p.created_at ASC`, [req.params.id]),
     pool.query(`SELECT service_zip FROM agent_profiles WHERE status='approved'`),
+    pool.query(
+      `SELECT round, COUNT(*)::int AS n FROM agent_notifications
+       WHERE opportunity_type='seller' AND opportunity_id=$1 GROUP BY round ORDER BY round`, [req.params.id]),
   ]);
   // How many approved professionals are currently within the notification radius
   const inRange = approvedAgents.rows.filter(a => {
@@ -281,6 +289,7 @@ router.get('/admin/requests/:id(\\d+)', admin, async (req, res) => {
   res.render('admin/request-detail', {
     title: 'Request detail', request, H,
     proposals: proposals.rows, inRange, radius: mailer.RADIUS_MILES,
+    notifyRounds: notifyRoundsQ.rows,
   });
 });
 

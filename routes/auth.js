@@ -42,7 +42,9 @@ router.get('/login', (req, res) => {
 router.post('/login', authLimiter, async (req, res) => {
   const email = clean(req.body.email, 120).toLowerCase();
   const password = String(req.body.password || '');
-  const { rows } = await pool.query(`SELECT * FROM users WHERE email=$1`, [email]);
+  // LOWER() matches legacy mixed-case rows too, and uses the same
+  // case-insensitive unique index that keeps emails one-per-account.
+  const { rows } = await pool.query(`SELECT * FROM users WHERE LOWER(email)=$1`, [email]);
   const user = rows[0];
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).render('login', { title: 'Log in', error: 'Email or password is incorrect.', notice: null, email });
@@ -67,7 +69,7 @@ router.post('/forgot', forgotLimiter, async (req, res) => {
   // Whether or not the account exists, we show the exact same confirmation.
   // This stops anyone from using this form to discover which emails have
   // Connexli accounts.
-  const { rows } = await pool.query(`SELECT id, name, email FROM users WHERE email=$1`, [email]);
+  const { rows } = await pool.query(`SELECT id, name, email FROM users WHERE LOWER(email)=$1`, [email]);
   const user = rows[0];
   if (user) {
     const token = crypto.randomBytes(32).toString('hex');

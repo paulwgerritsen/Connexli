@@ -198,10 +198,52 @@ ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DE
 -- Standardized buyer geography (Paul, Aug 14): each selected city stored with
 -- lat/lng so notifications match on real distance, never on spelling.
 ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS search_geo JSONB;
+
+-- One row per opportunity email actually sent to a professional (Paul,
+-- Aug 15): powers the admin "Agents notified" count today, and holds enough
+-- detail (who, distance, round) for a per-agent drill-down later. No foreign
+-- keys on the opportunity so history survives deletions.
+CREATE TABLE IF NOT EXISTS agent_notifications (
+  id SERIAL PRIMARY KEY,
+  opportunity_type TEXT NOT NULL CHECK (opportunity_type IN ('seller','buyer')),
+  opportunity_id INTEGER NOT NULL,
+  agent_id INTEGER NOT NULL,
+  agent_email TEXT NOT NULL,
+  distance_miles NUMERIC,
+  round INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_notifications_opp ON agent_notifications(opportunity_type, opportunity_id);
 `;
 
 async function init() {
   await pool.query(SCHEMA);
+
+  // Enforce ONE account per email address, case-insensitively (Paul, Aug 15).
+  // The CREATE TABLE above declares UNIQUE(email), but a production table
+  // created by an earlier schema version never gains that constraint
+  // retroactively — and a plain UNIQUE is case-sensitive anyway, so
+  // "Email@x.com" and "email@x.com" could coexist. This migration:
+  //   1. parks the email of any duplicate accounts (the OLDEST account keeps
+  //      the real address; newer ones get a clearly-marked parked address),
+  //   2. lowercases every stored email,
+  //   3. adds a case-insensitive unique index that closes the door for good.
+  try {
+    const { rows: dups } = await pool.query(
+      `SELECT u.id, u.email FROM users u
+       JOIN (SELECT LOWER(email) AS le, MIN(id) AS keep FROM users
+             GROUP BY LOWER(email) HAVING COUNT(*) > 1) d
+         ON LOWER(u.email) = d.le AND u.id <> d.keep`);
+    for (const d of dups) {
+      const parked = `duplicate-${d.id}.${d.email.toLowerCase()}`;
+      await pool.query(`UPDATE users SET email=$1 WHERE id=$2`, [parked, d.id]);
+      console.warn(`WARNING: duplicate account #${d.id} for ${d.email} — email parked as "${parked}". The oldest account keeps the address; review/delete the duplicate in the admin panel.`);
+    }
+    await pool.query(`UPDATE users SET email=LOWER(email) WHERE email <> LOWER(email)`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email))`);
+  } catch (e) {
+    console.error('Email-uniqueness migration failed (app still running):', e.message);
+  }
 
   // Seed the first admin account from environment variables.
   const { rows } = await pool.query(`SELECT 1 FROM users WHERE role='admin' LIMIT 1`);

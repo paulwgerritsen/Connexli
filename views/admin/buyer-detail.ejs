@@ -23,7 +23,11 @@
   <div class="sumrow"><span>Window</span><span><%= buyer.window_hours %> hours · round <%= buyer.round %> · cap <%= buyer.proposal_cap %></span></div>
   <div class="sumrow"><span>Closes</span><span><%= new Date(buyer.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain) — <%= new Date(buyer.closes_at) > new Date() && buyer.proposal_count < buyer.proposal_cap ? 'OPEN' : 'CLOSED' %></span></div>
   <div class="sumrow"><span>Proposals</span><span><%= buyer.proposal_count %> of <%= buyer.proposal_cap %></span></div>
-  <div class="sumrow"><span>Profile expires</span><span><%= new Date(buyer.expires_at).toLocaleDateString('en-US') %></span></div>
+  <% const notifyTotal = notifyRounds.reduce((s, r) => s + r.n, 0); %>
+  <div class="sumrow"><span>Agents notified</span><span>
+    <% if (notifyTotal === 0) { %>0 — check radius/service ZIPs<% } else { %><b><%= notifyTotal %></b><% if (notifyRounds.length > 1) { %> (<%= notifyRounds.map(r => 'round ' + r.round + ': ' + r.n).join(' · ') %>)<% } %><% } %>
+  </span></div>
+  <div class="sumrow"><span>Auto-archives</span><span><%= new Date(buyer.expires_at).toLocaleDateString('en-US') %> — 30 days after creation; hidden from agents after this date unless the buyer renews</span></div>
 </div>
 
 <h2 style="margin-top:22px;">Proposals (<%= proposals.length %>)</h2>

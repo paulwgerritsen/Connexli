@@ -7,6 +7,8 @@
   <div class="stat"><b><%= request.price_range %></b><span>Price range</span></div>
   <div class="stat"><b id="countdown" data-closes="<%= new Date(request.closes_at).toISOString() %>"><%= request.status === 'open' ? '…' : 'Closed' %></b><span><%= request.status === 'open' ? 'Time remaining' : 'Window status' %></span></div>
   <div class="stat"><b><%= inRange %></b><span>Approved pros within <%= radius %> mi</span></div>
+  <% const notifyTotal = notifyRounds.reduce((s, r) => s + r.n, 0); %>
+  <div class="stat"><b><%= notifyTotal %></b><span>Agents notified<%= notifyRounds.length > 1 ? ' (' + notifyRounds.map(r => 'r' + r.round + ': ' + r.n).join(' · ') + ')' : '' %></span></div>
   <div class="stat"><b><%= proposals.length %></b><span>Proposals submitted</span></div>
 </div>
 

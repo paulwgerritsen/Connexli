@@ -66,6 +66,17 @@ function zipInfo(zip) {
   return zipcodes.lookup(String(zip || '')) || null; // {city, state, latitude, longitude}
 }
 
+// One row per opportunity email sent (admin "Agents notified" count + future
+// per-agent drill-down). Fire-and-forget: recording must never block or break
+// the email itself.
+function recordNotification(type, oppId, agent, distance, round) {
+  pool.query(
+    `INSERT INTO agent_notifications (opportunity_type, opportunity_id, agent_id, agent_email, distance_miles, round)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [type, oppId, agent.id, agent.email, distance === null ? null : Math.round(distance * 10) / 10, round || 1]
+  ).catch((e) => console.error('recordNotification failed:', e.message));
+}
+
 // ---------- the notifications ----------
 function adminNewAgent(agent) {
   return send(ADMIN_EMAIL, 'Action needed: new professional awaiting verification',
@@ -116,6 +127,7 @@ async function agentsNewRequest(request, excludeAgentIds = []) {
       if (dist === null) { unresolved++; continue; }
       if (dist > RADIUS_MILES) continue;
       notified++;
+      recordNotification('seller', request.id, a, dist, request.round);
       await send(a.email, newRound ? 'Fresh Round: Connexli Opportunity Near You' : 'New Connexli Opportunity Near You',
         template(newRound ? 'A fresh round just opened near you' : 'New opportunity near you', [
           newRound
@@ -172,6 +184,7 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
       if (!dists.length) { unresolved++; continue; }
       if (Math.min(...dists) > RADIUS_MILES) continue;
       notified++;
+      recordNotification('buyer', profile.id, a, Math.min(...dists), profile.round);
       await send(a.email, newRound ? 'Fresh Round: Connexli Buyer Near You' : 'New Connexli Buyer Near You',
         template(newRound ? 'A buyer opened a fresh round near you' : 'New buyer profile near you', [
           newRound
