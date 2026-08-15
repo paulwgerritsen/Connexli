@@ -87,6 +87,31 @@ function estBuyerFee(p, priceRange) {
 // Built once at boot from the same ZIP database the mailer uses. Each city
 // carries a representative lat/lng so buyer locations become real geography
 // instead of free text.
+// The ZIP database uses USPS "preferred" names, which folds many real,
+// incorporated Utah cities into their metro's name (Murray, Taylorsville,
+// Millcreek etc. are all labeled "Salt Lake City"). Since the picker is now
+// strict — only listed cities can be selected — those cities must be added
+// back explicitly. Each maps to a representative ZIP for its coordinates.
+const UT_EXTRA_CITIES = {
+  // Salt Lake County
+  'Murray': '84107', 'Millcreek': '84106', 'Taylorsville': '84129', 'Holladay': '84117',
+  'West Valley City': '84119', 'Cottonwood Heights': '84121', 'Kearns': '84118',
+  'South Salt Lake': '84115', 'Bluffdale': '84065', 'White City': '84070',
+  // Weber County
+  'North Ogden': '84414', 'South Ogden': '84405', 'Pleasant View': '84414',
+  'West Haven': '84401', 'Washington Terrace': '84405', 'Riverdale': '84405',
+  'Farr West': '84404', 'Plain City': '84404', 'Harrisville': '84404',
+  'Uintah': '84405', 'Marriott-Slaterville': '84404',
+  // Davis County
+  'Clinton': '84015', 'Sunset': '84015', 'West Point': '84015',
+  'Fruit Heights': '84037', 'South Weber': '84405',
+  // Utah County
+  'Vineyard': '84059', 'Cedar Hills': '84062', 'Highland': '84003',
+  'Elk Ridge': '84651', 'Woodland Hills': '84653',
+  // Wasatch / Summit
+  'Charleston': '84032', 'Daniel': '84032', 'Francis': '84036', 'Hideout': '84036',
+};
+
 const UT_CITY_INDEX = (() => {
   const map = new Map();
   for (const zip of Object.keys(zipcodes.codes)) {
@@ -95,9 +120,18 @@ const UT_CITY_INDEX = (() => {
       map.set(c.city.toLowerCase(), { name: c.city, state: 'UT', lat: c.latitude, lng: c.longitude });
     }
   }
+  for (const [name, zip] of Object.entries(UT_EXTRA_CITIES)) {
+    if (map.has(name.toLowerCase())) continue;
+    const c = zipcodes.lookup(zip);
+    if (c) map.set(name.toLowerCase(), { name, state: 'UT', lat: c.latitude, lng: c.longitude });
+  }
+  // Everyone writes "St. George"; the dataset says "Saint George". Show the
+  // common spelling and accept both when looking a name up.
+  const sg = map.get('saint george');
+  if (sg) { sg.name = 'St. George'; map.set('st. george', sg); map.set('st george', sg); }
   return map;
 })();
-const UT_CITIES = [...UT_CITY_INDEX.values()].map(c => c.name).sort();
+const UT_CITIES = [...new Set([...UT_CITY_INDEX.values()])].map(c => c.name).sort();
 function utCity(name) { return UT_CITY_INDEX.get(String(name || '').trim().toLowerCase()) || null; }
 
 // Great-circle distance in miles between two lat/lng points.

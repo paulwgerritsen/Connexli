@@ -32,23 +32,37 @@
       <h2 style="font-size:16px;">Your search</h2>
       <label for="city_input">Cities you're searching <span class="hint">(start typing, pick from the list, add as many as you like)</span></label>
       <div id="cityTags" class="pillrow" style="margin:6px 0;"></div>
-      <%# The inline onkeydown guard runs the instant the element parses, so an
-          early Enter press can never submit the form before the tag script
-          below has attached its listeners. %>
-      <input type="text" id="city_input" list="utcities" placeholder="e.g. Lehi — press Enter to add" autocomplete="off"
-             onkeydown="if(event.key==='Enter'){event.preventDefault();}">
-      <datalist id="utcities">
-        <% H.UT_CITIES.forEach(c => { %><option value="<%= c %>"></option><% }) %>
-      </datalist>
+      <%# Custom autocomplete (Paul, Aug 14 #2). The native <datalist> never
+          shows suggestions on iOS Safari and is inconsistent elsewhere, so we
+          draw our own dropdown — identical behavior on mobile and desktop.
+          Only cities from the standardized Utah list can become tags. The
+          inline onkeydown guard runs the instant the element parses, so an
+          early Enter press can never submit the form before the script below
+          has attached its listeners. %>
+      <div style="position:relative;">
+        <input type="text" id="city_input" placeholder="Start typing a city, e.g. Lehi" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="citySuggest"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();}">
+        <div id="citySuggest" role="listbox" style="display:none; position:absolute; z-index:30; left:0; right:0; top:100%; margin-top:4px; background:#fff; border:1px solid #E1E7F0; border-radius:10px; box-shadow:0 8px 24px rgba(10,27,51,.12); max-height:240px; overflow-y:auto;"></div>
+      </div>
       <input type="hidden" id="search_areas" name="search_areas" value="<%= form.search_areas || '' %>">
-      <p class="note" id="cityNote">Each city is added as a tag — click × to remove it.</p>
+      <p class="note" id="cityNote">Pick each city from the list — it's added as a tag, and you can click × to remove it.</p>
       <script>
       (function(){
+        var CITIES = <%- JSON.stringify(H.UT_CITIES) %>;
         var tags = [];
         var hidden = document.getElementById('search_areas');
         var input = document.getElementById('city_input');
         var wrap = document.getElementById('cityTags');
-        (hidden.value || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(c){ tags.push(c); });
+        var box = document.getElementById('citySuggest');
+        var note = document.getElementById('cityNote');
+        var matches = [], active = -1;
+        var byLower = {};
+        CITIES.forEach(function(c){ byLower[c.toLowerCase()] = c; });
+        // Keep only entries that are real cities (e.g. server re-render).
+        (hidden.value || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean).forEach(function(c){
+          var real = byLower[c.toLowerCase()];
+          if (real && tags.indexOf(real) === -1) tags.push(real);
+        });
         function render(){
           hidden.value = tags.join(', ');
           wrap.innerHTML = tags.map(function(c, i){
@@ -58,18 +72,67 @@
             el.addEventListener('click', function(){ tags.splice(parseInt(el.dataset.i), 1); render(); });
           });
         }
-        function add(){
-          var v = input.value.replace(/,/g, '').trim();
-          if (!v) return;
-          if (!tags.some(function(t){ return t.toLowerCase() === v.toLowerCase(); })) tags.push(v);
+        function close(){ box.style.display = 'none'; box.innerHTML = ''; matches = []; active = -1; input.setAttribute('aria-expanded', 'false'); }
+        function addCity(name){
+          if (tags.indexOf(name) === -1) tags.push(name);
           input.value = '';
+          note.textContent = 'Pick each city from the list — it\'s added as a tag, and you can click × to remove it.';
+          note.style.color = '';
+          close();
           render();
         }
-        input.addEventListener('change', add);            // datalist selection
+        function highlight(){
+          box.querySelectorAll('.citychoice').forEach(function(el, i){
+            el.style.background = i === active ? '#EAF2FF' : '';
+            el.style.fontWeight = i === active ? '600' : '';
+          });
+        }
+        function drawList(){
+          box.innerHTML = matches.map(function(c){
+            return '<div class="citychoice" role="option" data-city="' + c.replace(/"/g, '&quot;') + '" style="padding:10px 14px; cursor:pointer; font-size:15px;">' + c + '</div>';
+          }).join('');
+          box.style.display = matches.length ? 'block' : 'none';
+          input.setAttribute('aria-expanded', matches.length ? 'true' : 'false');
+          box.querySelectorAll('.citychoice').forEach(function(el, i){
+            // mousedown (not click) so it fires before the input's blur hides the box
+            el.addEventListener('mousedown', function(e){ e.preventDefault(); addCity(el.dataset.city); });
+            el.addEventListener('click', function(e){ e.preventDefault(); addCity(el.dataset.city); }); // touch fallback
+            el.addEventListener('mouseenter', function(){ active = i; highlight(); });
+          });
+          highlight();
+        }
+        function suggest(){
+          var q = input.value.trim().toLowerCase();
+          if (!q) { close(); return; }
+          var starts = [], contains = [];
+          for (var i = 0; i < CITIES.length; i++) {
+            var lower = CITIES[i].toLowerCase();
+            if (tags.indexOf(CITIES[i]) !== -1) continue; // already chosen
+            if (lower.indexOf(q) === 0) starts.push(CITIES[i]);
+            else if (lower.indexOf(q) !== -1) contains.push(CITIES[i]);
+          }
+          matches = starts.concat(contains).slice(0, 8);
+          active = matches.length ? 0 : -1;
+          drawList();
+        }
+        input.addEventListener('input', suggest);
+        input.addEventListener('focus', suggest);
+        input.addEventListener('blur', function(){ setTimeout(close, 150); });
         input.addEventListener('keydown', function(e){
-          if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); if (matches.length) { active = (active + 1) % matches.length; highlight(); } }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); if (matches.length) { active = (active - 1 + matches.length) % matches.length; highlight(); } }
+          else if (e.key === 'Escape') { close(); }
+          else if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            var exact = byLower[input.value.trim().toLowerCase()];
+            if (exact && tags.indexOf(exact) === -1) { addCity(exact); }
+            else if (active >= 0 && matches[active]) { addCity(matches[active]); }
+            else if (input.value.trim()) {
+              note.textContent = "That doesn't match a Utah city — keep typing and pick one from the list.";
+              note.style.color = '#B42318';
+            }
+          }
         });
-        input.form && input.form.addEventListener('submit', function(){ add(); });
         render();
         window.__cityTagsReady = true; // marker for automated tests
       })();

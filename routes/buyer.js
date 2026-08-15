@@ -11,6 +11,8 @@ const mailer = require('../mailer');
 const router = require('../middleware').safeRouter(express.Router());
 const consumer = requireRole('seller'); // homeowner/buyer accounts share one role
 
+// The profile ongoing operations act on: the newest request that is either
+// still active or connected (connect/boost/rebid/etc. all check status).
 async function activeProfile(userId) {
   const { rows } = await pool.query(
     `SELECT * FROM buyer_profiles WHERE user_id=$1 AND status IN ('active','connected')
@@ -18,13 +20,20 @@ async function activeProfile(userId) {
   return rows[0] || null;
 }
 
+// The only thing that BLOCKS starting a new buying request: an OPEN one
+// (Paul, Aug 14 #2). A connected request is finished — its history stays on
+// the dashboard, and the buyer is free to start a fresh search.
+async function openProfile(userId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM buyer_profiles WHERE user_id=$1 AND status='active'
+     ORDER BY created_at DESC LIMIT 1`, [userId]);
+  return rows[0] || null;
+}
+
 // ---------- my buyer profile (hub page) ----------
 // Mirrors the seller flow: while the window is open the buyer sees only the
 // sealed count + countdown; proposals reveal together when the window closes.
-router.get('/buyer', consumer, async (req, res) => {
-  const profile = await activeProfile(req.session.user.id);
-  if (!profile) return res.render('buyer/start', { title: "Find Your Buyer's Agent", H });
-
+async function renderProfile(req, res, profile) {
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
   profile.proposal_count = cnt[0].n;
   const open = profile.status === 'active' && profile.published && H.windowOpen(profile);
@@ -40,19 +49,35 @@ router.get('/buyer', consumer, async (req, res) => {
        WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]));
   }
   res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H, existingNote: req.query.existing === '1' });
+}
+
+router.get('/buyer', consumer, async (req, res) => {
+  // Prefer the open request; otherwise show the most recent connected one.
+  const profile = (await openProfile(req.session.user.id)) || (await activeProfile(req.session.user.id));
+  if (!profile) return res.render('buyer/start', { title: "Find Your Buyer's Agent", H });
+  return renderProfile(req, res, profile);
+});
+
+// A specific past or present buying request (dashboard history "View" links).
+router.get('/buyer/requests/:id(\\d+)', consumer, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM buyer_profiles WHERE id=$1 AND user_id=$2`, [req.params.id, req.session.user.id]);
+  if (!rows[0]) return res.status(404).render('error', { title: 'Not found', message: "That buying request wasn't found on your account." });
+  return renderProfile(req, res, rows[0]);
 });
 
 // ---------- create (Step 1: the ~2-minute core) ----------
 router.get('/buyer/new', consumer, async (req, res) => {
-  // One active buying request per account (BBA / procuring-cause safety and
-  // no duplicate agent notifications). "+ New buying request" therefore lands
-  // on the existing request's hub with an explanatory note.
-  if (await activeProfile(req.session.user.id)) return res.redirect('/buyer?existing=1');
+  // One OPEN buying request per account (BBA / procuring-cause safety and no
+  // duplicate agent notifications). Once it's connected — or expired or
+  // withdrawn — the buyer can start a new one; "+ New buying request" on an
+  // open request lands on its hub with an explanatory note.
+  if (await openProfile(req.session.user.id)) return res.redirect('/buyer?existing=1');
   res.render('buyer/new', { title: "Find Your Buyer's Agent", H, error: null, form: {} });
 });
 
 router.post('/buyer/new', consumer, async (req, res) => {
-  if (await activeProfile(req.session.user.id)) return res.redirect('/buyer');
+  if (await openProfile(req.session.user.id)) return res.redirect('/buyer');
 
   const f = {
     financing_type: H.oneOf(req.body.financing_type, H.B_FINANCING, null),
@@ -81,19 +106,21 @@ router.post('/buyer/new', consumer, async (req, res) => {
   if (!f.search_areas) return fail('Please list at least one city or area you want to search in.');
   if (!f.in_utah && !f.origin_state) return fail("Please tell us which state you're moving from.");
 
-  // Standardize cities (Paul, Aug 14): canonicalize each entry against the
-  // Utah city index and store lat/lng behind the scenes. Unrecognized entries
-  // are kept (a buyer's local area name is better than a dead end) but carry
-  // no geography, so they simply can't drive notifications.
+  // Standardize cities (Paul, Aug 14 #2): ONLY canonical Utah cities are
+  // stored — each entry must match the city index, and the stored value is
+  // the index's spelling with lat/lng saved alongside. Anything else (only
+  // possible by bypassing the picker) is dropped; zero valid cities fails.
+  // Consistent location data is what drives agent notifications.
   const cityEntries = f.search_areas.split(',').map(s => s.trim()).filter(Boolean);
   const searchGeo = [];
-  f.search_areas = cityEntries.map(c => {
+  const canonical = [];
+  for (const c of cityEntries) {
     const known = H.utCity(c);
-    if (known) { searchGeo.push(known); return known.name; }
-    return c;
-  }).join(', ');
-  if (cityEntries.length && !searchGeo.length) {
-    return fail("We couldn't recognize those city names. Please pick at least one Utah city from the suggestion list so nearby agents can be notified.");
+    if (known && !canonical.includes(known.name)) { canonical.push(known.name); searchGeo.push(known); }
+  }
+  f.search_areas = canonical.join(', ');
+  if (!canonical.length) {
+    return fail('Please pick at least one Utah city from the suggestion list — start typing and choose a match. This is how we know which nearby agents to notify.');
   }
 
   // Buyer Broker Agreement screening: an active exclusive agreement blocks a
