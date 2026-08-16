@@ -13,7 +13,26 @@ const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@connexli.com').toLowerCas
 const RADIUS_MILES = parseFloat(process.env.NOTIFY_RADIUS_MILES) || 50;
 
 // ---------- transport ----------
-async function send(to, subject, bodyHtml) {
+// Every non-critical email respects the account's "Email notifications"
+// toggle (Paul, Aug 16). Critical account emails — password resets,
+// verification results, admin alerts — always send (force=true), because the
+// account can't function without them. The lookup fails OPEN: if the
+// preference can't be read, the email still goes out.
+async function wantsEmail(to) {
+  try {
+    const { rows } = await pool.query(`SELECT email_notifications FROM users WHERE LOWER(email)=LOWER($1)`, [to]);
+    return rows.length === 0 || rows[0].email_notifications !== false;
+  } catch (e) {
+    console.error('notification-preference lookup failed (sending anyway):', e.message);
+    return true;
+  }
+}
+
+async function send(to, subject, bodyHtml, force = false) {
+  if (!force && !(await wantsEmail(to))) {
+    console.log(`[email:SKIP] to=${to} subject="${subject}" (email notifications off)`);
+    return;
+  }
   if (!RESEND_API_KEY) {
     const link = (bodyHtml.match(/href="([^"]+)"/) || [])[1] || '';
     console.log(`[email:DRY] to=${to} subject="${subject}"${link ? ' link=' + link : ''}`);
@@ -69,11 +88,11 @@ function zipInfo(zip) {
 // One row per opportunity email sent (admin "Agents notified" count + future
 // per-agent drill-down). Fire-and-forget: recording must never block or break
 // the email itself.
-function recordNotification(type, oppId, agent, distance, round) {
+function recordNotification(type, oppId, agent, distance, round, emailSent = true) {
   pool.query(
-    `INSERT INTO agent_notifications (opportunity_type, opportunity_id, agent_id, agent_email, distance_miles, round)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [type, oppId, agent.id, agent.email, distance === null ? null : Math.round(distance * 10) / 10, round || 1]
+    `INSERT INTO agent_notifications (opportunity_type, opportunity_id, agent_id, agent_email, distance_miles, round, email_sent)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [type, oppId, agent.id, agent.email, distance === null ? null : Math.round(distance * 10) / 10, round || 1, emailSent]
   ).catch((e) => console.error('recordNotification failed:', e.message));
 }
 
@@ -84,7 +103,7 @@ function adminNewAgent(agent) {
       `<b>${agent.name}</b> just signed up and is waiting in the verification queue.`,
       `License: <b>${agent.license_number}</b><br>Brokerage: <b>${agent.brokerage}</b><br>Service area: <b>${agent.service_zip || 'not provided'}${agent.service_city ? ' (' + agent.service_city + ')' : ''}</b><br>Email: ${agent.email}`,
       'Check the license against the Utah lookup, then approve or reject.',
-    ], 'Review in admin panel', APP_URL + '/admin'));
+    ], 'Review in admin panel', APP_URL + '/admin'), true);
 }
 
 function agentApproved(email, name) {
@@ -93,7 +112,7 @@ function agentApproved(email, name) {
       `${name.split(' ')[0]}, your license checked out and your Connexli account is now active.`,
       "You'll receive an email whenever a homeowner near your service area invites proposals. You can also browse every open opportunity anytime.",
       'Sealed means sealed: competing professionals never see your pricing.',
-    ], 'See open opportunities', APP_URL + '/agent'));
+    ], 'See open opportunities', APP_URL + '/agent'), true);
 }
 
 function agentRejected(email, name) {
@@ -101,7 +120,7 @@ function agentRejected(email, name) {
     template('Verification unsuccessful', [
       `${name.split(' ')[0]}, we couldn't verify your license with the information provided.`,
       'If you believe this is a mistake, reply to this email with your correct license number and brokerage and we\'ll take another look.',
-    ], null, null));
+    ], null, null), true);
 }
 
 // Notify approved professionals near the property. Radius is configurable via
@@ -112,11 +131,11 @@ function agentRejected(email, name) {
 async function agentsNewRequest(request, excludeAgentIds = []) {
   try {
     const { rows: agents } = await pool.query(
-      `SELECT u.id, u.email, u.name, ap.service_zip FROM users u
+      `SELECT u.id, u.email, u.name, u.email_notifications, ap.service_zip FROM users u
        JOIN agent_profiles ap ON ap.user_id = u.id WHERE ap.status = 'approved'`);
     const excluded = new Set(excludeAgentIds.map(Number));
     const newRound = (request.round || 1) > 1;
-    let notified = 0, unresolved = 0;
+    let matched = 0, sent = 0, unresolved = 0;
     for (const a of agents) {
       if (excluded.has(Number(a.id))) continue;
       const dist = zipDistance(request.zip, a.service_zip);
@@ -126,8 +145,14 @@ async function agentsNewRequest(request, excludeAgentIds = []) {
       // logged so they can be fixed in the agent's settings.
       if (dist === null) { unresolved++; continue; }
       if (dist > RADIUS_MILES) continue;
-      notified++;
-      recordNotification('seller', request.id, a, dist, request.round);
+      // The notifications toggle only controls the EMAIL (Paul, Aug 16):
+      // opted-out professionals still count as matched, still see the
+      // opportunity on their dashboard, and can still propose.
+      const wants = a.email_notifications !== false;
+      matched++;
+      recordNotification('seller', request.id, a, dist, request.round, wants);
+      if (!wants) { console.log(`[email:SKIP] to=${a.email} (email notifications off, still matched)`); continue; }
+      sent++;
       await send(a.email, newRound ? 'Fresh Round: Connexli Opportunity Near You' : 'New Connexli Opportunity Near You',
         template(newRound ? 'A fresh round just opened near you' : 'New opportunity near you', [
           newRound
@@ -135,10 +160,10 @@ async function agentsNewRequest(request, excludeAgentIds = []) {
             : `A homeowner in <b>${request.city}, ${request.zip}</b> is inviting sealed proposals from professionals like you.`,
           `Property: <b>${request.property_type}</b><br>Price range: <b>${request.price_range}</b><br>Proposal window closes: <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b>`,
           'Submit your sealed proposal before the window closes — it ends early once 10 proposals arrive. Competing professionals never see your pricing.',
-        ], 'View Opportunity', APP_URL + '/login'));
+        ], 'View Opportunity', APP_URL + '/login'), true);
     }
-    console.log(`Opportunity emails: ${notified}/${agents.length} approved professionals within ${RADIUS_MILES} miles of ${request.zip}${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}${unresolved ? ` (${unresolved} skipped: service ZIP unresolvable)` : ''}`);
-    if (notified === 0) console.warn(`WARNING: no professionals within ${RADIUS_MILES} miles of ${request.zip} — request ${request.id} will get no notifications.`);
+    console.log(`Opportunity emails: ${matched} matched, ${sent} emails sent (${agents.length} approved) within ${RADIUS_MILES} miles of ${request.zip}${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}${unresolved ? ` (${unresolved} skipped: service ZIP unresolvable)` : ''}`);
+    if (matched === 0) console.warn(`WARNING: no professionals within ${RADIUS_MILES} miles of ${request.zip} — request ${request.id} will get no notifications.`);
   } catch (e) {
     console.error('agentsNewRequest failed:', e.message);
   }
@@ -159,7 +184,7 @@ function cityDistance(agentZip, cityName) {
 async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) {
   try {
     const { rows: agents } = await pool.query(
-      `SELECT u.id, u.email, u.name, ap.service_zip FROM users u
+      `SELECT u.id, u.email, u.name, u.email_notifications, ap.service_zip FROM users u
        JOIN agent_profiles ap ON ap.user_id = u.id WHERE ap.status = 'approved'`);
     const excluded = new Set(excludeAgentIds.map(Number));
     const newRound = (profile.round || 1) > 1;
@@ -170,7 +195,7 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
     let geo = profile.search_geo;
     if (typeof geo === 'string') { try { geo = JSON.parse(geo); } catch (e) { geo = null; } }
     if (!Array.isArray(geo) || !geo.length) geo = null;
-    let notified = 0, unresolved = 0;
+    let matched = 0, sent = 0, unresolved = 0;
     for (const a of agents) {
       if (excluded.has(Number(a.id))) continue;
       let dists;
@@ -183,8 +208,12 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
       // FAIL CLOSED: no resolvable distance = no email (see agentsNewRequest).
       if (!dists.length) { unresolved++; continue; }
       if (Math.min(...dists) > RADIUS_MILES) continue;
-      notified++;
-      recordNotification('buyer', profile.id, a, Math.min(...dists), profile.round);
+      // Toggle only controls the email — matched/dashboard/proposals unaffected.
+      const wants = a.email_notifications !== false;
+      matched++;
+      recordNotification('buyer', profile.id, a, Math.min(...dists), profile.round, wants);
+      if (!wants) { console.log(`[email:SKIP] to=${a.email} (email notifications off, still matched)`); continue; }
+      sent++;
       await send(a.email, newRound ? 'Fresh Round: Connexli Buyer Near You' : 'New Connexli Buyer Near You',
         template(newRound ? 'A buyer opened a fresh round near you' : 'New buyer profile near you', [
           newRound
@@ -192,10 +221,10 @@ async function agentsNewBuyerProfile(profile, badgeLabel, excludeAgentIds = []) 
             : `A <b>${badgeLabel}</b> buyer is looking in <b>${profile.search_areas}</b>.`,
           `Price range: <b>${profile.price_range}</b><br>Timeline: <b>${profile.timeline}</b>${profile.in_utah ? '' : '<br>Relocating from: <b>' + (profile.origin_state || 'out of state') + '</b>'}${profile.closes_at ? '<br>Proposal window closes: <b>' + new Date(profile.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) + ' (Mountain)</b>' : ''}`,
           'Review the anonymous Buyer Snapshot and submit a sealed proposal before the window closes — it ends early once 10 proposals arrive. Competing professionals never see your terms.',
-        ], 'View Buyer Snapshot', APP_URL + '/login'));
+        ], 'View Buyer Snapshot', APP_URL + '/login'), true);
     }
-    console.log(`Buyer-profile emails: ${notified}/${agents.length} approved professionals for areas "${profile.search_areas}"${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}${unresolved ? ` (${unresolved} skipped: distance unresolvable)` : ''}`);
-    if (notified === 0) console.warn(`WARNING: no professionals matched buyer areas "${profile.search_areas}" — profile ${profile.id} will get no notifications.`);
+    console.log(`Buyer-profile emails: ${matched} matched, ${sent} emails sent (${agents.length} approved) for areas "${profile.search_areas}"${excluded.size ? ` (${excluded.size} prior bidders excluded)` : ''}${unresolved ? ` (${unresolved} skipped: distance unresolvable)` : ''}`);
+    if (matched === 0) console.warn(`WARNING: no professionals matched buyer areas "${profile.search_areas}" — profile ${profile.id} will get no notifications.`);
   } catch (e) {
     console.error('agentsNewBuyerProfile failed:', e.message);
   }
@@ -229,8 +258,8 @@ function buyerAgentWon(email, name, profile) {
     template('A buyer chose your proposal 🎉', [
       `${name.split(' ')[0]}, a buyer searching in ${profile.search_areas} compared their sealed proposals and chose yours. Their contact information has been released to you.`,
       'Their details are on your dashboard. Reach out within 24 hours while the decision is fresh.',
-      'The buyer representation agreement is signed with your brokerage, outside Connexli.',
-    ], 'See my new client', APP_URL + '/agent'));
+      '<b>Being selected to connect means this buyer would like to speak with you based on your proposal.</b> It does not guarantee that they will hire you or enter into a representation agreement — any contractual relationship must be established separately between the client and your brokerage, outside Connexli.',
+    ], 'See my new client', APP_URL + '/agent'), true); // always sent: a real client is waiting on this professional
 }
 
 // Password reset. The link is single-use and expires in 60 minutes.
@@ -240,7 +269,7 @@ function passwordReset(email, name, resetUrl) {
       `${name.split(' ')[0]}, we received a request to reset the password for your Connexli account.`,
       'Click the button below to choose a new password. This link works once and expires in 60 minutes.',
       "If you didn't request this, you can safely ignore this email — your password will not change.",
-    ], 'Choose a new password', resetUrl));
+    ], 'Choose a new password', resetUrl), true);
 }
 
 // Instant confirmation the moment a seller's request goes live. Requested by
@@ -282,8 +311,8 @@ function agentWon(email, name, request) {
     template('A homeowner chose your proposal 🎉', [
       `${name.split(' ')[0]}, the homeowner in ${request.city} compared their sealed proposals and chose yours. Their contact information has been released to you.`,
       'Their details are on your dashboard. Reach out within 24 hours while the decision is fresh.',
-      'The listing agreement is signed with your brokerage, outside Connexli.',
-    ], 'See my new client', APP_URL + '/agent'));
+      '<b>Being selected to connect means this homeowner would like to speak with you based on your proposal.</b> It does not guarantee that they will hire you or enter into a listing or representation agreement — any contractual relationship must be established separately between the client and your brokerage, outside Connexli.',
+    ], 'See my new client', APP_URL + '/agent'), true); // always sent: a real client is waiting on this professional
 }
 
 module.exports = {

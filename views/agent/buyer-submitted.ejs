@@ -13,6 +13,8 @@
 
   <div class="sealed" style="margin-top:14px;">✏️ <span>Until the proposal window closes, you can review, edit, or withdraw your proposal any time. After it closes, proposals are locked and revealed to the buyer together.</span></div>
 
+  <div class="sealed" style="margin-top:10px; border-left:4px solid var(--muted);">⚖️ <span><b>Important:</b> Submitting a proposal does not create a contract or guarantee that the buyer will hire you. If you are selected to connect, any representation agreement or other contract must be entered into separately between the client and your brokerage.</span></div>
+
   <div class="actions" style="justify-content:center; margin-top:18px; display:flex; gap:10px; flex-wrap:wrap;">
     <a class="btn ghost" href="/agent/buyers/<%= buyer.id %>">Edit proposal</a>
     <form method="POST" action="/agent/buyers/<%= buyer.id %>/withdraw" onsubmit="return confirm('Withdraw your proposal for this buyer?');">

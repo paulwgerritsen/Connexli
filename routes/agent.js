@@ -308,7 +308,7 @@ router.get('/agent/buyers/:id(\\d+)/submitted', agent, async (req, res) => {
 // their information before review.
 async function renderSettings(req, res, opts = {}) {
   const { rows } = await pool.query(
-    `SELECT ap.*, u.name, u.email, u.phone FROM agent_profiles ap
+    `SELECT ap.*, u.name, u.email, u.phone, u.email_notifications FROM agent_profiles ap
      JOIN users u ON u.id = ap.user_id WHERE ap.user_id=$1`, [req.session.user.id]);
   if (!rows[0]) return res.status(500).render('error', { title: 'Profile missing', message: 'Your professional profile was not found. Contact support.' });
   // On a validation error, keep whatever the professional just typed so they
@@ -346,9 +346,10 @@ router.post('/agent/settings', agent, async (req, res) => {
   const geo = mailer.zipInfo(service_zip);
   if (!geo) return fail('We could not find that ZIP code. Please double-check your primary service ZIP.');
 
+  const email_notifications = req.body.email_notifications === 'on';
   try {
-    await pool.query(`UPDATE users SET name=$1, email=$2, phone=$3 WHERE id=$4`,
-      [name, email, phone, req.session.user.id]);
+    await pool.query(`UPDATE users SET name=$1, email=$2, phone=$3, email_notifications=$4 WHERE id=$5`,
+      [name, email, phone, email_notifications, req.session.user.id]);
   } catch (e) {
     if (e.code === '23505') return fail('Another account already uses that email address.');
     throw e;

@@ -230,7 +230,8 @@ router.get('/admin/buyers/:id(\\d+)', admin, async (req, res) => {
        FROM buyer_proposals bp JOIN users u ON u.id=bp.agent_id JOIN agent_profiles ap ON ap.user_id=bp.agent_id
        WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [req.params.id]),
     pool.query(
-      `SELECT round, COUNT(*)::int AS n FROM agent_notifications
+      `SELECT round, COUNT(*)::int AS n, COUNT(*) FILTER (WHERE email_sent)::int AS sent
+       FROM agent_notifications
        WHERE opportunity_type='buyer' AND opportunity_id=$1 GROUP BY round ORDER BY round`, [req.params.id]),
   ]);
 
@@ -277,7 +278,8 @@ router.get('/admin/requests/:id(\\d+)', admin, async (req, res) => {
        WHERE p.request_id=$1 ORDER BY p.created_at ASC`, [req.params.id]),
     pool.query(`SELECT service_zip FROM agent_profiles WHERE status='approved'`),
     pool.query(
-      `SELECT round, COUNT(*)::int AS n FROM agent_notifications
+      `SELECT round, COUNT(*)::int AS n, COUNT(*) FILTER (WHERE email_sent)::int AS sent
+       FROM agent_notifications
        WHERE opportunity_type='seller' AND opportunity_id=$1 GROUP BY round ORDER BY round`, [req.params.id]),
   ]);
   // How many approved professionals are currently within the notification radius

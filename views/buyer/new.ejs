@@ -1,6 +1,8 @@
 <%- include('../partials/head') %>
 <div class="narrow" style="max-width:640px;">
-  <a href="/buyer" style="font-size:14px;">‹ Back</a>
+  <%# Straight back to the dashboard (Paul, Aug 16) — never via the previous
+      request's connected/success page. %>
+  <a href="/dashboard" style="font-size:14px;">‹ Back to my dashboard</a>
   <h1 style="margin-top:8px;">Your buyer profile</h1>
   <p class="sub">About 2 minutes. Agents see an anonymous snapshot — your name and contact info stay hidden until you choose to connect.</p>
   <% if (error) { %><div class="error"><%= error %></div><% } %>

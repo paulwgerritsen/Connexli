@@ -4,7 +4,7 @@
   <h1 style="margin-top:8px;">My buyer proposal · <%= p.search_areas %></h1>
 
   <% if (p.connected) { %>
-    <div class="success">🎉 <b>You won this one.</b> The buyer chose your proposal — their contact details are on your dashboard under Buyer clients won.</div>
+    <div class="success">🎉 <b>You've been selected to connect.</b> The buyer chose your proposal — their contact details are on your dashboard under Buyer clients won. Being selected means they'd like to speak with you; it does not guarantee they will hire you or sign a representation agreement. Any contract is established separately between the client and your brokerage.</div>
   <% } else if (p.someone_won > 0) { %>
     <div class="sealed" style="border-left:4px solid var(--muted);">🤝 <span><b>Not selected this time.</b> The buyer connected with another professional. Your proposal below is exactly what they compared — a quick review sharpens the next one.</span></div>
   <% } else if (p.profile_status === 'active' && p.round < p.profile_round) { %>

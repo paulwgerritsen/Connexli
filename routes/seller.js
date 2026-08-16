@@ -27,6 +27,39 @@ router.get('/dashboard', seller, async (req, res) => {
   });
 });
 
+// ---------- account settings (buyers & sellers) ----------
+// Professionals have /agent/settings; this is the consumer equivalent —
+// contact details plus the email-notifications toggle (Paul, Aug 16).
+async function renderConsumerSettings(req, res, opts = {}) {
+  const { rows } = await pool.query(
+    `SELECT name, email, phone, email_notifications FROM users WHERE id=$1`, [req.session.user.id]);
+  const p = { ...rows[0], ...(opts.form || {}) };
+  res.status(opts.error ? 400 : 200).render('seller/settings', { title: 'Account settings', p, error: opts.error || null, saved: opts.saved || false });
+}
+
+router.get('/settings', seller, (req, res) => renderConsumerSettings(req, res, { saved: req.query.saved === '1' }));
+
+router.post('/settings', seller, async (req, res) => {
+  const name = H.clean(req.body.name, 100);
+  const email = H.clean(req.body.email, 120).toLowerCase();
+  const phone = H.clean(req.body.phone, 30);
+  const email_notifications = req.body.email_notifications === 'on';
+  const form = { name, email, phone, email_notifications };
+  const fail = (msg) => renderConsumerSettings(req, res, { error: msg, form });
+
+  if (!name || !email.includes('@')) return fail('Please enter your name and a valid email address.');
+  try {
+    await pool.query(`UPDATE users SET name=$1, email=$2, phone=$3, email_notifications=$4 WHERE id=$5`,
+      [name, email, phone, email_notifications, req.session.user.id]);
+  } catch (e) {
+    if (e.code === '23505') return fail('Another account already uses that email address.');
+    throw e;
+  }
+  req.session.user = { ...req.session.user, name, email };
+  logEvent('consumer_settings_updated', { userId: req.session.user.id });
+  res.redirect('/settings?saved=1');
+});
+
 // New request form
 router.get('/requests/new', seller, (req, res) => {
   res.render('seller/new-request', { title: 'Tell us about your home', H, error: null, form: {} });

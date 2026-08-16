@@ -4,7 +4,7 @@
   <h1 style="margin-top:8px;">My proposal · <%= p.property_type %> in <%= p.city %></h1>
 
   <% if (p.connected) { %>
-    <div class="success">🎉 <b>You won this one.</b> The homeowner chose your proposal — their contact details are on your dashboard under Clients won.</div>
+    <div class="success">🎉 <b>You've been selected to connect.</b> The homeowner chose your proposal — their contact details are on your dashboard under Clients won. Being selected means they'd like to speak with you; it does not guarantee they will hire you or sign a listing agreement. Any contract is established separately between the client and your brokerage.</div>
   <% } else if (p.request_status === 'connected') { %>
     <div class="sealed" style="border-left:4px solid var(--muted);">🤝 <span><b>Not selected this time.</b> The homeowner connected with another professional. Your proposal below is exactly what they compared — reviewing it against the request is the fastest way to sharpen the next one.</span></div>
   <% } else if (p.request_status === 'open' && p.round < p.request_round) { %>

@@ -33,6 +33,15 @@
     </div>
 
     <div class="card">
+      <h2 style="font-size:16px;">Email notifications</h2>
+      <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer; margin-top:6px;">
+        <input type="checkbox" name="email_notifications" <%= p.email_notifications === false ? '' : 'checked' %> style="margin-top:4px; width:16px; height:16px; flex:none; accent-color:var(--blue);">
+        <span style="font-size:14px; color:var(--muted); line-height:1.5; font-weight:400;"><b style="color:var(--navy);">Email me about new opportunities</b><br>
+        Turning this off only stops the emails — you'll still be matched to every opportunity in your area, see them all on your dashboard, and can submit proposals normally. If a client selects you to connect, that email is always sent.</span>
+      </label>
+    </div>
+
+    <div class="card">
       <h2 style="font-size:16px;">Your track record</h2>
       <p class="note" style="margin-top:2px;">Closed transactions in the last 12 months. Shown to homeowners with your proposals, labeled as reported by you — accuracy builds trust and wins business.</p>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">

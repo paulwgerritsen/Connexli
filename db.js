@@ -214,6 +214,14 @@ CREATE TABLE IF NOT EXISTS agent_notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_agent_notifications_opp ON agent_notifications(opportunity_type, opportunity_id);
+
+-- Email notification preference (Paul, Aug 16): a per-account toggle,
+-- defaulting ON for existing and new accounts. Turning it OFF only stops
+-- emails — matching, dashboard visibility, proposals, and admin counts are
+-- unaffected. agent_notifications.email_sent separates "matched" (row
+-- exists) from "email actually sent" (flag true).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE agent_notifications ADD COLUMN IF NOT EXISTS email_sent BOOLEAN NOT NULL DEFAULT true;
 `;
 
 async function init() {

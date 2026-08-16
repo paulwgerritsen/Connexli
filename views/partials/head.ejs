@@ -33,6 +33,7 @@
         <a href="https://connexli.com" class="homelink" style="color:#B9C8DE;"><span class="hl-full">connexli.com</span><span class="hl-short">Home</span></a>
         <span class="who"><%= user.name %><% if (user.role === 'admin') { %> · Admin<% } %></span>
         <% if (user.role === 'seller') { %><a href="/requests/new" style="color:#fff; font-weight:600; text-decoration:none;">+ New request</a><% } %>
+        <% if (user.role === 'seller') { %><a href="/settings" style="color:#B9C8DE;">Settings</a><% } else if (user.role === 'agent') { %><a href="/agent/settings" style="color:#B9C8DE;">Settings</a><% } %>
         <form method="POST" action="/logout">
           <input type="hidden" name="_csrf" value="<%= csrf %>">
           <button class="linkbtn" type="submit">Log out</button>
