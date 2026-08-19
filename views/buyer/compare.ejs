@@ -1,0 +1,38 @@
+<%- include('../partials/head') %>
+<a href="/buyer/requests/<%= profile.id %>" style="font-size:14px;">‹ Back to proposals</a>
+<h1 style="margin-top:8px;">Your proposals, side by side</h1>
+<p class="sub">Estimated compensation assumes a <%= H.money(H.midPrice(profile.price_range)) %> purchase (the middle of your range). Each amount is that professional's proposed <b>buyer-agent compensation</b> — sellers often contribute toward it, and each agent's answer on any shortfall is shown below. Scroll sideways on smaller screens.</p>
+
+<% if (proposals.length === 0) { %>
+  <div class="card"><p class="sub">No proposals yet — they'll appear here the moment your window closes with proposals to compare.</p></div>
+<% } else { %>
+<div class="tblwrap">
+  <table>
+    <tr><th></th><% proposals.forEach(p => { %><th><%= p.agent_name %></th><% }) %></tr>
+    <tr><td>Brokerage</td><% proposals.forEach(p => { %><td><%= p.brokerage %></td><% }) %></tr>
+    <tr><td>12-mo transactions*</td><% proposals.forEach(p => { %><td><%= (p.transactions_seller_12mo === null && p.transactions_buyer_12mo === null) ? '—' : ((p.transactions_buyer_12mo ?? 0) + ' buyer · ' + (p.transactions_seller_12mo ?? 0) + ' seller') %></td><% }) %></tr>
+    <tr><td>Proposed compensation</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.buyerFeeLabel(p) %></b></td><% }) %></tr>
+    <tr><td>Est. compensation</td><% proposals.forEach(p => { %><% const est = H.estBuyerFee(p, profile.price_range); %><td><% if (est === null) { %>—<% } else { %><b style="color:var(--navy); font-size:15px;"><%= H.money(est) %></b><% } %></td><% }) %></tr>
+    <tr><td>Minimum fee</td><% proposals.forEach(p => { %><td><%= p.min_fee ? H.money(p.min_fee) : '—' %></td><% }) %></tr>
+    <tr><td>If the seller doesn't cover it all</td><% proposals.forEach(p => { %>
+      <td><% if (p.gap_responsibility === 'Yes') { %><span class="exc">You'd cover the balance</span><% } else if (p.gap_responsibility === 'No') { %><span class="inc">✓ Won't ask you to pay the difference</span><% } else { %>—<% } %></td>
+    <% }) %></tr>
+    <tr><td>Home tours included</td><% proposals.forEach(p => { %><td><%= p.included_tours || '—' %></td><% }) %></tr>
+    <tr><td>Video tours</td><% proposals.forEach(p => { %><td><%- p.video_tours ? '<span class="inc">✓ Offered</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Response time</td><% proposals.forEach(p => { %><td><%= p.response_time || '—' %></td><% }) %></tr>
+    <tr><td>Specialties</td><% proposals.forEach(p => { %><td><%= p.specialties || '—' %></td><% }) %></tr>
+    <% if (profile.status === 'active' && profile.published) { %>
+    <tr><td></td><% proposals.forEach(p => { %>
+      <td>
+        <form method="POST" action="/buyer/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.\n\nNote: selecting an agent may lead to a separate written representation agreement — review the compensation terms in that agreement before signing.');">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn sm" type="submit">Choose</button>
+        </form>
+      </td>
+    <% }) %></tr>
+    <% } %>
+  </table>
+</div>
+<p class="note">*Transaction counts are reported by each professional. Each agent's full plan for you is on their proposal card — <a href="/buyer/requests/<%= profile.id %>">back to proposals</a>.</p>
+<% } %>
+<%- include('../partials/foot') %>

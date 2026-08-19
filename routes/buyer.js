@@ -66,6 +66,31 @@ router.get('/buyer/requests/:id(\\d+)', consumer, async (req, res) => {
   return renderProfile(req, res, rows[0]);
 });
 
+// Side-by-side comparison (Paul, Aug 18) — the buyer twin of the seller
+// compare table. Available once the window has closed (same rule as the
+// seller side: sealed proposals are never compared mid-window).
+router.get('/buyer/requests/:id(\\d+)/compare', consumer, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM buyer_profiles WHERE id=$1 AND user_id=$2`, [req.params.id, req.session.user.id]);
+  const profile = rows[0];
+  if (!profile) return res.status(404).render('error', { title: 'Not found', message: "That buying request wasn't found on your account." });
+
+  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
+  profile.proposal_count = cnt[0].n;
+  if (profile.status === 'active' && profile.published && H.windowOpen(profile)) {
+    return res.redirect('/buyer/requests/' + profile.id); // still sealed
+  }
+
+  const { rows: proposals } = await pool.query(
+    `SELECT bp.*, u.name AS agent_name,
+            ap.brokerage, ap.transactions_seller_12mo, ap.transactions_buyer_12mo
+     FROM buyer_proposals bp
+     JOIN users u ON u.id = bp.agent_id
+     JOIN agent_profiles ap ON ap.user_id = bp.agent_id
+     WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]);
+  res.render('buyer/compare', { title: 'Compare proposals', profile, proposals, H });
+});
+
 // ---------- create (Step 1: the ~2-minute core) ----------
 router.get('/buyer/new', consumer, async (req, res) => {
   // One OPEN buying request per account (BBA / procuring-cause safety and no

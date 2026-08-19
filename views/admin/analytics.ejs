@@ -13,6 +13,19 @@
 </div>
 
 <div class="card">
+  <h2 style="font-size:16px;">Seller side (home sellers)</h2>
+  <p class="note" style="margin-top:2px;">The original marketplace funnel: requests posted → sealed proposals → seller Connected with a professional. Statuses match the rest of Connexli: <b>open</b> = proposal window active, <b>awaiting decision</b> = window closed with proposals ready to compare, <b>Connected</b> = professional selected.</p>
+  <div class="stats" style="margin-top:10px;">
+    <div class="stat"><b><%= s.total_requests %></b><span>Seller requests · all time</span></div>
+    <div class="stat"><b><%= s.open_requests %></b><span>Open — window active</span></div>
+    <div class="stat"><b><%= s.awaiting %></b><span>Awaiting a decision</span></div>
+    <div class="stat"><b><%= s.connected_requests %></b><span>Connected — completed</span></div>
+    <div class="stat"><b><%= s.proposals %> → <%= s.connections %></b><span>Seller proposals → connections</span></div>
+    <div class="stat"><b><%= s.total_requests ? (s.proposals / s.total_requests).toFixed(1) : '—' %></b><span>Avg proposals per request</span></div>
+  </div>
+</div>
+
+<div class="card">
   <h2 style="font-size:16px;">Buyer side ("Find Your Buyer's Agent")</h2>
   <p class="note" style="margin-top:2px;">Readiness mix shows lead quality; the lender counter is the hard evidence for the future lender vertical.</p>
   <div class="stats" style="margin-top:10px;">

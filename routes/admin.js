@@ -133,6 +133,20 @@ router.get('/admin/analytics', admin, async (req, res) => {
   const viewsByWeek = {};
   for (const v of viewCounts.rows) viewsByWeek[new Date(v.week).toISOString().slice(0, 10)] = v.n;
 
+  // Seller-side funnel (Paul, Aug 18): the at-a-glance mirror of the buyer
+  // section, computed entirely from existing tables and existing status
+  // definitions — open (window active), closed (awaiting the seller's
+  // decision), connected (professional selected).
+  const { rows: sellerStats } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*) FROM requests)::int AS total_requests,
+      (SELECT COUNT(*) FROM requests WHERE status='open')::int AS open_requests,
+      (SELECT COUNT(*) FROM requests WHERE status='closed')::int AS awaiting,
+      (SELECT COUNT(*) FROM requests WHERE status='connected')::int AS connected_requests,
+      (SELECT COUNT(*) FROM proposals)::int AS proposals,
+      (SELECT COUNT(*) FROM proposals WHERE connected)::int AS connections
+  `);
+
   // Buyer-side metrics: readiness mix, lender-demand counter, funnel counts.
   const { rows: buyerStats } = await pool.query(`
     SELECT
@@ -158,6 +172,7 @@ router.get('/admin/analytics', admin, async (req, res) => {
     viewsByWeek,
     radius: mailer.RADIUS_MILES,
     b: buyerStats[0],
+    s: sellerStats[0],
   });
 });
 

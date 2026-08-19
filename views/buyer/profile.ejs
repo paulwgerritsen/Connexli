@@ -89,7 +89,10 @@
 <% } %>
 
 <% if (profile.status === 'active' && !windowIsOpen) { %>
-  <h2 style="margin-top:24px;">Proposals (<%= proposals.length %><% if (profile.round > 1) { %> across <%= profile.round %> rounds<% } %>)</h2>
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:24px;">
+    <h2 style="margin:0;">Proposals (<%= proposals.length %><% if (profile.round > 1) { %> across <%= profile.round %> rounds<% } %>)</h2>
+    <% if (proposals.length >= 2) { %><a class="btn ghost sm" href="/buyer/requests/<%= profile.id %>/compare">Compare side by side</a><% } %>
+  </div>
   <p class="note">ⓘ Each amount shown is that professional's <b>proposed buyer-agent compensation</b>. Sellers often contribute toward it — but if the seller does not cover the full amount you agree to with your agent, <b>you may be responsible for the remaining balance at closing</b>, depending on your written agreement. Each proposal states that agent's answer below. Review your agreement's terms before signing anything. Connexli does not set or recommend commissions.</p>
   <% if (proposals.length === 0) { %>
     <div class="card"><p class="sub">No proposals yet. Verified agents in your areas have been notified — most buyers hear back within a day or two. Proposals appear here the moment they arrive.</p></div>
