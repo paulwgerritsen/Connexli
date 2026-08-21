@@ -239,7 +239,7 @@ router.get('/admin/buyers/:id(\\d+)', admin, async (req, res) => {
   const buyer = rows[0];
   if (!buyer) return res.status(404).render('error', { title: 'Not found', message: 'That buyer request does not exist.' });
 
-  const [{ rows: proposals }, { rows: notifyRounds }] = await Promise.all([
+  const [{ rows: proposals }, { rows: notifyRounds }, { rows: approvedAgents }, { rows: followups }] = await Promise.all([
     pool.query(
       `SELECT bp.*, u.name AS agent_name, u.email AS agent_email, ap.brokerage
        FROM buyer_proposals bp JOIN users u ON u.id=bp.agent_id JOIN agent_profiles ap ON ap.user_id=bp.agent_id
@@ -248,9 +248,31 @@ router.get('/admin/buyers/:id(\\d+)', admin, async (req, res) => {
       `SELECT round, COUNT(*)::int AS n, COUNT(*) FILTER (WHERE email_sent)::int AS sent
        FROM agent_notifications
        WHERE opportunity_type='buyer' AND opportunity_id=$1 GROUP BY round ORDER BY round`, [req.params.id]),
+    pool.query(`SELECT service_zip FROM agent_profiles WHERE status='approved'`),
+    pool.query(
+      `SELECT kind, recipient_role, due_at, sent_at, skip_reason FROM followups
+       WHERE opportunity_type='buyer' AND opportunity_id=$1 ORDER BY due_at`, [req.params.id]),
   ]);
 
-  res.render('admin/buyer-detail', { title: 'Buyer request', buyer, proposals, notifyRounds, H });
+  // Live eligibility (Paul, Aug 21 — buyer detail now mirrors the seller
+  // page): approved professionals currently within the radius of ANY of the
+  // buyer's cities, counting only computable distances.
+  let geo = buyer.search_geo;
+  if (typeof geo === 'string') { try { geo = JSON.parse(geo); } catch (e) { geo = null; } }
+  const geoPoints = (Array.isArray(geo) && geo.length) ? geo
+    : String(buyer.search_areas).split(',').map(s => s.trim()).filter(Boolean)
+        .map(c => H.utCity(c)).filter(Boolean);
+  const geoKnown = geoPoints.length > 0;
+  const inRange = !geoKnown ? 0 : approvedAgents.filter(a => {
+    const z = mailer.zipInfo(a.service_zip);
+    if (!z) return false;
+    return Math.min(...geoPoints.map(g => H.geoMiles(z.latitude, z.longitude, g.lat, g.lng))) <= mailer.RADIUS_MILES;
+  }).length;
+
+  res.render('admin/buyer-detail', {
+    title: 'Buyer request', buyer, proposals, notifyRounds, H,
+    inRange, geoKnown, radius: mailer.RADIUS_MILES, followups,
+  });
 });
 
 // ---------- professional actions ----------
@@ -297,16 +319,24 @@ router.get('/admin/requests/:id(\\d+)', admin, async (req, res) => {
        FROM agent_notifications
        WHERE opportunity_type='seller' AND opportunity_id=$1 GROUP BY round ORDER BY round`, [req.params.id]),
   ]);
-  // How many approved professionals are currently within the notification radius
-  const inRange = approvedAgents.rows.filter(a => {
+  // How many approved professionals are currently within the notification
+  // radius. Counts only COMPUTABLE distances (Paul, Aug 21) — the old
+  // fail-open count showed "17 within 50 mi" for a request whose ZIP wasn't
+  // even in the geographic database. zipKnown drives a warning banner.
+  const zipKnown = !!mailer.zipInfo(request.zip);
+  const inRange = !zipKnown ? 0 : approvedAgents.rows.filter(a => {
     const d = mailer.zipDistance(request.zip, a.service_zip);
-    return d === null || d <= mailer.RADIUS_MILES;
+    return d !== null && d <= mailer.RADIUS_MILES;
   }).length;
+
+  const { rows: followups } = await pool.query(
+    `SELECT kind, recipient_role, due_at, sent_at, skip_reason FROM followups
+     WHERE opportunity_type='seller' AND opportunity_id=$1 ORDER BY due_at`, [req.params.id]);
 
   res.render('admin/request-detail', {
     title: 'Request detail', request, H,
-    proposals: proposals.rows, inRange, radius: mailer.RADIUS_MILES,
-    notifyRounds: notifyRoundsQ.rows,
+    proposals: proposals.rows, inRange, zipKnown, radius: mailer.RADIUS_MILES,
+    notifyRounds: notifyRoundsQ.rows, followups,
   });
 });
 

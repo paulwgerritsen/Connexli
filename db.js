@@ -222,6 +222,26 @@ CREATE INDEX IF NOT EXISTS idx_agent_notifications_opp ON agent_notifications(op
 -- exists) from "email actually sent" (flag true).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_notifications BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE agent_notifications ADD COLUMN IF NOT EXISTS email_sent BOOLEAN NOT NULL DEFAULT true;
+
+-- Automated post-connection follow-ups (Paul, Aug 21). One row per scheduled
+-- email; the in-process sweep sends whatever is due. UNIQUE guarantees a
+-- follow-up can never be scheduled twice for the same connection.
+CREATE TABLE IF NOT EXISTS followups (
+  id SERIAL PRIMARY KEY,
+  opportunity_type TEXT NOT NULL CHECK (opportunity_type IN ('seller','buyer')),
+  opportunity_id INTEGER NOT NULL,
+  recipient_role TEXT NOT NULL CHECK (recipient_role IN ('client','professional')),
+  email TEXT NOT NULL,
+  name TEXT NOT NULL,
+  counterpart TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL CHECK (kind IN ('day3','day30')),
+  due_at TIMESTAMPTZ NOT NULL,
+  sent_at TIMESTAMPTZ,
+  skip_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (opportunity_type, opportunity_id, recipient_role, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_followups_due ON followups(due_at) WHERE sent_at IS NULL AND skip_reason IS NULL;
 `;
 
 async function init() {
@@ -251,6 +271,43 @@ async function init() {
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email))`);
   } catch (e) {
     console.error('Email-uniqueness migration failed (app still running):', e.message);
+  }
+
+  // Backfill follow-ups for connections made BEFORE this feature deployed
+  // (Paul, Aug 21 — the requests Connected since 8/8 should get theirs).
+  // Past-due rows send on the first sweep after boot. ON CONFLICT keeps this
+  // idempotent across restarts.
+  try {
+    await pool.query(`
+      INSERT INTO followups (opportunity_type, opportunity_id, recipient_role, email, name, counterpart, kind, due_at)
+      SELECT x.t, x.oid, x.role, x.email, x.name, x.counterpart, k.kind,
+             x.connected_at + (CASE k.kind WHEN 'day3' THEN interval '3 days' ELSE interval '30 days' END)
+      FROM (
+        SELECT 'seller' AS t, r.id AS oid, 'client' AS role, su.email, su.name, au.name AS counterpart, p.connected_at
+          FROM proposals p JOIN requests r ON r.id=p.request_id
+          JOIN users su ON su.id=r.seller_id JOIN users au ON au.id=p.agent_id
+          WHERE p.connected
+        UNION ALL
+        SELECT 'seller', r.id, 'professional', au.email, au.name, su.name, p.connected_at
+          FROM proposals p JOIN requests r ON r.id=p.request_id
+          JOIN users su ON su.id=r.seller_id JOIN users au ON au.id=p.agent_id
+          WHERE p.connected
+        UNION ALL
+        SELECT 'buyer', b.id, 'client', bu.email, bu.name, au.name, bp.connected_at
+          FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id
+          JOIN users bu ON bu.id=b.user_id JOIN users au ON au.id=bp.agent_id
+          WHERE bp.connected
+        UNION ALL
+        SELECT 'buyer', b.id, 'professional', au.email, au.name, bu.name, bp.connected_at
+          FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id
+          JOIN users bu ON bu.id=b.user_id JOIN users au ON au.id=bp.agent_id
+          WHERE bp.connected
+      ) x
+      CROSS JOIN (VALUES ('day3'), ('day30')) AS k(kind)
+      WHERE NOT (x.role = 'professional' AND k.kind = 'day30')
+      ON CONFLICT (opportunity_type, opportunity_id, recipient_role, kind) DO NOTHING`);
+  } catch (e) {
+    console.error('Follow-up backfill failed (app still running):', e.message);
   }
 
   // Seed the first admin account from environment variables.
@@ -283,6 +340,25 @@ async function expireBuyerProfiles() {
   await pool.query(`UPDATE buyer_profiles SET status='expired' WHERE status='active' AND expires_at <= now()`);
 }
 
+// Schedule the post-connection follow-ups for one connection: day-3 to both
+// sides, day-30 check-in to the client. Fire-and-forget from the connect
+// routes; ON CONFLICT makes double-clicks harmless.
+function scheduleFollowups(type, oppId, client, professional, connectedAt = new Date()) {
+  const rows = [
+    ['client', client.email, client.name, professional.name, 'day3', 3],
+    ['professional', professional.email, professional.name, client.name, 'day3', 3],
+    ['client', client.email, client.name, professional.name, 'day30', 30],
+  ];
+  for (const [role, email, name, counterpart, kind, days] of rows) {
+    pool.query(
+      `INSERT INTO followups (opportunity_type, opportunity_id, recipient_role, email, name, counterpart, kind, due_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz + make_interval(days => $9))
+       ON CONFLICT (opportunity_type, opportunity_id, recipient_role, kind) DO NOTHING`,
+      [type, oppId, role, email, name, counterpart, kind, connectedAt, days]
+    ).catch((e) => console.error('scheduleFollowups failed:', e.message));
+  }
+}
+
 // Record a marketplace event. Fire-and-forget: analytics must never be able
 // to break or slow down a real page for a real user, so errors are only
 // logged. Deliberately no foreign keys — history survives account deletion.
@@ -293,4 +369,4 @@ function logEvent(eventType, { userId = null, requestId = null, proposalId = nul
   ).catch((e) => console.error('logEvent failed:', eventType, e.message));
 }
 
-module.exports = { pool, init, closeExpired, expireBuyerProfiles, logEvent };
+module.exports = { pool, init, closeExpired, expireBuyerProfiles, logEvent, scheduleFollowups };

@@ -84,22 +84,32 @@ router.get('/agent', agent, async (req, res) => {
   // still sees opportunities and can fix their ZIP in settings) while emails
   // fail closed — nobody far away gets spammed.
   const inReach = (zip) => {
+    // Which side of the distance is unresolvable matters (Paul, Aug 21):
+    // - REQUEST ZIP unknown → hide from every dashboard (fail closed, same as
+    //   emails). Nobody's geography can be computed, so nobody is eligible.
+    // - AGENT ZIP unknown → fail open for display only, so an agent with a
+    //   data gap still sees opportunities and can fix their settings.
+    if (!mailer.zipInfo(zip)) return false;
     const d = mailer.zipDistance(zip, profile.service_zip);
     return d === null || d <= mailer.RADIUS_MILES;
   };
   const buyerInReach = (b) => {
+    // Same sidedness rule as inReach (Paul, Aug 21): an agent-side data gap
+    // fails open for display; a request-side gap (no resolvable geography on
+    // the buyer's cities) fails closed — hidden, exactly like the emails.
+    const z = mailer.zipInfo(profile.service_zip);
+    if (!z) return true; // agent-side gap: fail open for display
     // Prefer the exact lat/lng stored with the profile (standardized city
     // selector, Aug 14); legacy free-text rows fall back to name lookup.
     let geo = b.search_geo;
     if (typeof geo === 'string') { try { geo = JSON.parse(geo); } catch (e) { geo = null; } }
     if (Array.isArray(geo) && geo.length) {
-      const z = mailer.zipInfo(profile.service_zip);
-      if (!z) return true; // agent-side data gap: fail open for display
       return Math.min(...geo.map(g => H.geoMiles(z.latitude, z.longitude, g.lat, g.lng))) <= mailer.RADIUS_MILES;
     }
     const cities = String(b.search_areas).split(',').map(s => s.trim()).filter(Boolean);
     const dists = cities.map(c => mailer.cityDistance(profile.service_zip, c)).filter(d => d !== null);
-    return !dists.length || Math.min(...dists) <= mailer.RADIUS_MILES;
+    if (!dists.length) return false; // request-side gap: fail closed
+    return Math.min(...dists) <= mailer.RADIUS_MILES;
   };
   const opportunities = opps.rows.filter(o => inReach(o.zip));
   const buyerOppsNear = buyerOpps.filter(b => buyerInReach(b));

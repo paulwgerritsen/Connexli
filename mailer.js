@@ -315,8 +315,60 @@ function agentWon(email, name, request) {
     ], 'See my new client', APP_URL + '/agent'), true); // always sent: a real client is waiting on this professional
 }
 
+// ---------- post-connection follow-ups (Paul, Aug 21) ----------
+// The sweep claims each due row BEFORE sending (UPDATE ... WHERE sent_at IS
+// NULL), so overlapping sweeps can never double-send. Respecting the email
+// notifications toggle records a skip_reason instead of silently dropping.
+function followupBody(f) {
+  const first = f.name.split(' ')[0];
+  const side = f.opportunity_type === 'seller' ? 'home sale' : 'home search';
+  if (f.recipient_role === 'professional') {
+    return ['How is it going with your new client?', [
+      `${first}, three days ago a Connexli client chose to connect with you about their ${side}. We hope the conversation is going well.`,
+      `A quick reminder that being selected to connect is an introduction — any representation agreement is between the client and your brokerage. If you haven't reached out yet, sooner is always better.`,
+      'Hit reply and tell us how it went — what worked, what didn\'t, and anything Connexli could do better. We read every reply.',
+    ]];
+  }
+  if (f.kind === 'day3') {
+    return [`How did your connection with ${f.counterpart} go?`, [
+      `${first}, three days ago you chose to connect with <b>${f.counterpart}</b> about your ${side}. How is it going?`,
+      'Did they reach out quickly? Did the conversation match their proposal? Hit reply and tell us — good or bad, we read every reply, and your feedback directly shapes how Connexli works.',
+      'If they never reached out, tell us that too. You can always open another round of proposals from your dashboard.',
+    ]];
+  }
+  return [`Checking in on your ${side}`, [
+    `${first}, it's been about a month since you connected with <b>${f.counterpart}</b> on Connexli. We'd love to hear how your ${side} is going.`,
+    'Did you end up working together? Are you under contract, still looking, or did you go a different direction? A one-line reply helps us more than you know.',
+    'Thanks for being one of Connexli\'s early users — people like you are shaping this platform.',
+  ]];
+}
+
+async function processFollowups() {
+  try {
+    const { rows: due } = await pool.query(
+      `SELECT * FROM followups WHERE sent_at IS NULL AND skip_reason IS NULL AND due_at <= now()
+       ORDER BY due_at LIMIT 20`);
+    for (const f of due) {
+      if (!(await wantsEmail(f.email))) {
+        await pool.query(`UPDATE followups SET skip_reason='email notifications off' WHERE id=$1 AND sent_at IS NULL`, [f.id]);
+        console.log(`[followup:SKIP] ${f.kind} ${f.recipient_role} to=${f.email} (email notifications off)`);
+        continue;
+      }
+      // Claim the row first — a concurrent sweep that loses this race sends nothing.
+      const { rowCount } = await pool.query(
+        `UPDATE followups SET sent_at=now() WHERE id=$1 AND sent_at IS NULL AND skip_reason IS NULL`, [f.id]);
+      if (!rowCount) continue;
+      const [title, lines] = followupBody(f);
+      await send(f.email, title + ' · Connexli', template(title, lines, 'Open Connexli', APP_URL + '/login'), true);
+      console.log(`[followup:SENT] ${f.kind} ${f.recipient_role} to=${f.email} (${f.opportunity_type} #${f.opportunity_id})`);
+    }
+  } catch (e) {
+    console.error('processFollowups failed:', e.message);
+  }
+}
+
 module.exports = {
-  adminNewAgent, agentApproved, agentRejected, agentsNewRequest,
+  adminNewAgent, agentApproved, agentRejected, agentsNewRequest, processFollowups,
   sellerRequestReceived, buyerProfileLive,
   sellerProposalsReady, agentWon, passwordReset,
   agentsNewBuyerProfile, buyerNewProposal, buyerProposalsReady, buyerAgentWon, cityDistance,

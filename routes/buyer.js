@@ -316,6 +316,10 @@ router.post('/buyer/connect/:pid(\\d+)', consumer, async (req, res) => {
       const { rows: winner } = await pool.query(
         `SELECT u.email, u.name FROM buyer_proposals bp JOIN users u ON u.id=bp.agent_id WHERE bp.id=$1`, [req.params.pid]);
       if (winner[0]) mailer.buyerAgentWon(winner[0].email, winner[0].name, profile); // fire and forget
+      if (winner[0]) {
+        require('../db').scheduleFollowups('buyer', profile.id,
+          { email: req.session.user.email, name: req.session.user.name }, winner[0]);
+      }
       logEvent('buyer_connected', { userId: req.session.user.id, proposalId: parseInt(req.params.pid), meta: { profile_id: profile.id } });
     }
   } catch (e) { await client.query('ROLLBACK'); throw e; }

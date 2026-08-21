@@ -66,6 +66,9 @@ async function closeAndNotify() {
       logEvent('buyer_window_closed', { userId: b.user_id, meta: { profile_id: b.id } });
     }
     await expireBuyerProfiles();
+    // Post-connection follow-up emails (Paul, Aug 21): send whatever is due.
+    // Same in-process sweep — no external cron or Render config needed.
+    await mailer.processFollowups();
   } catch (e) { console.error('closeAndNotify:', e.message); }
 }
 setInterval(closeAndNotify, 5 * 60 * 1000);
@@ -74,7 +77,7 @@ app.use(async (req, res, next) => { await closeAndNotify(); next(); });
 // Every feature area the app expects to serve. If a route file is missing the
 // server refuses to start with a clear message — a half-deployed update can
 // never boot silently with features missing.
-const APP_VERSION = '2026-08-18-buyer-compare-seller-analytics';
+const APP_VERSION = '2026-08-21-geo-diagnosis-followups-admin-consistency';
 const ROUTE_MODULES = ['auth', 'seller', 'buyer', 'agent', 'admin'];
 for (const m of ROUTE_MODULES) {
   app.use('/', require('./routes/' + m));

@@ -71,15 +71,22 @@
 <% } else { %>
 <div class="tblwrap">
   <table class="dt">
-    <tr><th>Buyer</th><th>Search</th><th>Readiness</th><th>Status</th><th>Window</th><th>Proposals</th><th>Created</th></tr>
+    <%# Mirrors the Seller requests table (Paul, Aug 21): same column order,
+        same status vocabulary (open/closed/connected), plain proposal count.
+        The status is DERIVED from the request's actual state, not relabeled:
+        open = window still accepting proposals, closed = window ended and
+        the buyer is deciding, connected = professional selected. %>
+    <tr><th>Buyer</th><th>Search</th><th>Window</th><th>Status</th><th>Proposals</th><th>Created</th></tr>
     <% buyers.forEach(b => { %>
+      <% const st = b.status === 'connected' ? 'connected'
+           : b.status === 'active' ? (!b.published ? 'not published' : (H.windowOpen(b) ? 'open' : 'closed'))
+           : b.status; %>
       <tr>
         <td><a href="/admin/buyers/<%= b.id %>"><%= b.buyer_name %></a> · <span style="color:var(--muted);"><%= b.buyer_email %></span></td>
         <td><%= b.search_areas %> · <%= b.price_range %><% if (!b.in_utah) { %> · from <%= b.origin_state %><% } %></td>
-        <td><span class="badge <%= b.readiness === 'ready_now' ? 'connected' : b.readiness === 'preparing' ? 'open' : 'pending' %>"><%= H.READINESS_LABELS[b.readiness] %></span></td>
-        <td><span class="badge <%= b.status === 'connected' ? 'connected' : b.status === 'active' ? (b.published ? 'open' : 'pending') : 'closed' %>"><%= b.status === 'active' ? (b.published ? 'live' : 'get ready') : b.status %></span></td>
-        <td><%= b.window_hours %> hrs<%= new Date(b.closes_at) > new Date() && b.proposal_count < b.proposal_cap ? '' : ' · closed' %></td>
-        <td><%= b.proposal_count %>/<%= b.proposal_cap %></td>
+        <td><%= b.window_hours === 168 ? '7 days' : b.window_hours + ' hrs' %></td>
+        <td><span class="badge <%= st === 'connected' ? 'connected' : st === 'open' ? 'open' : st === 'closed' ? 'closed' : 'pending' %>"><%= st %></span></td>
+        <td><%= b.proposal_count %></td>
         <td><%= new Date(b.created_at).toLocaleDateString('en-US') %></td>
       </tr>
     <% }) %>

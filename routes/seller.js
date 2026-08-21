@@ -90,6 +90,17 @@ router.post('/requests/new', seller, async (req, res) => {
       error: 'Please choose a property type, enter a 5-digit ZIP code and city, and pick a price range.',
     });
   }
+  // The ZIP must exist in the geographic database (Paul, Aug 21 — the Lehi
+  // "84048" case). An unresolvable ZIP breaks everything downstream: no
+  // distance can be computed, so no professional is ever emailed (emails fail
+  // closed) while the fail-open dashboard showed it to everyone. Same rule as
+  // agent registration/settings and the buyer city picker.
+  if (!mailer.zipInfo(f.zip)) {
+    return res.status(400).render('seller/new-request', {
+      title: 'Tell us about your home', H, form: { ...f, priorities, comp_ack: req.body.comp_ack },
+      error: `We couldn't find ZIP code ${f.zip}. Please double-check it — this is how we match your home with nearby professionals. (Lehi, for example, is 84043.)`,
+    });
+  }
   // Compensation-transparency acknowledgement (required; see selling.html education).
   if (req.body.comp_ack !== 'yes') {
     return res.status(400).render('seller/new-request', {
@@ -253,6 +264,10 @@ router.post('/requests/:id(\\d+)/connect/:pid(\\d+)', seller, async (req, res) =
     const { rows: winner } = await pool.query(
       `SELECT u.email, u.name FROM proposals p JOIN users u ON u.id=p.agent_id WHERE p.id=$1`, [req.params.pid]);
     if (winner[0]) mailer.agentWon(winner[0].email, winner[0].name, request); // fire and forget
+    if (rowCount && winner[0]) {
+      require('../db').scheduleFollowups('seller', request.id,
+        { email: req.session.user.email, name: req.session.user.name }, winner[0]);
+    }
     if (rowCount) logEvent('connected', { userId: req.session.user.id, requestId: request.id, proposalId: parseInt(req.params.pid) });
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }

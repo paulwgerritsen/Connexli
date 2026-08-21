@@ -3,12 +3,16 @@
 <h1 style="margin-top:8px;"><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %> <span class="badge <%= request.status %>" style="vertical-align:4px;"><%= request.status %></span></h1>
 <p class="sub">Seller: <%= request.seller_name %> · <%= request.seller_email %></p>
 
+<% if (!zipKnown) { %>
+  <div class="error">⚠ <b>ZIP <%= request.zip %> isn't in our geographic database</b> — no distance can be computed, so no professionals can be matched or emailed for this request. The seller likely mistyped it (Lehi, for example, is 84043). New requests now reject unknown ZIPs at the form; this one predates that check — ask the seller to re-post with the correct ZIP.</div>
+<% } %>
+
 <div class="stats">
   <div class="stat"><b><%= request.price_range %></b><span>Price range</span></div>
   <div class="stat"><b id="countdown" data-closes="<%= new Date(request.closes_at).toISOString() %>"><%= request.status === 'open' ? '…' : 'Closed' %></b><span><%= request.status === 'open' ? 'Time remaining' : 'Window status' %></span></div>
   <div class="stat"><b><%= inRange %></b><span>Approved pros within <%= radius %> mi</span></div>
-  <% const notifyTotal = notifyRounds.reduce((s, r) => s + r.n, 0); %>
-  <div class="stat"><b><%= notifyTotal %></b><span>Agents notified<%= notifyRounds.length > 1 ? ' (' + notifyRounds.map(r => 'r' + r.round + ': ' + r.n).join(' · ') + ')' : '' %></span></div>
+  <% const notifyTotal = notifyRounds.reduce((s, r) => s + r.n, 0); const sentTotal = notifyRounds.reduce((s, r) => s + r.sent, 0); %>
+  <div class="stat"><b><%= notifyTotal %></b><span>Professionals matched<%= sentTotal < notifyTotal ? ' · ' + sentTotal + ' emails sent' : '' %><%= notifyRounds.length > 1 ? ' (' + notifyRounds.map(r => 'r' + r.round + ': ' + r.n).join(' · ') + ')' : '' %></span></div>
   <div class="stat"><b><%= proposals.length %></b><span>Proposals submitted</span></div>
 </div>
 
@@ -18,6 +22,14 @@
   <div class="sumrow"><span>Priorities</span><span><%= request.priorities || 'Balanced' %></span></div>
   <div class="sumrow"><span>Window</span><span><%= request.window_hours === 168 ? '7 days' : request.window_hours + ' hours' %> · closes <%= new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain)</span></div>
   <div class="sumrow"><span>Created</span><span><%= new Date(request.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></span></div>
+  <% if (followups.length) { %>
+    <div class="sumrow"><span>Follow-up emails</span><span><%= followups.map(f =>
+      (f.kind === 'day3' ? 'Day-3' : 'Day-30') + ' ' + f.recipient_role + ': ' +
+      (f.sent_at ? 'sent ' + new Date(f.sent_at).toLocaleDateString('en-US')
+        : f.skip_reason ? 'skipped (' + f.skip_reason + ')'
+        : 'due ' + new Date(f.due_at).toLocaleDateString('en-US'))
+    ).join(' · ') %></span></div>
+  <% } %>
 </div>
 
 <h2 style="margin-top:24px;">Proposals<%= request.status === 'open' ? ' (contents sealed while the window is open)' : '' %></h2>

@@ -1,9 +1,16 @@
 <%- include('../partials/head') %>
 <a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<% const st = buyer.status === 'connected' ? 'connected'
+     : buyer.status === 'active' ? (!buyer.published ? 'not published' : (H.windowOpen(buyer) ? 'open' : 'closed'))
+     : buyer.status; %>
 <h1 style="margin-top:8px;">Buyer request · <%= buyer.search_areas %>
-  <span class="badge <%= buyer.status === 'connected' ? 'connected' : buyer.status === 'active' ? (buyer.published ? 'open' : 'pending') : 'closed' %>" style="vertical-align:4px;"><%= buyer.status === 'active' ? (buyer.published ? 'live' : 'get ready') : buyer.status %></span>
+  <span class="badge <%= st === 'connected' ? 'connected' : st === 'open' ? 'open' : st === 'closed' ? 'closed' : 'pending' %>" style="vertical-align:4px;"><%= st %></span>
 </h1>
 <p class="sub"><%= buyer.buyer_name %> · <%= buyer.buyer_email %><% if (buyer.buyer_phone) { %> · <%= buyer.buyer_phone %><% } %> · created <%= new Date(buyer.created_at).toLocaleDateString('en-US') %></p>
+
+<% if (!geoKnown) { %>
+  <div class="error">⚠ <b>None of this buyer's cities resolve in our geographic database</b> — no distance can be computed, so no professionals can be matched or emailed. This is a legacy free-text request; the strict city picker prevents new ones like it.</div>
+<% } %>
 
 <div class="card">
   <h2 style="font-size:16px;">Complete buyer profile</h2>
@@ -23,11 +30,20 @@
   <div class="sumrow"><span>Window</span><span><%= buyer.window_hours %> hours · round <%= buyer.round %> · cap <%= buyer.proposal_cap %></span></div>
   <div class="sumrow"><span>Closes</span><span><%= new Date(buyer.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain) — <%= new Date(buyer.closes_at) > new Date() && buyer.proposal_count < buyer.proposal_cap ? 'OPEN' : 'CLOSED' %></span></div>
   <div class="sumrow"><span>Proposals</span><span><%= buyer.proposal_count %> of <%= buyer.proposal_cap %></span></div>
-  <% const notifyTotal = notifyRounds.reduce((s, r) => s + r.n, 0); %>
-  <div class="sumrow"><span>Agents notified</span><span>
-    <% if (notifyTotal === 0) { %>0 — check radius/service ZIPs<% } else { %><b><%= notifyTotal %></b><% if (notifyRounds.length > 1) { %> (<%= notifyRounds.map(r => 'round ' + r.round + ': ' + r.n).join(' · ') %>)<% } %><% } %>
+  <div class="sumrow"><span>Approved pros in search area</span><span><b><%= inRange %></b> currently within <%= radius %> miles of <%= geoKnown ? 'at least one of the buyer\'s cities' : 'the buyer\'s cities (unresolvable)' %></span></div>
+  <% const notifyTotal = notifyRounds.reduce((s, r) => s + r.n, 0); const sentTotal = notifyRounds.reduce((s, r) => s + r.sent, 0); %>
+  <div class="sumrow"><span>Professionals matched</span><span>
+    <% if (notifyTotal === 0) { %>0 — check radius/service ZIPs<% } else { %><b><%= notifyTotal %></b> · emails sent: <b><%= sentTotal %></b><% if (sentTotal < notifyTotal) { %> (<%= notifyTotal - sentTotal %> opted out of email — still see it on their dashboard)<% } %><% if (notifyRounds.length > 1) { %> · <%= notifyRounds.map(r => 'round ' + r.round + ': ' + r.n).join(' · ') %><% } %><% } %>
   </span></div>
   <div class="sumrow"><span>Auto-archives</span><span><%= new Date(buyer.expires_at).toLocaleDateString('en-US') %> — 30 days after creation; hidden from agents after this date unless the buyer renews</span></div>
+  <% if (followups.length) { %>
+    <div class="sumrow"><span>Follow-up emails</span><span><%= followups.map(f =>
+      (f.kind === 'day3' ? 'Day-3' : 'Day-30') + ' ' + f.recipient_role + ': ' +
+      (f.sent_at ? 'sent ' + new Date(f.sent_at).toLocaleDateString('en-US')
+        : f.skip_reason ? 'skipped (' + f.skip_reason + ')'
+        : 'due ' + new Date(f.due_at).toLocaleDateString('en-US'))
+    ).join(' · ') %></span></div>
+  <% } %>
 </div>
 
 <h2 style="margin-top:22px;">Proposals (<%= proposals.length %>)</h2>
