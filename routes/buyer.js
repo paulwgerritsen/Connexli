@@ -251,6 +251,9 @@ router.post('/buyer/rebid', consumer, async (req, res) => {
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
   profile.proposal_count = cnt[0].n;
   if (H.windowOpen(profile)) return res.redirect('/buyer'); // window still open — nothing to reopen
+  // Another round only unlocks once the current round FILLED (Paul, Aug 23);
+  // an unfilled round uses the one-time 24-hour extension instead.
+  if (cnt[0].n < profile.proposal_cap) return res.redirect('/buyer');
 
   const { rows } = await pool.query(
     `UPDATE buyer_profiles SET round = round + 1, proposal_cap = $2 + 10, window_notified = false,

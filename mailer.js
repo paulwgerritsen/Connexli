@@ -315,6 +315,18 @@ function agentWon(email, name, request) {
     ], 'See my new client', APP_URL + '/agent'), true); // always sent: a real client is waiting on this professional
 }
 
+// Contact-form submission forwarded to the Connexli inbox. Always sent
+// (force) — the recipient is Connexli itself.
+function contactMessage(m) {
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
+  return send(process.env.CONTACT_EMAIL || 'contact@connexli.com', `Contact form: ${m.reason} — ${m.name}`,
+    template('New contact form message', [
+      `From: <b>${esc(m.name)}</b> &lt;${esc(m.email)}&gt;<br>Reason: <b>${esc(m.reason)}</b><br>Received: ${new Date().toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)`,
+      esc(m.message),
+      `Reply directly to ${esc(m.email)}. This message is also stored in the admin portal (Contact messages #${m.id}).`,
+    ], null, null), true);
+}
+
 // ---------- post-connection follow-ups (Paul, Aug 21) ----------
 // The sweep claims each due row BEFORE sending (UPDATE ... WHERE sent_at IS
 // NULL), so overlapping sweeps can never double-send. Respecting the email
@@ -368,7 +380,7 @@ async function processFollowups() {
 }
 
 module.exports = {
-  adminNewAgent, agentApproved, agentRejected, agentsNewRequest, processFollowups,
+  adminNewAgent, agentApproved, agentRejected, agentsNewRequest, processFollowups, contactMessage,
   sellerRequestReceived, buyerProfileLive,
   sellerProposalsReady, agentWon, passwordReset,
   agentsNewBuyerProfile, buyerNewProposal, buyerProposalsReady, buyerAgentWon, cityDistance,

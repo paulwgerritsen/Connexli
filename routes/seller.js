@@ -190,6 +190,11 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
   if (request.status !== 'closed') return res.redirect('/requests/' + request.id);
+  // Another round only unlocks once the current round actually FILLED
+  // (Paul, Aug 23). A round that closed with fewer than the cap uses the
+  // one-time 24-hour extension instead — same rule as the buyer side.
+  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
+  if (cnt[0].n < request.proposal_cap) return res.redirect('/requests/' + request.id);
 
   const { rows } = await pool.query(
     `UPDATE requests SET round = round + 1, status='open', closes_at = now() + make_interval(hours => window_hours),

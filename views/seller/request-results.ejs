@@ -85,13 +85,19 @@
   <% } %>
 
   <% if (request.status === 'closed') { %>
+    <% const roundFull = proposals.length >= request.proposal_cap; %>
     <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
       <h2 style="font-size:16px;">Want more options?</h2>
       <p class="sub" style="margin-bottom:10px;">Open another round: your request goes live again for <%= request.window_hours >= 24 ? (request.window_hours / 24) + ' day' + (request.window_hours > 24 ? 's' : '') : request.window_hours + ' hours' %> and up to 10 more verified professionals can propose — only agents who <b>haven't</b> proposed yet will see it. Every proposal you already have stays right here.</p>
-      <form method="POST" action="/requests/<%= request.id %>/rebid" onsubmit="return confirm('Open a new proposal round? Up to 10 additional professionals (who haven\'t proposed yet) will be invited, and your current proposals remain saved.');">
-        <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <button class="btn ghost" type="submit">Request another round of proposals</button>
-      </form>
+      <% if (roundFull) { %>
+        <form method="POST" action="/requests/<%= request.id %>/rebid" onsubmit="return confirm('Open a new proposal round? Up to 10 additional professionals (who haven\'t proposed yet) will be invited, and your current proposals remain saved.');">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn ghost" type="submit">Request another round of proposals</button>
+        </form>
+      <% } else { %>
+        <button class="btn ghost" type="button" disabled style="opacity:.45; cursor:not-allowed;">Request another round of proposals</button>
+        <p class="note" style="margin-top:8px;">Another round becomes available after all <%= request.proposal_cap %> proposal spots have been filled.<% if (!request.extended) { %> Until then, the 24-hour extension above gives more professionals time to propose.<% } %></p>
+      <% } %>
     </div>
   <% } %>
 <% } %>

@@ -176,6 +176,43 @@ router.get('/admin/analytics', admin, async (req, res) => {
   });
 });
 
+// ---------- expansion waitlist (Paul, Aug 23) ----------
+// Where should Connexli launch next? Totals, a per-state breakdown by user
+// type, and (with ?state=) the individual signups for one state.
+router.get('/admin/waitlist', admin, async (req, res) => {
+  const state = H.clean(req.query.state, 60);
+  const [totals, byState, entries] = await Promise.all([
+    pool.query(`
+      SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE user_type='Real estate professional')::int AS pros,
+        COUNT(*) FILTER (WHERE user_type='Homeowner thinking about selling')::int AS sellers,
+        COUNT(*) FILTER (WHERE user_type='Buyer looking for a home')::int AS buyers,
+        COUNT(*) FILTER (WHERE user_type='Just curious')::int AS curious
+      FROM waitlist`),
+    pool.query(`
+      SELECT state, COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE user_type='Real estate professional')::int AS pros,
+        COUNT(*) FILTER (WHERE user_type='Homeowner thinking about selling')::int AS sellers,
+        COUNT(*) FILTER (WHERE user_type='Buyer looking for a home')::int AS buyers,
+        COUNT(*) FILTER (WHERE user_type='Just curious')::int AS curious
+      FROM waitlist GROUP BY state ORDER BY total DESC, state`),
+    state
+      ? pool.query(`SELECT email, user_type, state, created_at FROM waitlist WHERE state=$1 ORDER BY created_at DESC`, [state])
+      : Promise.resolve({ rows: [] }),
+  ]);
+  res.render('admin/waitlist', {
+    title: 'Expansion waitlist', H,
+    t: totals.rows[0], byState: byState.rows, state: state || null, entries: entries.rows,
+  });
+});
+
+// ---------- contact messages (Paul, Aug 23) ----------
+router.get('/admin/contact', admin, async (req, res) => {
+  const { rows: messages } = await pool.query(
+    `SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 500`);
+  res.render('admin/contact-messages', { title: 'Contact messages', messages, H });
+});
+
 // ---------- professional detail ----------
 router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
   const { rows } = await pool.query(

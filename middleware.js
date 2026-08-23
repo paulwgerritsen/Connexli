@@ -15,10 +15,14 @@ function requireRole(role) {
 }
 
 // Simple CSRF: a random token stored in the session, required on every POST.
+// /waitlist is exempt (Paul, Aug 23): the connexli.com marketing site posts
+// to it cross-origin with no session, and the endpoint touches no account —
+// it's protected by validation, a honeypot, and a rate limit instead.
+const CSRF_EXEMPT = new Set(['/waitlist']);
 function csrf(req, res, next) {
   if (!req.session.csrf) req.session.csrf = crypto.randomBytes(24).toString('hex');
   res.locals.csrf = req.session.csrf;
-  if (req.method === 'POST') {
+  if (req.method === 'POST' && !CSRF_EXEMPT.has(req.path)) {
     if (req.body._csrf !== req.session.csrf) {
       return res.status(403).render('error', { title: 'Session expired', message: 'Your session expired. Please go back and try again.' });
     }

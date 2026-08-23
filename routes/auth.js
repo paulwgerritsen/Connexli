@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { pool, logEvent } = require('../db');
-const { clean } = require('../helpers');
+const { clean, oneOf, US_STATES } = require('../helpers');
 const mailer = require('../mailer');
 
 const router = require('../middleware').safeRouter(express.Router());
@@ -204,6 +204,88 @@ router.post('/register', authLimiter, async (req, res) => {
 
 router.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
+});
+
+// ---------- public contact form (Paul, Aug 23) ----------
+// Replaces the footer mailto: link. Stored in the database FIRST, then
+// forwarded to contact@connexli.com — a mail failure never loses a message.
+const CONTACT_REASONS = ['General question', 'Technical problem', 'Feedback / suggestion', 'Account help', 'Professional / agent question', 'Other'];
+
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many messages. Please wait 15 minutes and try again.',
+});
+
+router.get('/contact', (req, res) => {
+  res.render('contact', { title: 'Contact Connexli', reasons: CONTACT_REASONS, error: null, sent: false, form: {} });
+});
+
+router.post('/contact', contactLimiter, async (req, res) => {
+  // Honeypot: real people never fill the invisible "website" field. Bots do.
+  // Pretend success so the bot learns nothing; store and send nothing.
+  if (String(req.body.website || '').trim() !== '') {
+    return res.render('contact', { title: 'Contact Connexli', reasons: CONTACT_REASONS, error: null, sent: true, form: {} });
+  }
+  const form = {
+    name: clean(req.body.name, 100),
+    email: clean(req.body.email, 120).toLowerCase(),
+    reason: oneOf(req.body.reason, CONTACT_REASONS, null),
+    message: clean(req.body.message, 5000),
+  };
+  const fail = (msg) => res.status(400).render('contact', { title: 'Contact Connexli', reasons: CONTACT_REASONS, error: msg, sent: false, form });
+  if (!form.name || !form.email.includes('@') || !form.reason || !form.message) {
+    return fail('Please fill in your name, a valid email address, a reason, and your message.');
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO contact_messages (name, email, reason, message) VALUES ($1,$2,$3,$4) RETURNING id`,
+    [form.name, form.email, form.reason, form.message]);
+  mailer.contactMessage({ ...form, id: rows[0].id }); // fire and forget — already stored
+  logEvent('contact_message', { meta: { reason: form.reason } });
+  res.render('contact', { title: 'Contact Connexli', reasons: CONTACT_REASONS, error: null, sent: true, form: {} });
+});
+
+// ---------- expansion waitlist (Paul, Aug 23) ----------
+// The connexli.com "Not in Utah?" form posts here directly — no email step,
+// no third-party form service. One row per email (upsert keeps the newest
+// choice of type/state); standardized state values only.
+const WAITLIST_TYPES = ['Homeowner thinking about selling', 'Buyer looking for a home', 'Real estate professional', 'Just curious'];
+
+const waitlistLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many signups from this connection. Please try again later.',
+});
+
+router.post('/waitlist', waitlistLimiter, async (req, res) => {
+  const renderPage = (opts) => res.status(opts.error ? 400 : 200).render('waitlist-joined', {
+    title: 'Connexli Waitlist', H: require('../helpers'),
+    types: WAITLIST_TYPES, error: opts.error || null, joined: !!opts.joined, form: opts.form || {},
+  });
+  if (String(req.body.website || '').trim() !== '') return renderPage({ joined: true }); // honeypot
+  const form = {
+    email: clean(req.body.email, 120).toLowerCase(),
+    user_type: oneOf(req.body.role, WAITLIST_TYPES, null),
+    state: oneOf(req.body.state, US_STATES, null), // standardized list — misspellings impossible
+  };
+  if (!form.email.includes('@') || !form.user_type || !form.state) {
+    return renderPage({ error: 'Please choose who you are, enter a valid email address, and pick your state from the list.', form });
+  }
+  await pool.query(
+    `INSERT INTO waitlist (email, user_type, state) VALUES ($1,$2,$3)
+     ON CONFLICT ((LOWER(email))) DO UPDATE SET user_type=EXCLUDED.user_type, state=EXCLUDED.state`,
+    [form.email, form.user_type, form.state]);
+  logEvent('waitlist_joined', { meta: { state: form.state, user_type: form.user_type } });
+  renderPage({ joined: true, form });
+});
+
+// Direct visits (or validation errors) get a standalone copy of the form.
+router.get('/waitlist', (req, res) => {
+  res.render('waitlist-joined', { title: 'Connexli Waitlist', H: require('../helpers'), types: WAITLIST_TYPES, error: null, joined: false, form: {} });
 });
 
 module.exports = router;

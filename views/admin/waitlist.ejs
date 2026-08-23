@@ -1,0 +1,57 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;">Expansion waitlist</h1>
+<p class="sub">Where Connexli is generating interest beyond Utah — and what kind of users are waiting in each state. Signups come straight from the connexli.com waitlist form.</p>
+
+<div class="stats">
+  <div class="stat"><b><%= t.total %></b><span>Total waitlist signups</span></div>
+  <div class="stat"><b><%= t.pros %></b><span>Professionals</span></div>
+  <div class="stat"><b><%= t.sellers %></b><span>Homeowners / Sellers</span></div>
+  <div class="stat"><b><%= t.buyers %></b><span>Buyers</span></div>
+  <div class="stat"><b><%= t.curious %></b><span>Just curious</span></div>
+</div>
+
+<% if (state) { %>
+  <h2 style="margin-top:24px;"><%= state %> · <%= entries.length %> signup<%= entries.length === 1 ? '' : 's' %></h2>
+  <p style="margin:6px 0 10px;"><a href="/admin/waitlist" style="font-size:14px;">‹ All states</a></p>
+  <% if (entries.length === 0) { %>
+    <div class="card"><p class="sub">No signups from <%= state %> yet.</p></div>
+  <% } else { %>
+  <div class="tblwrap">
+    <table class="dt">
+      <tr><th>Email</th><th>User type</th><th>State</th><th>Date joined</th></tr>
+      <% entries.forEach(e => { %>
+        <tr>
+          <td><%= e.email %></td>
+          <td><%= e.user_type %></td>
+          <td><%= e.state %></td>
+          <td data-sort="<%= new Date(e.created_at).toISOString() %>"><%= new Date(e.created_at).toLocaleDateString('en-US') %></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <% } %>
+<% } else { %>
+  <h2 style="margin-top:24px;">Interest by state</h2>
+  <% if (byState.length === 0) { %>
+    <div class="card"><p class="sub">No waitlist signups yet. They'll appear here as visitors join from connexli.com.</p></div>
+  <% } else { %>
+  <div class="tblwrap">
+    <table class="dt">
+      <tr><th>State</th><th>Total interest</th><th>Professionals</th><th>Sellers / Homeowners</th><th>Buyers</th><th>Just curious</th><th></th></tr>
+      <% byState.forEach(s => { %>
+        <tr>
+          <td><b><%= s.state %></b></td>
+          <td><%= s.total %></td>
+          <td><%= s.pros %></td>
+          <td><%= s.sellers %></td>
+          <td><%= s.buyers %></td>
+          <td><%= s.curious %></td>
+          <td><a class="btn sm ghost" href="/admin/waitlist?state=<%= encodeURIComponent(s.state) %>">View signups</a></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <% } %>
+<% } %>
+<%- include('../partials/foot') %>

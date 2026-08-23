@@ -78,13 +78,19 @@
 <% } %>
 
 <% if (profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal) { %>
+  <% const roundFull = profile.proposal_count >= profile.proposal_cap; %>
   <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
     <h2 style="font-size:16px;">Want more options?</h2>
     <p class="sub" style="margin-bottom:10px;">Receive <b>10 more proposals</b>: your request goes live again for <%= profile.window_hours >= 24 ? (profile.window_hours / 24) + ' day' + (profile.window_hours > 24 ? 's' : '') : profile.window_hours + ' hours' %>, and only verified agents who <b>haven't</b> proposed yet will see it. Every proposal you already have stays right here. This continues until you choose an agent — only then is your contact information released.</p>
-    <form method="POST" action="/buyer/rebid" onsubmit="return confirm('Receive 10 more proposals? Your window reopens for additional agents (who haven\'t proposed yet), and your current proposals remain saved.');">
-      <input type="hidden" name="_csrf" value="<%= csrf %>">
-      <button class="btn ghost" type="submit">Receive 10 more proposals</button>
-    </form>
+    <% if (roundFull) { %>
+      <form method="POST" action="/buyer/rebid" onsubmit="return confirm('Receive 10 more proposals? Your window reopens for additional agents (who haven\'t proposed yet), and your current proposals remain saved.');">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn ghost" type="submit">Receive 10 more proposals</button>
+      </form>
+    <% } else { %>
+      <button class="btn ghost" type="button" disabled style="opacity:.45; cursor:not-allowed;">Receive 10 more proposals</button>
+      <p class="note" style="margin-top:8px;">Another round becomes available after all <%= profile.proposal_cap %> proposal spots have been filled.<% if (!profile.extended) { %> Until then, the 24-hour extension above gives more agents time to propose.<% } %></p>
+    <% } %>
   </div>
 <% } %>
 

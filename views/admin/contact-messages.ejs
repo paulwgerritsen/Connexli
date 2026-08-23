@@ -1,0 +1,23 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;">Contact messages</h1>
+<p class="sub">Everything submitted through the Contact Connexli form. Each message was also emailed to contact@connexli.com — this page is the permanent record.</p>
+
+<% if (messages.length === 0) { %>
+  <div class="card"><p class="sub">No contact messages yet.</p></div>
+<% } else { %>
+<div class="tblwrap">
+  <table class="dt">
+    <tr><th>From</th><th>Reason</th><th>Message</th><th>Received</th></tr>
+    <% messages.forEach(m => { %>
+      <tr>
+        <td style="white-space:nowrap;"><b><%= m.name %></b><br><a href="mailto:<%= m.email %>" style="font-size:13px;"><%= m.email %></a></td>
+        <td><span class="pill"><%= m.reason %></span></td>
+        <td style="max-width:480px;"><%= m.message %></td>
+        <td data-sort="<%= new Date(m.created_at).toISOString() %>" style="white-space:nowrap;"><%= new Date(m.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+<% } %>
+<%- include('../partials/foot') %>

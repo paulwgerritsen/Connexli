@@ -242,6 +242,28 @@ CREATE TABLE IF NOT EXISTS followups (
   UNIQUE (opportunity_type, opportunity_id, recipient_role, kind)
 );
 CREATE INDEX IF NOT EXISTS idx_followups_due ON followups(due_at) WHERE sent_at IS NULL AND skip_reason IS NULL;
+
+-- Contact form submissions (Paul, Aug 23): stored first, emailed second, so
+-- a mail failure never loses a message. Not a ticket system — just a record.
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Expansion waitlist (Paul, Aug 23): standardized state + user type so
+-- interest can be grouped reliably when choosing the next launch state.
+CREATE TABLE IF NOT EXISTS waitlist (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL,
+  user_type TEXT NOT NULL,
+  state TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_email_lower ON waitlist (LOWER(email));
 `;
 
 async function init() {
