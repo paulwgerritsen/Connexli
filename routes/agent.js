@@ -58,14 +58,21 @@ router.get('/agent', agent, async (req, res) => {
 
   // Won clients: connected proposals reveal the seller's contact info.
   const { rows: wins } = await pool.query(
-    `SELECT p.id, u.name AS seller_name, u.email AS seller_email, u.phone AS seller_phone,
+    `SELECT p.id, p.request_id, u.name AS seller_name, u.email AS seller_email, u.phone AS seller_phone,
             r.city, r.zip, r.property_type, r.price_range
      FROM proposals p JOIN requests r ON r.id=p.request_id JOIN users u ON u.id=r.seller_id
      WHERE p.agent_id=$1 AND p.connected ORDER BY p.connected_at DESC`, [req.session.user.id]);
 
+  // Which connections this professional has already left feedback on
+  // (Paul, Aug 25) — drives the Give feedback / completed state per win.
+  const { rows: fbRows } = await pool.query(
+    `SELECT opportunity_type, opportunity_id FROM connection_feedback
+     WHERE respondent_role='professional' AND respondent_id=$1`, [req.session.user.id]);
+  const feedbackDone = new Set(fbRows.map(f => f.opportunity_type + ':' + f.opportunity_id));
+
   // Buyer clients won: connected buyer proposals reveal the buyer's contact info.
   const { rows: buyerWins } = await pool.query(
-    `SELECT bp.id, u.name AS buyer_name, u.email AS buyer_email, u.phone AS buyer_phone,
+    `SELECT bp.id, bp.profile_id, u.name AS buyer_name, u.email AS buyer_email, u.phone AS buyer_phone,
             b.search_areas, b.price_range, b.timeline
      FROM buyer_proposals bp JOIN buyer_profiles b ON b.id=bp.profile_id JOIN users u ON u.id=b.user_id
      WHERE bp.agent_id=$1 AND bp.connected ORDER BY bp.connected_at DESC`, [uid]);
@@ -117,7 +124,7 @@ router.get('/agent', agent, async (req, res) => {
   res.render('agent/dashboard', {
     title: 'Opportunities', profile, H,
     opportunities, myProposals: mine.rows, stats: stats.rows[0], wins,
-    buyerOpps: buyerOppsNear, buyerWins, myBuyerProposals,
+    buyerOpps: buyerOppsNear, buyerWins, myBuyerProposals, feedbackDone,
   });
 });
 

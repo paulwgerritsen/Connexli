@@ -147,6 +147,21 @@ router.get('/admin/analytics', admin, async (req, res) => {
       (SELECT COUNT(*) FROM proposals WHERE connected)::int AS connections
   `);
 
+  // Connection feedback rollup (Paul, Aug 25): structured survey responses
+  // by role — connect rate, agreement rate, average ratings, recommend score.
+  const { rows: feedbackStats } = await pool.query(`
+    SELECT respondent_role,
+      COUNT(*)::int AS responses,
+      COUNT(*) FILTER (WHERE q_connected='Yes')::int AS connected_yes,
+      COUNT(*) FILTER (WHERE q_agreement='Yes')::int AS agreement_yes,
+      COUNT(*) FILTER (WHERE q_agreement IS NOT NULL)::int AS agreement_answered,
+      ROUND(AVG(rating_counterpart), 2)::float AS avg_counterpart,
+      ROUND(AVG(rating_connexli), 2)::float AS avg_connexli,
+      ROUND(AVG(rating_recommend), 2)::float AS avg_recommend
+    FROM connection_feedback GROUP BY respondent_role`);
+  const fb = { client: null, professional: null };
+  for (const r of feedbackStats) fb[r.respondent_role] = r;
+
   // Buyer-side metrics: readiness mix, lender-demand counter, funnel counts.
   const { rows: buyerStats } = await pool.query(`
     SELECT
@@ -173,6 +188,7 @@ router.get('/admin/analytics', admin, async (req, res) => {
     radius: mailer.RADIUS_MILES,
     b: buyerStats[0],
     s: sellerStats[0],
+    fb,
   });
 });
 
@@ -204,6 +220,17 @@ router.get('/admin/waitlist', admin, async (req, res) => {
     title: 'Expansion waitlist', H,
     t: totals.rows[0], byState: byState.rows, state: state || null, entries: entries.rows,
   });
+});
+
+// ---------- connection feedback responses (Paul, Aug 25) ----------
+router.get('/admin/feedback', admin, async (req, res) => {
+  const { rows: responses } = await pool.query(
+    `SELECT cf.*, ru.name AS respondent_name, au.name AS agent_name
+     FROM connection_feedback cf
+     JOIN users ru ON ru.id = cf.respondent_id
+     LEFT JOIN users au ON au.id = cf.counterpart_agent_id
+     ORDER BY cf.created_at DESC LIMIT 500`);
+  res.render('admin/feedback', { title: 'Connection feedback', responses, H });
 });
 
 // ---------- contact messages (Paul, Aug 23) ----------

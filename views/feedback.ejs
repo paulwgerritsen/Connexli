@@ -1,0 +1,62 @@
+<%- include('partials/head') %>
+<div class="narrow" style="max-width:640px;">
+  <% if (done) { %>
+    <div class="card" style="text-align:center; padding:40px 24px; margin-top:18px;">
+      <div style="font-size:44px;">🙏</div>
+      <h1 style="margin-top:10px;">Thank you — feedback received</h1>
+      <p class="sub">Your answers about this connection help us keep Connexli honest and improve every match we make.</p>
+      <p style="margin-top:16px;"><a class="btn ghost" href="<%= role === 'professional' ? '/agent' : '/dashboard' %>">Back to my dashboard</a></p>
+    </div>
+  <% } else { %>
+    <h1 style="margin-top:8px;">How did it go with <%= counterpartName %>?</h1>
+    <p class="sub">Two minutes, five questions. Your answers are shared with Connexli only — never with the other person.</p>
+    <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+    <% const stars = (name, current) => { let h = '<div class="optgrid cols" style="grid-template-columns:repeat(5,1fr);">';
+       for (let i = 1; i <= 5; i++) {
+         h += '<label class="opt"><input type="radio" name="' + name + '" value="' + i + '"' + (String(current) === String(i) ? ' checked' : '') + '><span class="tile" style="text-align:center;"><b>' + '★'.repeat(i) + '</b><span class="desc">' + i + '</span></span></label>';
+       }
+       return h + '</div>'; } %>
+
+    <form method="POST" action="/feedback/<%= type %>/<%= conn.id %>">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+
+      <div class="card">
+        <label><%= role === 'professional' ? 'Did you successfully connect with the client?' : 'Did you connect with the professional you selected?' %></label>
+        <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+          <label class="opt"><input type="radio" name="q_connected" value="Yes" <%= form.q_connected === 'Yes' ? 'checked' : '' %>><span class="tile"><b>Yes</b></span></label>
+          <label class="opt"><input type="radio" name="q_connected" value="No" <%= form.q_connected === 'No' ? 'checked' : '' %>><span class="tile"><b>No</b></span></label>
+        </div>
+
+        <% if (role === 'client') { %>
+          <label style="margin-top:14px;">Did you sign a representation/listing agreement with this professional?</label>
+          <div class="optgrid cols" style="grid-template-columns:1fr 1fr 1fr;">
+            <% ['Yes','No','Not yet'].forEach(o => { %>
+              <label class="opt"><input type="radio" name="q_agreement" value="<%= o %>" <%= form.q_agreement === o ? 'checked' : '' %>><span class="tile"><b><%= o %></b></span></label>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="card">
+        <label><%= role === 'professional' ? 'How would you rate your experience with this connection?' : 'How would you rate your experience with the professional you Connected with?' %></label>
+        <%- stars('rating_counterpart', form.rating_counterpart) %>
+
+        <label style="margin-top:14px;"><%= role === 'professional' ? 'How would you rate your experience using Connexli?' : 'How would you rate your experience using Connexli to find and compare professionals?' %></label>
+        <%- stars('rating_connexli', form.rating_connexli) %>
+
+        <label style="margin-top:14px;"><%= role === 'professional' ? 'How likely are you to recommend Connexli to another real estate professional?' : 'Would you recommend Connexli to a friend or family member?' %></label>
+        <%- stars('rating_recommend', form.rating_recommend) %>
+      </div>
+
+      <div class="card">
+        <label for="comments">Additional comments <span class="hint">(optional)</span></label>
+        <textarea id="comments" name="comments" rows="4" maxlength="3000" placeholder="Anything else we should know — good or bad."><%= form.comments || '' %></textarea>
+      </div>
+
+      <button class="btn full" type="submit">Submit feedback</button>
+      <p class="note" style="text-align:center;">Answers go to Connexli only and are used to improve the marketplace.</p>
+    </form>
+  <% } %>
+</div>
+<%- include('partials/foot') %>

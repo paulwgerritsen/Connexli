@@ -13,6 +13,26 @@
 </div>
 
 <div class="card">
+  <h2 style="font-size:16px;">Connection feedback</h2>
+  <p class="note" style="margin-top:2px;">Structured survey responses after each connection (day-3 and day-30 follow-ups + dashboard prompts). Full responses with comments: <a href="/admin/feedback">Connection feedback</a>.</p>
+  <% if (!fb.client && !fb.professional) { %>
+    <p class="sub" style="margin-top:8px;">No responses yet — they arrive as Connected clients and professionals complete the Give Feedback form.</p>
+  <% } else { %>
+  <div class="stats" style="margin-top:10px;">
+    <% ['client','professional'].forEach(role => { const r = fb[role]; if (!r) return; %>
+      <div class="stat"><b><%= r.responses %></b><span><%= role === 'client' ? 'Client' : 'Professional' %> responses</span></div>
+      <div class="stat"><b><%= Math.round(100 * r.connected_yes / r.responses) %>%</b><span><%= role === 'client' ? 'Clients' : 'Pros' %>: actually connected</span></div>
+      <% if (role === 'client' && r.agreement_answered > 0) { %>
+        <div class="stat"><b><%= Math.round(100 * r.agreement_yes / r.agreement_answered) %>%</b><span>Signed an agreement</span></div>
+      <% } %>
+      <div class="stat"><b><%= r.avg_counterpart %></b><span><%= role === 'client' ? 'Avg professional rating' : 'Avg connection rating' %></span></div>
+      <div class="stat"><b><%= r.avg_connexli %> · <%= r.avg_recommend %></b><span>Connexli rating · recommend (<%= role %>)</span></div>
+    <% }) %>
+  </div>
+  <% } %>
+</div>
+
+<div class="card">
   <h2 style="font-size:16px;">Seller side (home sellers)</h2>
   <p class="note" style="margin-top:2px;">The original marketplace funnel: requests posted → sealed proposals → seller Connected with a professional. Statuses match the rest of Connexli: <b>open</b> = proposal window active, <b>awaiting decision</b> = window closed with proposals ready to compare, <b>Connected</b> = professional selected.</p>
   <div class="stats" style="margin-top:10px;">

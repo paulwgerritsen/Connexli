@@ -28,6 +28,8 @@
         <div class="actions">
           <span class="pill">📧 <%= w.seller_email %></span>
           <% if (w.seller_phone) { %><span class="pill">📱 <%= w.seller_phone %></span><% } %>
+          <% if (feedbackDone.has('seller:' + w.request_id)) { %><span class="badge connected">✓ Feedback sent</span>
+          <% } else { %><a class="btn sm ghost" href="/feedback/seller/<%= w.request_id %>">Give feedback</a><% } %>
         </div>
       </div>
     <% }) %>
@@ -47,6 +49,8 @@
         <div class="actions">
           <span class="pill">📧 <%= w.buyer_email %></span>
           <% if (w.buyer_phone) { %><span class="pill">📱 <%= w.buyer_phone %></span><% } %>
+          <% if (feedbackDone.has('buyer:' + w.profile_id)) { %><span class="badge connected">✓ Feedback sent</span>
+          <% } else { %><a class="btn sm ghost" href="/feedback/buyer/<%= w.profile_id %>">Give feedback</a><% } %>
         </div>
       </div>
     <% }) %>

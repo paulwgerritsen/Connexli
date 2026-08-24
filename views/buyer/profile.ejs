@@ -24,6 +24,15 @@
       <div class="sumrow"><span>Their proposal</span><span><%= H.buyerFeeLabel(connectedProposal) %></span></div>
     </div>
     <div class="success">The buyer representation agreement is signed directly with their brokerage, outside Connexli. Still no obligation.</div>
+    <% if (feedbackGiven) { %>
+      <div class="checkrow" style="margin-top:14px;"><span class="c">✓</span><span><b>Feedback received — thank you.</b> Your answers help us keep Connexli honest.</span></div>
+    <% } else { %>
+      <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
+        <h2 style="font-size:16px;">How did it go?</h2>
+        <p class="sub" style="margin-bottom:10px;">Two minutes, five questions — tell us how the connection with <%= connectedProposal.agent_name %> went. Your answers go to Connexli only.</p>
+        <a class="btn" href="/feedback/buyer/<%= profile.id %>">Give feedback</a>
+      </div>
+    <% } %>
   </div>
 <% } else if (profile.status === 'expired') { %>
   <div class="card"><p class="sub">Your profile expired after 30 days. Renew it to go back in front of agents.</p>

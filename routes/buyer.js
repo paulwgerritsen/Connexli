@@ -48,7 +48,14 @@ async function renderProfile(req, res, profile) {
        JOIN agent_profiles ap ON ap.user_id = bp.agent_id
        WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]));
   }
-  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H, existingNote: req.query.existing === '1' });
+  // Has this buyer already left feedback on this connection? (Paul, Aug 25)
+  let feedbackGiven = false;
+  if (profile.status === 'connected') {
+    const { rows: fb } = await pool.query(
+      `SELECT 1 FROM connection_feedback WHERE opportunity_type='buyer' AND opportunity_id=$1 AND respondent_role='client'`, [profile.id]);
+    feedbackGiven = fb.length > 0;
+  }
+  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H, existingNote: req.query.existing === '1', feedbackGiven });
 }
 
 router.get('/buyer', consumer, async (req, res) => {

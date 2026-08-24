@@ -15,6 +15,15 @@
       <div class="sumrow"><span>Their proposal</span><span><%= H.feeLabel(connectedProposal) %> (est. <%= H.money(H.estFee(connectedProposal, request.price_range)) %>)</span></div>
     </div>
     <div class="success">Their Connexli proposal is saved above for your reference. The listing agreement is signed directly with the brokerage, outside Connexli. Still no obligation.</div>
+    <% if (feedbackGiven) { %>
+      <div class="checkrow" style="margin-top:14px;"><span class="c">✓</span><span><b>Feedback received — thank you.</b> Your answers help us keep Connexli honest.</span></div>
+    <% } else { %>
+      <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
+        <h2 style="font-size:16px;">How did it go?</h2>
+        <p class="sub" style="margin-bottom:10px;">Two minutes, five questions — tell us how the connection with <%= connectedProposal.agent_name %> went. Your answers go to Connexli only.</p>
+        <a class="btn" href="/feedback/seller/<%= request.id %>">Give feedback</a>
+      </div>
+    <% } %>
     <p style="margin-top:16px;"><a class="btn ghost" href="/dashboard">Back to my requests</a></p>
   </div>
 <% } else { %>

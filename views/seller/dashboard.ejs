@@ -17,6 +17,8 @@
         </div>
         <div class="actions">
           <% if (b.status === 'connected') { %><span class="badge connected">Connected</span>
+            <% if (feedbackDone.has('buyer:' + b.id)) { %><span class="pill">✓ Feedback sent</span>
+            <% } else { %><a class="btn sm ghost" href="/feedback/buyer/<%= b.id %>">Give feedback</a><% } %>
           <% } else if (!b.published) { %><span class="badge pending">Not published — finish Get Ready</span>
           <% } else { %><span class="badge open">Live — agents proposing</span><% } %>
           <span class="pill"><%= b.proposal_count %> proposal<%= b.proposal_count === 1 ? '' : 's' %></span>
@@ -52,6 +54,10 @@
         </div>
         <div class="actions">
           <span class="badge <%= r.status %>"><%= r.status === 'open' ? 'Window open' : r.status === 'closed' ? 'Proposals ready' : r.status %></span>
+          <% if (r.status === 'connected') { %>
+            <% if (feedbackDone.has('seller:' + r.id)) { %><span class="pill">✓ Feedback sent</span>
+            <% } else { %><a class="btn sm ghost" href="/feedback/seller/<%= r.id %>">Give feedback</a><% } %>
+          <% } %>
           <span class="pill"><%= r.proposal_count %> proposal<%= r.proposal_count === 1 ? '' : 's' %></span>
           <a class="btn sm" href="/requests/<%= r.id %>">View</a>
         </div>

@@ -331,6 +331,8 @@ function contactMessage(m) {
 // The sweep claims each due row BEFORE sending (UPDATE ... WHERE sent_at IS
 // NULL), so overlapping sweeps can never double-send. Respecting the email
 // notifications toggle records a skip_reason instead of silently dropping.
+// Structured feedback (Paul, Aug 25): the button leads to the Give Feedback
+// form for THIS connection — answers land as data, not email replies.
 function followupBody(f) {
   const first = f.name.split(' ')[0];
   const side = f.opportunity_type === 'seller' ? 'home sale' : 'home search';
@@ -338,19 +340,19 @@ function followupBody(f) {
     return ['How is it going with your new client?', [
       `${first}, three days ago a Connexli client chose to connect with you about their ${side}. We hope the conversation is going well.`,
       `A quick reminder that being selected to connect is an introduction — any representation agreement is between the client and your brokerage. If you haven't reached out yet, sooner is always better.`,
-      'Hit reply and tell us how it went — what worked, what didn\'t, and anything Connexli could do better. We read every reply.',
+      'Tell us how it went — five quick questions, two minutes. Your answers directly shape how Connexli works for professionals.',
     ]];
   }
   if (f.kind === 'day3') {
     return [`How did your connection with ${f.counterpart} go?`, [
       `${first}, three days ago you chose to connect with <b>${f.counterpart}</b> about your ${side}. How is it going?`,
-      'Did they reach out quickly? Did the conversation match their proposal? Hit reply and tell us — good or bad, we read every reply, and your feedback directly shapes how Connexli works.',
+      'Did they reach out quickly? Did the conversation match their proposal? Five quick questions tell us everything we need — good or bad, your answers directly shape how Connexli works.',
       'If they never reached out, tell us that too. You can always open another round of proposals from your dashboard.',
     ]];
   }
   return [`Checking in on your ${side}`, [
     `${first}, it's been about a month since you connected with <b>${f.counterpart}</b> on Connexli. We'd love to hear how your ${side} is going.`,
-    'Did you end up working together? Are you under contract, still looking, or did you go a different direction? A one-line reply helps us more than you know.',
+    'Did you end up working together? Are you under contract, still looking, or did you go a different direction? Two minutes of answers helps us more than you know.',
     'Thanks for being one of Connexli\'s early users — people like you are shaping this platform.',
   ]];
 }
@@ -371,7 +373,8 @@ async function processFollowups() {
         `UPDATE followups SET sent_at=now() WHERE id=$1 AND sent_at IS NULL AND skip_reason IS NULL`, [f.id]);
       if (!rowCount) continue;
       const [title, lines] = followupBody(f);
-      await send(f.email, title + ' · Connexli', template(title, lines, 'Open Connexli', APP_URL + '/login'), true);
+      const feedbackUrl = `${APP_URL}/feedback/${f.opportunity_type}/${f.opportunity_id}`;
+      await send(f.email, title + ' · Connexli', template(title, lines, 'Give Feedback', feedbackUrl), true);
       console.log(`[followup:SENT] ${f.kind} ${f.recipient_role} to=${f.email} (${f.opportunity_type} #${f.opportunity_id})`);
     }
   } catch (e) {

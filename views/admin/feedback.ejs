@@ -1,0 +1,26 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;">Connection feedback</h1>
+<p class="sub">Every structured survey response, newest first. Summary averages are on <a href="/admin/analytics">Marketplace analytics</a>.</p>
+
+<% if (responses.length === 0) { %>
+  <div class="card"><p class="sub">No feedback yet. Responses arrive from the Give Feedback button in follow-up emails and on dashboards after a connection.</p></div>
+<% } else { %>
+<div class="tblwrap">
+  <table class="dt">
+    <tr><th>When</th><th>Who</th><th>Connection</th><th>Connected?</th><th>Agreement?</th><th>Ratings (them · Connexli · recommend)</th><th>Comments</th></tr>
+    <% responses.forEach(r => { %>
+      <tr>
+        <td data-sort="<%= new Date(r.created_at).toISOString() %>" style="white-space:nowrap;"><%= new Date(r.created_at).toLocaleDateString('en-US') %></td>
+        <td><b><%= r.respondent_name %></b><br><span style="color:var(--muted); font-size:13px;"><%= r.respondent_role === 'client' ? (r.opportunity_type === 'seller' ? 'Seller' : 'Buyer') : 'Professional' %></span></td>
+        <td><%= r.opportunity_type === 'seller' ? 'Seller request' : 'Buyer request' %> #<%= r.opportunity_id %><% if (r.agent_name) { %><br><span style="color:var(--muted); font-size:13px;">Pro: <%= r.agent_name %></span><% } %></td>
+        <td><span class="badge <%= r.q_connected === 'Yes' ? 'connected' : 'closed' %>"><%= r.q_connected %></span></td>
+        <td><%= r.q_agreement || '—' %></td>
+        <td style="white-space:nowrap;"><%= '★'.repeat(r.rating_counterpart) %> <%= r.rating_counterpart %> · <%= r.rating_connexli %> · <%= r.rating_recommend %></td>
+        <td style="max-width:380px;"><%= r.comments || '—' %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+<% } %>
+<%- include('../partials/foot') %>

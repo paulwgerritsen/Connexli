@@ -51,7 +51,11 @@ router.post('/login', authLimiter, async (req, res) => {
   }
   req.session.user = { id: user.id, role: user.role, name: user.name, email: user.email };
   logEvent('login', { userId: user.id, meta: { role: user.role } });
-  res.redirect('/');
+  // Deep links (e.g. the Give Feedback button in follow-up emails) survive
+  // the login step: only same-site paths are ever honored.
+  const returnTo = req.session.returnTo;
+  delete req.session.returnTo;
+  res.redirect(returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/');
 });
 
 // ---------- forgot password ----------
@@ -286,6 +290,95 @@ router.post('/waitlist', waitlistLimiter, async (req, res) => {
 // Direct visits (or validation errors) get a standalone copy of the form.
 router.get('/waitlist', (req, res) => {
   res.render('waitlist-joined', { title: 'Connexli Waitlist', H: require('../helpers'), types: WAITLIST_TYPES, error: null, joined: false, form: {} });
+});
+
+// ---------- structured connection feedback (Paul, Aug 25) ----------
+// One short form per side of each connection, reachable from the follow-up
+// email's Give Feedback button AND from the dashboards. Role is resolved
+// from the connection itself: the request's owner is the client, the
+// connected agent is the professional — anyone else is turned away.
+async function loadConnection(type, id) {
+  if (type === 'seller') {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.seller_id AS client_id, p.agent_id, u.name AS agent_name, cu.name AS client_name,
+              r.city, r.property_type
+       FROM requests r JOIN proposals p ON p.request_id = r.id AND p.connected
+       JOIN users u ON u.id = p.agent_id JOIN users cu ON cu.id = r.seller_id
+       WHERE r.id=$1`, [id]);
+    return rows[0] || null;
+  }
+  const { rows } = await pool.query(
+    `SELECT b.id, b.user_id AS client_id, bp.agent_id, u.name AS agent_name, cu.name AS client_name,
+            b.search_areas
+     FROM buyer_profiles b JOIN buyer_proposals bp ON bp.profile_id = b.id AND bp.connected
+     JOIN users u ON u.id = bp.agent_id JOIN users cu ON cu.id = b.user_id
+     WHERE b.id=$1`, [id]);
+  return rows[0] || null;
+}
+
+async function feedbackContext(req, res) {
+  const type = req.params.type === 'buyer' ? 'buyer' : 'seller';
+  const conn = await loadConnection(type, req.params.id);
+  if (!conn) {
+    res.status(404).render('error', { title: 'Not found', message: 'That connection was not found — feedback opens once a connection has been made.' });
+    return null;
+  }
+  const uid = req.session.user.id;
+  const role = uid === conn.client_id ? 'client' : uid === conn.agent_id ? 'professional' : null;
+  if (!role) {
+    res.status(403).render('error', { title: 'Not allowed', message: 'Only the two people in this connection can leave feedback on it.' });
+    return null;
+  }
+  const { rows: existing } = await pool.query(
+    `SELECT * FROM connection_feedback WHERE opportunity_type=$1 AND opportunity_id=$2 AND respondent_role=$3`,
+    [type, conn.id, role]);
+  return { type, conn, role, existing: existing[0] || null };
+}
+
+// Remember where an email click was headed, then send through login.
+router.get('/feedback/:type(seller|buyer)/:id(\\d+)', async (req, res) => {
+  if (!req.session.user) { req.session.returnTo = req.originalUrl; return res.redirect('/login'); }
+  const ctx = await feedbackContext(req, res);
+  if (!ctx) return;
+  res.render('feedback', {
+    title: 'Give feedback', H: require('../helpers'),
+    ...ctx, counterpartName: ctx.role === 'client' ? ctx.conn.agent_name : ctx.conn.client_name,
+    error: null, done: !!ctx.existing, form: {},
+  });
+});
+
+router.post('/feedback/:type(seller|buyer)/:id(\\d+)', async (req, res) => {
+  if (!req.session.user) return res.redirect('/login');
+  const ctx = await feedbackContext(req, res);
+  if (!ctx) return;
+  const counterpartName = ctx.role === 'client' ? ctx.conn.agent_name : ctx.conn.client_name;
+  if (ctx.existing) {
+    return res.render('feedback', { title: 'Give feedback', H: require('../helpers'), ...ctx, counterpartName, error: null, done: true, form: {} });
+  }
+  const star = (v) => { const n = parseInt(v, 10); return n >= 1 && n <= 5 ? n : null; };
+  const form = {
+    q_connected: ['Yes', 'No'].includes(req.body.q_connected) ? req.body.q_connected : null,
+    q_agreement: ctx.role === 'client' ? (['Yes', 'No', 'Not yet'].includes(req.body.q_agreement) ? req.body.q_agreement : null) : null,
+    rating_counterpart: star(req.body.rating_counterpart),
+    rating_connexli: star(req.body.rating_connexli),
+    rating_recommend: star(req.body.rating_recommend),
+    comments: clean(req.body.comments, 3000),
+  };
+  if (!form.q_connected || !form.rating_counterpart || !form.rating_connexli || !form.rating_recommend || (ctx.role === 'client' && !form.q_agreement)) {
+    return res.status(400).render('feedback', {
+      title: 'Give feedback', H: require('../helpers'), ...ctx, counterpartName,
+      error: 'Please answer every question (comments are optional).', done: false, form,
+    });
+  }
+  await pool.query(
+    `INSERT INTO connection_feedback (opportunity_type, opportunity_id, respondent_role, respondent_id,
+       counterpart_agent_id, q_connected, q_agreement, rating_counterpart, rating_connexli, rating_recommend, comments)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (opportunity_type, opportunity_id, respondent_role) DO NOTHING`,
+    [ctx.type, ctx.conn.id, ctx.role, req.session.user.id, ctx.conn.agent_id,
+     form.q_connected, form.q_agreement, form.rating_counterpart, form.rating_connexli, form.rating_recommend, form.comments]);
+  logEvent('feedback_submitted', { userId: req.session.user.id, meta: { type: ctx.type, opportunity_id: ctx.conn.id, role: ctx.role } });
+  res.render('feedback', { title: 'Give feedback', H: require('../helpers'), ...ctx, counterpartName, error: null, done: true, form: {} });
 });
 
 module.exports = router;

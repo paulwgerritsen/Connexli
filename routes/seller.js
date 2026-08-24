@@ -21,8 +21,13 @@ router.get('/dashboard', seller, async (req, res) => {
        ORDER BY b.created_at DESC`,
       [req.session.user.id]),
   ]);
+  // Which connections this user has already left feedback on (Paul, Aug 25).
+  const { rows: fbRows } = await pool.query(
+    `SELECT opportunity_type, opportunity_id FROM connection_feedback
+     WHERE respondent_role='client' AND respondent_id=$1`, [req.session.user.id]);
+  const feedbackDone = new Set(fbRows.map(f => f.opportunity_type + ':' + f.opportunity_id));
   res.render('seller/dashboard', {
-    title: 'My requests', requests, buyerRequests, H,
+    title: 'My requests', requests, buyerRequests, H, feedbackDone,
     buyerLive: req.query.buyerlive === '1', // success banner right after publishing
   });
 });
@@ -159,7 +164,10 @@ router.get('/requests/:id(\\d+)', seller, async (req, res) => {
     ? H.estFee(a, request.price_range) - H.estFee(b, request.price_range)
     : new Date(b.created_at) - new Date(a.created_at));
 
-  res.render('seller/request-results', { title: 'Your proposals', request, proposals, sort, H });
+  // Has this seller already left feedback on this connection? (Paul, Aug 25)
+  const { rows: fb } = await pool.query(
+    `SELECT 1 FROM connection_feedback WHERE opportunity_type='seller' AND opportunity_id=$1 AND respondent_role='client'`, [request.id]);
+  res.render('seller/request-results', { title: 'Your proposals', request, proposals, sort, H, feedbackGiven: fb.length > 0 });
 });
 
 // Compare table

@@ -264,6 +264,28 @@ CREATE TABLE IF NOT EXISTS waitlist (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_email_lower ON waitlist (LOWER(email));
+
+-- Structured post-connection feedback (Paul, Aug 25): one response per side
+-- of each connection, stored against the specific request so it can power
+-- marketplace analytics (connect rate, agreement rate, ratings, NPS-style
+-- recommend score, per-professional quality).
+CREATE TABLE IF NOT EXISTS connection_feedback (
+  id SERIAL PRIMARY KEY,
+  opportunity_type TEXT NOT NULL CHECK (opportunity_type IN ('seller','buyer')),
+  opportunity_id INTEGER NOT NULL,
+  respondent_role TEXT NOT NULL CHECK (respondent_role IN ('client','professional')),
+  respondent_id INTEGER NOT NULL,
+  counterpart_agent_id INTEGER,
+  q_connected TEXT NOT NULL CHECK (q_connected IN ('Yes','No')),
+  q_agreement TEXT CHECK (q_agreement IN ('Yes','No','Not yet')),
+  rating_counterpart INTEGER NOT NULL CHECK (rating_counterpart BETWEEN 1 AND 5),
+  rating_connexli INTEGER NOT NULL CHECK (rating_connexli BETWEEN 1 AND 5),
+  rating_recommend INTEGER NOT NULL CHECK (rating_recommend BETWEEN 1 AND 5),
+  comments TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (opportunity_type, opportunity_id, respondent_role)
+);
+CREATE INDEX IF NOT EXISTS idx_connection_feedback_agent ON connection_feedback(counterpart_agent_id);
 `;
 
 async function init() {
