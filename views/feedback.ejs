@@ -1,4 +1,29 @@
 <%- include('partials/head') %>
+<style>
+  /* Survey-only responsive layout (Paul, Aug 26). The global .optgrid.cols
+     collapses to one column on phones, but the rating rows were overriding
+     it with a fixed five-column inline style — five wide tiles never fit a
+     320-430px screen. These classes keep the desktop look and swap to a
+     compact single-star presentation on small screens. */
+  .rategrid{display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:8px;}
+  .rategrid .opt{min-width:0;}
+  .rategrid .tile{text-align:center;}
+  .r-compact{display:none;}
+  @media (max-width:600px){
+    .rategrid{gap:6px;}
+    .rategrid .tile{display:block; padding:13px 4px;}
+    .rategrid .tile::before{display:none;}      /* the ✓ circle steals width the stars need */
+    .rategrid .r-full, .opt .tile .desc.r-num{display:none;}
+    .r-compact{display:block; font-size:16px; color:var(--navy);}
+  }
+  .yngrid{display:grid; gap:9px; margin-top:8px;}
+  .yngrid.two{grid-template-columns:1fr 1fr;}
+  .yngrid.three{grid-template-columns:1fr 1fr 1fr;}
+  .yngrid .opt{min-width:0;}
+  @media (max-width:360px){
+    .yngrid.three{grid-template-columns:1fr 1fr;} /* very small phones: wrap 2 + 1 cleanly */
+  }
+</style>
 <div class="narrow" style="max-width:640px;">
   <% if (done) { %>
     <div class="card" style="text-align:center; padding:40px 24px; margin-top:18px;">
@@ -12,9 +37,12 @@
     <p class="sub">Two minutes, five questions. Your answers are shared with Connexli only — never with the other person.</p>
     <% if (error) { %><div class="error"><%= error %></div><% } %>
 
-    <% const stars = (name, current) => { let h = '<div class="optgrid cols" style="grid-template-columns:repeat(5,1fr);">';
+    <%# Same numeric value at every screen size — only the label presentation
+        changes: cumulative stars + number on desktop, "N★" on phones. %>
+    <% const stars = (name, current) => { let h = '<div class="rategrid">';
        for (let i = 1; i <= 5; i++) {
-         h += '<label class="opt"><input type="radio" name="' + name + '" value="' + i + '"' + (String(current) === String(i) ? ' checked' : '') + '><span class="tile" style="text-align:center;"><b>' + '★'.repeat(i) + '</b><span class="desc">' + i + '</span></span></label>';
+         h += '<label class="opt"><input type="radio" name="' + name + '" value="' + i + '"' + (String(current) === String(i) ? ' checked' : '') + '>'
+            + '<span class="tile"><b class="r-full">' + '★'.repeat(i) + '</b><span class="desc r-num">' + i + '</span><b class="r-compact">' + i + '★</b></span></label>';
        }
        return h + '</div>'; } %>
 
@@ -23,16 +51,16 @@
 
       <div class="card">
         <label><%= role === 'professional' ? 'Did you successfully connect with the client?' : 'Did you connect with the professional you selected?' %></label>
-        <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+        <div class="yngrid two">
           <label class="opt"><input type="radio" name="q_connected" value="Yes" <%= form.q_connected === 'Yes' ? 'checked' : '' %>><span class="tile"><b>Yes</b></span></label>
           <label class="opt"><input type="radio" name="q_connected" value="No" <%= form.q_connected === 'No' ? 'checked' : '' %>><span class="tile"><b>No</b></span></label>
         </div>
 
         <% if (role === 'client') { %>
           <label style="margin-top:14px;">Did you sign a representation/listing agreement with this professional?</label>
-          <div class="optgrid cols" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="yngrid three">
             <% ['Yes','No','Not yet'].forEach(o => { %>
-              <label class="opt"><input type="radio" name="q_agreement" value="<%= o %>" <%= form.q_agreement === o ? 'checked' : '' %>><span class="tile"><b><%= o %></b></span></label>
+              <label class="opt"><input type="radio" name="q_agreement" value="<%= o %>" <%= form.q_agreement === o ? 'checked' : '' %>><span class="tile"><b style="white-space:nowrap;"><%= o %></b></span></label>
             <% }) %>
           </div>
         <% } %>

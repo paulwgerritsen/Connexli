@@ -36,6 +36,12 @@ header{background:var(--navy); color:#fff;}
   .nav-right{gap:12px;}
   .nav-right .who{display:none;}
 }
+/* Very narrow phones (Paul, Aug 26): let the header wrap inside its dark bar
+   instead of squeezing links past the edge. */
+@media (max-width:400px){
+  .nav{height:auto; min-height:56px; flex-wrap:wrap; row-gap:2px; padding:8px 16px;}
+  .nav-right{flex-wrap:wrap; row-gap:2px;}
+}
 .linkbtn{background:none; border:none; color:#B9C8DE; cursor:pointer; font-family:inherit; font-size:13.5px; text-decoration:underline;}
 .linkbtn:hover{color:#fff;}
 
