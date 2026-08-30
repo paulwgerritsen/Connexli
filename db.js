@@ -286,6 +286,45 @@ CREATE TABLE IF NOT EXISTS connection_feedback (
   UNIQUE (opportunity_type, opportunity_id, respondent_role)
 );
 CREATE INDEX IF NOT EXISTS idx_connection_feedback_agent ON connection_feedback(counterpart_agent_id);
+
+-- RELD license verification (Paul, Aug 29). Two SEPARATE concepts:
+-- agent_profiles.status = Connexli ACCOUNT status (pending/approved/...)
+-- verification_status   = LICENSE verification per RELD. Never one field.
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS license_state TEXT NOT NULL DEFAULT 'UT';
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'needs_verification'
+  CHECK (verification_status IN ('needs_verification','verified','failed','expired','unable_to_verify','needs_review'));
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_name TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_license_type TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_license_status TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_expiration TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_brokerage TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_city TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_record_id TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_last_verified TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_checked_at TIMESTAMPTZ;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_error TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS name_mismatch BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS brokerage_mismatch BOOLEAN NOT NULL DEFAULT false;
+
+-- Proposal credit LEDGER (Paul, Aug 29) — never a single balance integer.
+-- amount is the signed delta to the PURCHASED balance (complimentary
+-- consumption is amount 0 + funding_source 'complimentary'; the monthly free
+-- allowance is DERIVED by counting this month's complimentary submissions,
+-- so there is no fragile reset job). Month boundary: calendar month in
+-- America/Denver. Purchased credits never expire.
+CREATE TABLE IF NOT EXISTS credit_ledger (
+  id SERIAL PRIMARY KEY,
+  agent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  entry_type TEXT NOT NULL CHECK (entry_type IN ('proposal_submitted','purchase','refund','admin_adjustment','promo')),
+  funding_source TEXT CHECK (funding_source IN ('complimentary','purchased')),
+  amount INTEGER NOT NULL DEFAULT 0,
+  proposal_table TEXT,
+  proposal_id INTEGER,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_agent ON credit_ledger(agent_id, created_at);
 `;
 
 async function init() {
@@ -403,6 +442,44 @@ function scheduleFollowups(type, oppId, client, professional, connectedAt = new 
   }
 }
 
+// ---------- proposal credits (Paul, Aug 29) ----------
+// Free monthly allowance is DERIVED from the ledger (no reset job): count of
+// this month's complimentary submissions vs the allowance. Month = calendar
+// month in America/Denver. Purchased balance = SUM(amount) over all entries.
+const FREE_PROPOSALS_PER_MONTH = parseInt(process.env.FREE_PROPOSALS_PER_MONTH, 10) || 10;
+const CREDIT_TZ = 'America/Denver';
+
+async function creditSummary(agentId) {
+  const { rows } = await pool.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE entry_type='proposal_submitted' AND funding_source='complimentary'
+         AND (created_at AT TIME ZONE $2) >= date_trunc('month', now() AT TIME ZONE $2))::int AS free_used,
+       COALESCE(SUM(amount), 0)::int AS purchased,
+       to_char(date_trunc('month', now() AT TIME ZONE $2) + interval '1 month', 'FMMonth FMDD') AS next_reset
+     FROM credit_ledger WHERE agent_id=$1`, [agentId, CREDIT_TZ]);
+  const r = rows[0];
+  return {
+    freeTotal: FREE_PROPOSALS_PER_MONTH,
+    freeUsed: r.free_used,
+    freeRemaining: Math.max(0, FREE_PROPOSALS_PER_MONTH - r.free_used),
+    purchased: r.purchased,
+    nextReset: r.next_reset,
+    canSubmit: (FREE_PROPOSALS_PER_MONTH - r.free_used) > 0 || r.purchased > 0,
+  };
+}
+
+// Consume one credit for a just-inserted proposal. Complimentary first
+// (Paul §15); purchased only once the monthly allowance is exhausted.
+async function consumeCredit(agentId, proposalTable, proposalId) {
+  const s = await creditSummary(agentId);
+  const funding = s.freeRemaining > 0 ? 'complimentary' : 'purchased';
+  await pool.query(
+    `INSERT INTO credit_ledger (agent_id, entry_type, funding_source, amount, proposal_table, proposal_id)
+     VALUES ($1, 'proposal_submitted', $2, $3, $4, $5)`,
+    [agentId, funding, funding === 'purchased' ? -1 : 0, proposalTable, proposalId]);
+  return funding;
+}
+
 // Record a marketplace event. Fire-and-forget: analytics must never be able
 // to break or slow down a real page for a real user, so errors are only
 // logged. Deliberately no foreign keys — history survives account deletion.
@@ -413,4 +490,7 @@ function logEvent(eventType, { userId = null, requestId = null, proposalId = nul
   ).catch((e) => console.error('logEvent failed:', eventType, e.message));
 }
 
-module.exports = { pool, init, closeExpired, expireBuyerProfiles, logEvent, scheduleFollowups };
+module.exports = {
+  pool, init, closeExpired, expireBuyerProfiles, logEvent, scheduleFollowups,
+  creditSummary, consumeCredit, FREE_PROPOSALS_PER_MONTH, CREDIT_TZ,
+};

@@ -25,6 +25,67 @@
 </div>
 
 <div class="card">
+  <h2 style="font-size:16px;">License verification</h2>
+  <% if (recheckMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:4px;"><%= recheckMsg %></p><% } %>
+  <div class="sumrow"><span>Verification status</span><span><span class="badge <%= VB[agent.verification_status] || 'pending' %>"><%= VL[agent.verification_status] || agent.verification_status %></span> <span class="meta">(separate from account status: <span class="badge <%= agent.status %>"><%= agent.status %></span>)</span></span></div>
+  <div class="sumrow"><span>License on file</span><span><%= agent.license_number %> (<%= agent.license_state || 'UT' %>)</span></div>
+  <% if (agent.reld_name) { %>
+    <div class="sumrow"><span>Registry name</span><span><%= agent.reld_name %><% if (agent.name_mismatch) { %> <b style="color:#B45309;">≠ "<%= agent.name %>" on Connexli — review</b><% } %></span></div>
+    <div class="sumrow"><span>Registry type / status</span><span><%= agent.reld_license_type || '—' %> · <%= agent.reld_license_status || '—' %></span></div>
+    <div class="sumrow"><span>Registry expiration</span><span><%= agent.reld_expiration || '—' %></span></div>
+    <div class="sumrow"><span>Registry brokerage</span><span><%= agent.reld_brokerage || '—' %><% if (agent.brokerage_mismatch) { %> <span style="color:#B45309;">≠ "<%= agent.brokerage %>" on Connexli</span> <span class="meta">(informational — a brokerage move alone never rejects anyone)</span><% } %></span></div>
+    <% if (agent.reld_city) { %><div class="sumrow"><span>Registry city</span><span><%= agent.reld_city %></span></div><% } %>
+    <% if (agent.reld_last_verified) { %><div class="sumrow"><span>RELD data as of</span><span><%= agent.reld_last_verified %></span></div><% } %>
+  <% } %>
+  <% if (agent.reld_error) { %><div class="sumrow"><span>Last check note</span><span style="color:#B42318;"><%= agent.reld_error %></span></div><% } %>
+  <div class="sumrow"><span>Last checked</span><span><%= agent.reld_checked_at ? new Date(agent.reld_checked_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) + ' (Mountain)' : 'never' %></span></div>
+  <form method="POST" action="/admin/agents/<%= agent.user_id %>/recheck" style="margin-top:12px;" onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Checking…'; return true;">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <button class="btn sm" type="submit" <%= (reldConfigured && !recentCheck) ? '' : 'disabled' %>>Recheck license</button>
+    <% if (!reldConfigured) { %><span class="meta"> RELD isn't configured yet (no RELD_API_KEY).</span>
+    <% } else if (recentCheck) { %><span class="meta"> Checked less than a minute ago — the result above is current.</span>
+    <% } else { %><span class="meta"> Uses one RELD lookup. Verification status never changes account status by itself.</span><% } %>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Proposal credits</h2>
+  <% if (creditMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:4px;"><%= creditMsg %></p><% } %>
+  <div class="sumrow"><span>Free this month</span><span><b><%= credits.freeRemaining %></b> of <%= credits.freeTotal %> remaining · renews <%= credits.nextReset %> (Mountain time month; complimentary never carries over)</span></div>
+  <div class="sumrow"><span>Purchased balance</span><span><b><%= credits.purchased %></b> credit<%= credits.purchased === 1 ? '' : 's' %> (never expire, roll over)</span></div>
+  <div class="sumrow"><span>Lifetime proposals submitted</span><span><%= stats.submitted + stats.buyerSubmitted %> (<%= stats.submitted %> seller · <%= stats.buyerSubmitted %> buyer) — historical stats are never reduced by credit changes</span></div>
+
+  <h3 style="font-size:14px; margin:16px 0 4px;">Adjust purchased credits</h3>
+  <form method="POST" action="/admin/agents/<%= agent.user_id %>/credits" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div><label style="font-size:13px;">Amount (e.g. 5 or -2)</label><input type="number" name="amount" step="1" required style="width:120px;"></div>
+    <div style="flex:1; min-width:200px;"><label style="font-size:13px;">Reason (required, kept in the ledger)</label><input type="text" name="reason" maxlength="300" required placeholder="e.g. goodwill credit — reported platform bug"></div>
+    <button class="btn sm" type="submit">Record adjustment</button>
+  </form>
+
+  <h3 style="font-size:14px; margin:18px 0 4px;">Credit ledger<%= ledger.length === 25 ? ' (latest 25)' : '' %></h3>
+  <% if (ledger.length === 0) { %>
+    <p class="note">No ledger entries yet. The first appears when this professional submits a proposal (or receives an adjustment).</p>
+  <% } else { %>
+  <div class="tblwrap">
+    <table class="dt">
+      <tr><th>When (Mountain)</th><th>Entry</th><th>Source</th><th>Δ purchased</th><th>Detail</th></tr>
+      <% ledger.forEach(l => { %>
+        <tr>
+          <td><%= new Date(l.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
+          <td><%= l.entry_type.replace(/_/g, ' ') %></td>
+          <td><%= l.funding_source %></td>
+          <td><%= l.amount > 0 ? '+' + l.amount : (l.amount === 0 ? '—' : l.amount) %></td>
+          <td class="meta"><%= l.reason || (l.proposal_table ? (l.proposal_table === 'proposals' ? 'seller proposal #' : 'buyer proposal #') + l.proposal_id : '') %></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <p class="note">"complimentary / —" rows are free-allowance submissions (they don't touch the purchased balance); the free count is derived from these rows per calendar month. Each submission row records which proposal it funded, so a future refund can restore the right credit type.</p>
+  <% } %>
+</div>
+
+<div class="card">
   <h2 style="font-size:16px;">Administrator actions</h2>
   <div class="actions" style="margin-top:12px;">
     <% if (agent.status === 'pending') { %>

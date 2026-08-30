@@ -27,6 +27,7 @@
         <div>
           <a href="/admin/agents/<%= a.user_id %>" style="font-weight:700; color:var(--navy);"><%= a.name %></a> <span class="meta">· <%= a.email %><% if (a.phone) { %> · <%= a.phone %><% } %></span>
           <div class="meta">License <b><%= a.license_number %></b> · <%= a.brokerage %> · <%= a.state %><% if (a.service_zip) { %> · Serves <%= a.service_zip %><%= a.service_city ? ' (' + a.service_city + ')' : '' %><% } %> · applied <%= new Date(a.created_at).toLocaleDateString('en-US') %></div>
+          <div class="meta">License check: <span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span><% if (a.name_mismatch) { %> · <b style="color:#B45309;">name differs from registry</b><% } %><% if (a.brokerage_mismatch) { %> · brokerage differs from registry<% } %><% if (a.reld_error) { %> · <span style="color:#B42318;"><%= a.reld_error %></span><% } %></div>
           <div class="meta"><a href="https://secure.utah.gov/llv/search/index.html" target="_blank" rel="noopener">Check license in the Utah license lookup ↗</a> (verify: active status, name matches, brokerage matches)</div>
         </div>
         <div class="actions">
@@ -99,17 +100,44 @@
 <details class="sect" open><summary><h2>Reviewed professionals · <%= agents.length %></h2></summary>
 <div class="tblwrap">
   <table class="dt">
-    <tr><th>Name</th><th>License</th><th>Brokerage</th><th>Status</th><th>Reviewed</th></tr>
+    <tr><th>Name</th><th>License</th><th>License check</th><th>Brokerage</th><th>Status</th><th>Reviewed</th></tr>
     <% agents.forEach(a => { %>
       <tr>
         <td><a href="/admin/agents/<%= a.user_id %>"><%= a.name %></a> · <%= a.email %></td>
-        <td><%= a.license_number %></td>
+        <td><%= a.license_number %><% if (a.license_state && a.license_state !== 'UT') { %> (<%= a.license_state %>)<% } %></td>
+        <td><span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span><% if (a.name_mismatch) { %><br><span class="meta" style="color:#B45309;">name differs</span><% } %></td>
         <td><%= a.brokerage %></td>
         <td><span class="badge <%= a.status %>"><%= a.status %></span></td>
         <td><%= a.reviewed_at ? new Date(a.reviewed_at).toLocaleDateString('en-US') : '' %></td>
       </tr>
     <% }) %>
   </table>
+</div>
+</details>
+
+<details class="sect"><summary><h2>License verification (RELD)</h2></summary>
+<div class="card">
+  <% if (!reldConfigured) { %>
+    <p class="sub"><b>Not configured yet.</b> Add <code>RELD_API_KEY</code> (and optionally <code>RELD_API_BASE_URL</code>) as environment variables in Render, then redeploy. Until then, no RELD calls are ever made — signups simply stay "Not yet checked".</p>
+  <% } else { %>
+    <p class="sub"><b style="color:var(--good);">✓ Configured.</b> RELD is called only on deliberate events: a new professional signup, the Recheck button on a professional's detail page, and the two actions below. Nothing runs on page loads or on a schedule.</p>
+  <% } %>
+
+  <h3 style="font-size:15px; margin:16px 0 4px;">Test the connection</h3>
+  <p class="note" style="margin-top:2px;">Looks up one license and shows RELD's raw response so you can confirm the field mapping. Uses one lookup; changes nothing in the database.</p>
+  <form method="POST" action="/admin/reld-test" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div><label for="reld_state" style="font-size:13px;">State</label><input type="text" id="reld_state" name="state" value="UT" maxlength="2" style="width:70px;"></div>
+    <div style="flex:1; min-width:180px;"><label for="reld_num" style="font-size:13px;">License number</label><input type="text" id="reld_num" name="license_number" placeholder="e.g. 9876543-SA00"></div>
+    <button class="btn sm" type="submit" <%= reldConfigured ? '' : 'disabled' %>>Test RELD connection</button>
+  </form>
+
+  <h3 style="font-size:15px; margin:20px 0 4px;">One-time license audit</h3>
+  <p class="note" style="margin-top:2px;">Verifies every professional with a license on file in <b>one</b> batch call (up to 100 licenses = one batch request). Failures are flagged and blocked from submitting proposals — accounts are never deleted and history is preserved. Run this once after the API key is in place.</p>
+  <form method="POST" action="/admin/reld-audit" onsubmit="return confirm('Run the RELD audit now? This makes ONE batch API call covering every professional with a license on file and updates their verification status.');">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <button class="btn sm" type="submit" <%= reldConfigured ? '' : 'disabled' %>>Run RELD audit</button>
+  </form>
 </div>
 </details>
 <%- include('../partials/foot') %>

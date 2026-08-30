@@ -45,6 +45,13 @@ const B_PRIORITIES = ['Schools', 'Commute', 'Yard/lot size', 'Main-level living'
 // Buyer proposals: two structures only (Paul, Aug 11 — hourly/retainer removed
 // from the FORM for simplicity; legacy rows still display via buyerFeeLabel).
 const BP_STRUCTURES = { pct: 'Percentage at closing', flat: 'Flat fee at closing' };
+// License states for professional verification (Paul, Aug 29): code + name,
+// Utah first because it's the active Connexli market. NOT derived from ZIPs.
+const LICENSE_STATES = [
+  ['UT','Utah'],['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','District of Columbia'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],
+];
+const LICENSE_STATE_CODES = LICENSE_STATES.map(s => s[0]);
+
 // For the relocating-buyer "moving from" dropdown (standardized, no free text).
 const US_STATES = ['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','District of Columbia','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming','Other / outside the U.S.'];
 const BP_TOURS = ['Up to 5 tours included', 'Up to 10 tours included', 'Up to 20 tours included', 'Unlimited tours'];
@@ -174,4 +181,5 @@ module.exports = {
   midPrice, money, estFee, feeLabel, clean, oneOf,
   estBuyerFee, windowOpen, spotsLeft, takenThisRound,
   UT_CITIES, utCity, geoMiles,
+  LICENSE_STATES, LICENSE_STATE_CODES,
 };

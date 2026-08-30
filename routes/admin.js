@@ -1,10 +1,11 @@
 // routes/admin.js — the pilot control center: approve, inspect, and manage
 // professionals and homeowner requests.
 const express = require('express');
-const { pool, logEvent } = require('../db');
+const { pool, logEvent, creditSummary } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
+const reld = require('../reld');
 
 const router = require('../middleware').safeRouter(express.Router());
 const admin = requireRole('admin');
@@ -53,6 +54,8 @@ router.get('/admin', admin, async (req, res) => {
   res.render('admin/dashboard', {
     title: 'Admin', H,
     pending: pending.rows, agents: agents.rows, requests: requests.rows, m: metrics.rows[0], buyers,
+    reldConfigured: reld.configured(),
+    VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE,
   });
 });
 
@@ -282,6 +285,13 @@ router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
   const buyerSubmitted = buyerProps.rows.length;
   const buyerWins = buyerProps.rows.filter(p => p.connected).length;
 
+  // Proposal credits + ledger (Paul, Aug 29): the balance the professional
+  // sees, plus the raw ledger entries and an adjustment form for support.
+  const [credits, ledgerQ] = await Promise.all([
+    creditSummary(req.params.id),
+    pool.query(`SELECT * FROM credit_ledger WHERE agent_id=$1 ORDER BY created_at DESC LIMIT 25`, [req.params.id]),
+  ]);
+
   res.render('admin/agent-detail', {
     title: agent.name, agent, H,
     proposals: proposals.rows,
@@ -291,7 +301,93 @@ router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
       buyerOpportunities, buyerSubmitted, buyerWins,
       successRate: submitted ? Math.round(100 * wins / submitted) + '%' : 'n/a',
     },
+    credits, ledger: ledgerQ.rows,
+    reldConfigured: reld.configured(),
+    VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE,
+    // Repeat-click guard: the Recheck button disables when a check ran in the
+    // last 60 seconds, so an accidental double-click can't burn two lookups.
+    recentCheck: agent.reld_checked_at && (Date.now() - new Date(agent.reld_checked_at).getTime() < 60000),
+    creditMsg: req.query.credit === 'saved' ? 'Credit adjustment recorded.' : (req.query.credit === 'error' ? 'Adjustment not saved — enter a whole-number amount (not zero) and a reason.' : null),
+    recheckMsg: req.query.recheck === 'done' ? 'License recheck complete — the result below is current.'
+      : (req.query.recheck === 'skipped' ? 'A check ran less than a minute ago — result below is already current, no second lookup was spent.'
+      : (req.query.recheck === 'unconfigured' ? 'RELD is not configured yet (RELD_API_KEY is not set), so no lookup was made.' : null)),
   });
+});
+
+// ---------- RELD verification actions (Paul, Aug 29) ----------
+// Recheck one professional. Deliberate admin action — one API lookup.
+router.post('/admin/agents/:id(\\d+)/recheck', admin, async (req, res) => {
+  if (!reld.configured()) return res.redirect('/admin/agents/' + req.params.id + '?recheck=unconfigured');
+  const { rows } = await pool.query(`SELECT reld_checked_at FROM agent_profiles WHERE user_id=$1`, [req.params.id]);
+  if (!rows[0]) return res.status(404).render('error', { title: 'Not found', message: 'That professional does not exist.' });
+  // Guard against accidental repeat clicks: at most one lookup per minute.
+  if (rows[0].reld_checked_at && Date.now() - new Date(rows[0].reld_checked_at).getTime() < 60000) {
+    return res.redirect('/admin/agents/' + req.params.id + '?recheck=skipped');
+  }
+  const status = await reld.verifyProfessional(parseInt(req.params.id, 10));
+  logEvent('reld_recheck', { userId: parseInt(req.params.id, 10), meta: { result: status } });
+  res.redirect('/admin/agents/' + req.params.id + '?recheck=done');
+});
+
+// One-time batch audit of every professional with a license on file.
+// ONE call to RELD's batch endpoint (up to 100 licensees), triggered only by
+// this explicit admin action — never on a schedule, never on page load.
+router.post('/admin/reld-audit', admin, async (req, res) => {
+  if (!reld.configured()) {
+    return res.status(400).render('error', { title: 'RELD not configured', message: 'Set RELD_API_KEY (and RELD_API_BASE_URL if needed) in Render before running the audit.' });
+  }
+  const { rows: pros } = await pool.query(
+    `SELECT ap.user_id, ap.license_state, ap.license_number, ap.brokerage, ap.verification_status, u.name, u.email
+     FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
+     WHERE COALESCE(ap.license_number,'') <> '' ORDER BY ap.user_id LIMIT 100`);
+  if (!pros.length) return res.render('admin/reld-results', { title: 'RELD audit', H, mode: 'audit', error: 'No professionals with a license number on file.', rows: [], raw: null, parsed: null, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE });
+
+  const batch = await reld.batchVerify(pros.map(p => ({ state: p.license_state || 'UT', license_number: p.license_number })));
+  if (batch.unavailable) {
+    return res.render('admin/reld-results', { title: 'RELD audit', H, mode: 'audit', error: 'RELD was unavailable (' + batch.error + '). No professional’s status was changed — an outage never marks a license invalid.', rows: [], raw: null, parsed: null, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE });
+  }
+  const outcomes = [];
+  for (let i = 0; i < pros.length; i++) {
+    const p = pros[i];
+    const status = await reld.applyResult(p.user_id, p.name, p.brokerage, batch.results[i], p.verification_status);
+    outcomes.push({ user_id: p.user_id, name: p.name, email: p.email, license: (p.license_state || 'UT') + ' ' + p.license_number, before: p.verification_status, after: status });
+  }
+  logEvent('reld_audit', { userId: req.session.user.id, meta: { checked: pros.length, failed: outcomes.filter(o => o.after === 'failed').length } });
+  res.render('admin/reld-results', { title: 'RELD audit', H, mode: 'audit', error: null, rows: outcomes, raw: null, parsed: null, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE });
+});
+
+// Connection test: one lookup, raw response shown, nothing stored. Lets Paul
+// confirm the field mapping on the very first live call without touching any
+// professional's record.
+router.post('/admin/reld-test', admin, async (req, res) => {
+  if (!reld.configured()) {
+    return res.status(400).render('error', { title: 'RELD not configured', message: 'Set RELD_API_KEY (and RELD_API_BASE_URL if needed) in Render first.' });
+  }
+  const state = (H.clean(req.body.state, 2) || 'UT').toUpperCase();
+  const number = H.clean(req.body.license_number, 40);
+  if (!number) return res.status(400).render('error', { title: 'License number required', message: 'Enter a license number to test against RELD.' });
+  const result = await reld.verifyLicense(state, number);
+  logEvent('reld_test', { userId: req.session.user.id, meta: { state, number } });
+  res.render('admin/reld-results', { title: 'RELD connection test', H, mode: 'test', error: result.unavailable ? result.error : null, rows: [], raw: JSON.stringify(result.raw || result, null, 2), parsed: result, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE });
+});
+
+// ---------- proposal credit adjustment (Paul, Aug 29 §16) ----------
+// Adds or removes PURCHASED credits with an explicit amount and reason.
+// Every adjustment is a ledger entry — nothing is ever silently overwritten.
+router.post('/admin/agents/:id(\\d+)/credits', admin, async (req, res) => {
+  const amount = parseInt(req.body.amount, 10);
+  const reason = H.clean(req.body.reason, 300);
+  if (!Number.isInteger(amount) || amount === 0 || Math.abs(amount) > 1000 || !reason) {
+    return res.redirect('/admin/agents/' + req.params.id + '?credit=error');
+  }
+  const { rows } = await pool.query(`SELECT user_id FROM agent_profiles WHERE user_id=$1`, [req.params.id]);
+  if (!rows[0]) return res.status(404).render('error', { title: 'Not found', message: 'That professional does not exist.' });
+  await pool.query(
+    `INSERT INTO credit_ledger (agent_id, entry_type, funding_source, amount, reason)
+     VALUES ($1, 'admin_adjustment', 'purchased', $2, $3)`,
+    [req.params.id, amount, reason + ' (by ' + req.session.user.email + ')']);
+  logEvent('credit_adjustment', { userId: parseInt(req.params.id, 10), meta: { amount, reason } });
+  res.redirect('/admin/agents/' + req.params.id + '?credit=saved');
 });
 
 // ---------- buyer request detail (mirrors the seller request detail) ----------

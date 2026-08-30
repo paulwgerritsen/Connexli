@@ -145,7 +145,7 @@ router.post('/reset/:token', authLimiter, async (req, res) => {
 
 router.get('/register', (req, res) => {
   if (req.session.user) return res.redirect('/');
-  res.render('register', { title: 'Create your account', error: null, form: {} });
+  res.render('register', { title: 'Create your account', error: null, form: {}, H: require('../helpers') });
 });
 
 router.post('/register', authLimiter, async (req, res) => {
@@ -155,12 +155,13 @@ router.post('/register', authLimiter, async (req, res) => {
     email: clean(req.body.email, 120).toLowerCase(),
     phone: clean(req.body.phone, 30),
     license_number: clean(req.body.license_number, 40),
+    license_state: require('../helpers').LICENSE_STATE_CODES.includes(req.body.license_state) ? req.body.license_state : 'UT',
     brokerage: clean(req.body.brokerage, 100),
     service_zip: clean(req.body.service_zip, 10),
   };
   const password = String(req.body.password || '');
 
-  const fail = (msg) => res.status(400).render('register', { title: 'Create your account', error: msg, form });
+  const fail = (msg) => res.status(400).render('register', { title: 'Create your account', error: msg, form, H: require('../helpers') });
 
   if (!form.name || !form.email.includes('@')) return fail('Please enter your name and a valid email address.');
   if (password.length < 8) return fail('Password must be at least 8 characters.');
@@ -184,14 +185,22 @@ router.post('/register', authLimiter, async (req, res) => {
     );
     if (form.role === 'agent') {
       await client.query(
-        `INSERT INTO agent_profiles (user_id, license_number, brokerage, state, service_zip, service_city, service_state, latitude, longitude)
-         VALUES ($1,$2,$3,'Utah',$4,$5,$6,$7,$8)`,
-        [rows[0].id, form.license_number, form.brokerage, form.service_zip, geo.city, geo.state, geo.latitude, geo.longitude]
+        `INSERT INTO agent_profiles (user_id, license_number, license_state, brokerage, state, service_zip, service_city, service_state, latitude, longitude)
+         VALUES ($1,$2,$3,$4,'Utah',$5,$6,$7,$8,$9)`,
+        [rows[0].id, form.license_number, form.license_state, form.brokerage, form.service_zip, geo.city, geo.state, geo.latitude, geo.longitude]
       );
     }
     await client.query('COMMIT');
     if (form.role === 'agent') {
       mailer.adminNewAgent({ ...form, service_city: geo ? geo.city : null }); // fire and forget
+      // RELD license verification (Paul, Aug 29): a deliberate signup event.
+      // Only runs when RELD_API_KEY is configured; an outage or missing key
+      // leaves the account in the normal needs_verification review flow.
+      const reld = require('../reld');
+      if (reld.configured()) {
+        try { await reld.verifyProfessional(rows[0].id); }
+        catch (e) { console.error('RELD signup verification error:', e.message); }
+      }
     }
     logEvent(form.role === 'agent' ? 'agent_registered' : 'seller_registered',
       { userId: rows[0].id, meta: form.role === 'agent' ? { service_zip: form.service_zip } : {} });

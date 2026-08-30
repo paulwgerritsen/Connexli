@@ -9,11 +9,13 @@
     <p class="sub">Your license is being verified with the Utah Division of Real Estate. Most professionals are approved within one business day.</p>
     <div class="checkrow"><span class="c">✓</span><span>We'll notify you by email at <b><%= user.email %></b> as soon as you're ready to receive homeowner opportunities.</span></div>
     <div class="card">
-      <div class="sumrow"><span>License number</span><span><%= profile.license_number %></span></div>
+      <div class="sumrow"><span>License number</span><span><%= profile.license_number %> (<%= profile.license_state || 'UT' %>)</span></div>
       <div class="sumrow"><span>Brokerage</span><span><%= profile.brokerage %></span></div>
-      <div class="sumrow"><span>State</span><span><%= profile.state %></span></div>
       <% if (profile.service_zip) { %><div class="sumrow"><span>Service area</span><span><%= profile.service_zip %><%= profile.service_city ? ' · ' + profile.service_city : '' %></span></div><% } %>
-      <div class="sumrow"><span>Status</span><span class="badge pending">Pending review</span></div>
+      <% if (profile.verification_status === 'verified') { %>
+        <div class="sumrow"><span>License check</span><span style="color:var(--good); font-weight:600;">✓ License verified<%= profile.reld_last_verified ? ' · data as of ' + profile.reld_last_verified : '' %></span></div>
+      <% } %>
+      <div class="sumrow"><span>Account status</span><span class="badge pending">Pending review</span></div>
     </div>
     <p class="note">Spot a typo in your details? You can fix them in <a href="/agent/settings">account settings</a> while you wait.</p>
     <div class="sealed" style="margin-top:14px;">🛡️ <span>Verification keeps Connexli credible for everyone: homeowners only ever meet licensed, active professionals — which is exactly why they're comfortable inviting proposals.</span></div>

@@ -1,9 +1,19 @@
 // routes/agent.js — the professional experience.
 const express = require('express');
-const { pool, logEvent } = require('../db');
+const { pool, logEvent, creditSummary, consumeCredit } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
+const reld = require('../reld');
+
+// License gate (Paul, Aug 29 §25): a failed or expired RELD verification
+// blocks proposal submission — even for updates, and even when the
+// professional has credits. Credits are never consumed by a blocked attempt.
+// needs_review / unable_to_verify / needs_verification do NOT block.
+function licenseBlocked(profile) {
+  return reld.BLOCKING_STATUSES.includes(profile.verification_status);
+}
+const LICENSE_BLOCKED_MSG = 'Your real estate license could not be verified as active, so proposal submissions are paused. Your account and any proposal credits are unaffected. Please contact us to resolve your license status.';
 
 const router = require('../middleware').safeRouter(express.Router());
 const agent = requireRole('agent');
@@ -121,10 +131,15 @@ router.get('/agent', agent, async (req, res) => {
   const opportunities = opps.rows.filter(o => inReach(o.zip));
   const buyerOppsNear = buyerOpps.filter(b => buyerInReach(b));
 
+  // Proposal balance (Paul, Aug 29): derived from the credit ledger — no
+  // page-load RELD calls, no external API involved here.
+  const credits = await creditSummary(uid);
+
   res.render('agent/dashboard', {
     title: 'Opportunities', profile, H,
     opportunities, myProposals: mine.rows, stats: stats.rows[0], wins,
     buyerOpps: buyerOppsNear, buyerWins, myBuyerProposals, feedbackDone,
+    credits, licenseBlocked: licenseBlocked(profile),
   });
 });
 
@@ -179,12 +194,21 @@ router.get('/agent/buyers/:id(\\d+)', agent, async (req, res) => {
   }
 
   logEvent('buyer_opportunity_viewed', { userId: req.session.user.id, meta: { profile_id: buyer.id } });
-  res.render('agent/buyer-opportunity', { title: 'Buyer opportunity', buyer, proposal: mine[0] || null, H, error: null });
+  const credits = await creditSummary(req.session.user.id);
+  res.render('agent/buyer-opportunity', {
+    title: 'Buyer opportunity', buyer, proposal: mine[0] || null, H, error: null,
+    credits, blockedLicense: licenseBlocked(profile),
+  });
 });
 
 router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
   const profile = await profileOf(req.session.user.id);
   if (!profile || profile.status !== 'approved') return res.redirect('/agent');
+
+  // License gate first (§25): blocks new submissions AND edits; credits stay intact.
+  if (licenseBlocked(profile)) {
+    return res.status(403).render('error', { title: 'License verification required', message: LICENSE_BLOCKED_MSG });
+  }
 
   const { rows } = await pool.query(
     `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
@@ -198,6 +222,15 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
   // Earlier-round proposals are locked in during a fresh round.
   if (mineBefore[0] && mineBefore[0].round < buyer.round) {
     return res.status(403).render('error', { title: 'New round in progress', message: 'This buyer opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
+  }
+
+  // Credit gate (§14): a NEW submission needs a credit; editing an existing
+  // proposal never costs a second one.
+  if (!mineBefore.length) {
+    const credits = await creditSummary(req.session.user.id);
+    if (!credits.canSubmit) {
+      return res.status(403).render('error', { title: 'Monthly proposal allowance used', message: `You've used your ${credits.freeTotal} complimentary proposals for this month. Your free proposal allowance renews ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+    }
   }
 
   // Window and cap: mirrors the seller flow exactly.
@@ -276,6 +309,12 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
   if (capReached) {
     return res.status(400).render('error', { title: 'Proposal cap reached', message: `This buyer already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.` });
   }
+  // Ledger: a successful NEW submission consumes one credit (free first,
+  // then purchased). Updates and blocked attempts never reach this line.
+  if (!wasUpdate && savedId) {
+    await consumeCredit(req.session.user.id, 'buyer_proposals', savedId);
+  }
+
   const roundFull = newCount >= buyer.proposal_cap;
   logEvent(wasUpdate ? 'buyer_proposal_updated' : 'buyer_proposal_submitted', {
     userId: req.session.user.id, proposalId: savedId,
@@ -404,7 +443,11 @@ router.get('/agent/opportunities/:id(\\d+)', agent, async (req, res) => {
   }
 
   logEvent('opportunity_viewed', { userId: req.session.user.id, requestId: request.id });
-  res.render('agent/opportunity', { title: 'Opportunity', request, proposal: mine[0] || null, H, error: null });
+  const credits = await creditSummary(req.session.user.id);
+  res.render('agent/opportunity', {
+    title: 'Opportunity', request, proposal: mine[0] || null, H, error: null,
+    credits, blockedLicense: licenseBlocked(profile),
+  });
 });
 
 // Confirmation page after a proposal is submitted or updated
@@ -426,6 +469,11 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
   const profile = await profileOf(req.session.user.id);
   if (!profile || profile.status !== 'approved') return res.redirect('/agent');
 
+  // License gate first (§25): blocks new submissions AND edits; credits stay intact.
+  if (licenseBlocked(profile)) {
+    return res.status(403).render('error', { title: 'License verification required', message: LICENSE_BLOCKED_MSG });
+  }
+
   const { rows } = await pool.query(`SELECT * FROM requests WHERE id=$1 AND status='open'`, [req.params.id]);
   const request = rows[0];
   if (!request) return res.status(400).render('error', { title: 'Window closed', message: 'This proposal window has already closed.' });
@@ -445,6 +493,15 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
   // resubmit during a round reserved for agents who haven't proposed yet.
   if (mineBefore.rows[0] && mineBefore.rows[0].round < request.round) {
     return res.status(403).render('error', { title: 'New round in progress', message: 'This homeowner opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
+  }
+
+  // Credit gate (§14): a NEW submission needs a credit; editing an existing
+  // proposal never costs a second one.
+  if (!mineBefore.rows.length) {
+    const credits = await creditSummary(req.session.user.id);
+    if (!credits.canSubmit) {
+      return res.status(403).render('error', { title: 'Monthly proposal allowance used', message: `You've used your ${credits.freeTotal} complimentary proposals for this month. Your free proposal allowance renews ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+    }
   }
 
   const bad = !fee_amount || fee_amount <= 0 ||
@@ -499,6 +556,11 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
 
   if (capReached) {
     return res.status(400).render('error', { title: 'Proposal cap reached', message: `This homeowner already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.` });
+  }
+  // Ledger: a successful NEW submission consumes one credit (free first,
+  // then purchased). Updates and blocked attempts never reach this line.
+  if (!wasUpdate && savedId) {
+    await consumeCredit(req.session.user.id, 'proposals', savedId);
   }
   logEvent(wasUpdate ? 'proposal_updated' : 'proposal_submitted', {
     userId: req.session.user.id, requestId: request.id, proposalId: savedId,

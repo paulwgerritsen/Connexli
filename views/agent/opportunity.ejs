@@ -18,6 +18,17 @@
 
   <% if (request.status !== 'open') { %>
     <div class="sealed" style="margin-top:14px;">⏱ <span>This window has closed. <% if (proposal) { %>Your proposal was delivered sealed and is now visible to the homeowner alongside the others. You'll see "Shortlisted" or "Won" on your dashboard if they pick you.<% } else { %>Proposals can no longer be submitted.<% } %></span></div>
+  <% } else if (blockedLicense) { %>
+    <div class="card" style="border-left:4px solid #B42318;">
+      <h2 style="color:#B42318;">License verification required</h2>
+      <p class="sub">Your real estate license could not be verified as active, so proposal submissions are paused. Your account and any proposal credits are unaffected. Please contact us to resolve your license status.</p>
+    </div>
+  <% } else if (!proposal && !credits.canSubmit) { %>
+    <div class="card" style="border-left:4px solid var(--blue);">
+      <h2>Monthly proposal allowance used</h2>
+      <p class="sub">You've used your <%= credits.freeTotal %> complimentary proposals for this month. Your free proposal allowance renews <%= credits.nextReset %>. Additional proposal credits will also be available for purchase soon.</p>
+      <p class="note" style="margin-bottom:0;">You can keep browsing every open opportunity — nothing about your account changes when your allowance runs out.</p>
+    </div>
   <% } else { %>
     <div class="card">
       <h2><%= proposal ? 'Edit your sealed proposal' : 'Your sealed proposal' %></h2>
@@ -87,8 +98,10 @@ function prev(){
     ? 'The homeowner sees: ' + (pct ? v + '%' : '$' + est.toLocaleString() + ' flat') + ' · estimated $' + est.toLocaleString() + ' on a $' + MID.toLocaleString() + ' sale'
     : 'Estimated fee preview appears as you type.';
 }
-document.getElementById('fee_amount').addEventListener('input', prev);
-feeLbl();
+if (document.getElementById('fee_amount')) {
+  document.getElementById('fee_amount').addEventListener('input', prev);
+  feeLbl();
+}
 var line = document.getElementById('closesLine');
 var left = new Date(line.dataset.closes).getTime() - Date.now();
 if (left > 0) {

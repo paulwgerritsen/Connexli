@@ -41,6 +41,18 @@
     <div class="success">Your sealed proposal is in 🔒 — you can update it below any time while the profile is active.</div>
   <% } %>
 
+  <% if (typeof blockedLicense !== 'undefined' && blockedLicense) { %>
+    <div class="card" style="border-left:4px solid #B42318; margin-top:22px;">
+      <h2 style="color:#B42318;">License verification required</h2>
+      <p class="sub">Your real estate license could not be verified as active, so proposal submissions are paused. Your account and any proposal credits are unaffected. Please contact us to resolve your license status.</p>
+    </div>
+  <% } else if (!(proposal && proposal.id) && typeof credits !== 'undefined' && !credits.canSubmit) { %>
+    <div class="card" style="border-left:4px solid var(--blue); margin-top:22px;">
+      <h2>Monthly proposal allowance used</h2>
+      <p class="sub">You've used your <%= credits.freeTotal %> complimentary proposals for this month. Your free proposal allowance renews <%= credits.nextReset %>. Additional proposal credits will also be available for purchase soon.</p>
+      <p class="note" style="margin-bottom:0;">You can keep browsing every open opportunity — nothing about your account changes when your allowance runs out.</p>
+    </div>
+  <% } else { %>
   <h2 style="margin-top:22px;"><%= proposal && proposal.id ? 'Update your sealed proposal' : 'Submit your sealed proposal' %></h2>
   <p class="sub">Buyer representation takes real time — structure your fee to protect it. Buyers see every structure explained plainly, side by side.</p>
 
@@ -97,6 +109,7 @@
     </div>
     <button class="btn full" type="submit"><%= proposal && proposal.id ? 'Update my sealed proposal' : 'Submit my sealed proposal' %></button>
   </form>
+  <% } %>
 
   <% if (proposal && proposal.id && !proposal.connected) { %>
     <form method="POST" action="/agent/buyers/<%= buyer.id %>/withdraw" onsubmit="return confirm('Withdraw your proposal for this buyer?');" style="margin-top:10px;">
@@ -122,7 +135,9 @@ function bPrev(){
     ? 'The buyer sees: ' + (pct ? v + '% at closing' : '$' + est.toLocaleString() + ' flat') + ' · estimated compensation ≈ $' + est.toLocaleString() + (pct ? ' at their range midpoint ($' + B_MID.toLocaleString() + ')' : '')
     : 'Estimated compensation preview appears as you type.';
 }
-document.getElementById('comp_amount').addEventListener('input', bPrev);
-bFee();
+if (document.getElementById('comp_amount')) {
+  document.getElementById('comp_amount').addEventListener('input', bPrev);
+  bFee();
+}
 </script>
 <%- include('../partials/foot') %>

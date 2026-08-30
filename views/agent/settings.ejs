@@ -28,7 +28,14 @@
       <label for="service_zip">Primary service ZIP code</label>
       <input type="text" id="service_zip" name="service_zip" inputmode="numeric" pattern="\d{5}" value="<%= p.service_zip || '' %>" required>
       <p class="note">We use this to send you opportunities near your area<%= p.service_city ? ' — currently ' + p.service_city + ', ' + (p.service_state || '') : '' %>.</p>
-      <div class="sumrow"><span>License number</span><span><%= p.license_number %> · <span class="badge <%= p.status %>"><%= p.status %></span></span></div>
+      <div class="sumrow"><span>License number</span><span><%= p.license_number %> (<%= p.license_state || 'UT' %>) · <span class="badge <%= p.status %>"><%= p.status %></span></span></div>
+      <% if (p.verification_status === 'verified') { %>
+        <div class="sumrow"><span>License verification</span><span style="color:var(--good); font-weight:600;">✓ Verified<%= p.reld_license_type ? ' · ' + p.reld_license_type : '' %><%= p.reld_expiration ? ' · expires ' + p.reld_expiration : '' %></span></div>
+        <% if (p.reld_checked_at) { %><p class="note" style="margin-top:2px;">Last checked <%= new Date(p.reld_checked_at).toLocaleDateString('en-US', { timeZone: 'America/Denver' }) %> against the licensing registry.</p><% } %>
+      <% } else if (['failed','expired'].includes(p.verification_status)) { %>
+        <div class="sumrow"><span>License verification</span><span style="color:#B42318; font-weight:600;">Issue found — proposal submissions paused</span></div>
+        <p class="note" style="margin-top:2px;">We couldn't confirm this license as active. Your account and credits are unaffected; contact <a href="mailto:hello@connexli.com">hello@connexli.com</a> to resolve it.</p>
+      <% } %>
       <p class="note">Your license number is part of your verification and can't be edited here. If it changes, contact <a href="mailto:hello@connexli.com">hello@connexli.com</a> so we can re-verify you.</p>
     </div>
 

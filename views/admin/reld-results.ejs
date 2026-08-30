@@ -1,0 +1,61 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;"><%= mode === 'audit' ? 'RELD license audit' : 'RELD connection test' %></h1>
+
+<% if (error) { %>
+  <div class="error"><%= error %></div>
+  <p class="note">No professional's verification status was downgraded because of this — an API problem never marks a license invalid.</p>
+<% } %>
+
+<% if (mode === 'audit' && !error) { %>
+  <% const failed = rows.filter(r => ['failed','expired'].includes(r.after)); %>
+  <% const review = rows.filter(r => r.after === 'needs_review'); %>
+  <div class="stats">
+    <div class="stat"><b><%= rows.length %></b><span>Licenses checked (1 batch call)</span></div>
+    <div class="stat"><b><%= rows.filter(r => r.after === 'verified').length %></b><span>Verified active</span></div>
+    <div class="stat"><b><%= failed.length %></b><span>Failed / expired (proposals blocked)</span></div>
+    <div class="stat"><b><%= review.length %></b><span>Needs review</span></div>
+  </div>
+  <div class="tblwrap">
+    <table class="dt">
+      <tr><th>Professional</th><th>License</th><th>Before</th><th>After</th></tr>
+      <% rows.forEach(r => { %>
+        <tr>
+          <td><a href="/admin/agents/<%= r.user_id %>"><%= r.name %></a> · <span style="color:var(--muted);"><%= r.email %></span></td>
+          <td><%= r.license %></td>
+          <td><span class="badge <%= VB[r.before] || 'pending' %>"><%= VL[r.before] || r.before %></span></td>
+          <td><span class="badge <%= VB[r.after] || 'pending' %>"><%= VL[r.after] || r.after %></span></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <p class="note">Professionals whose check failed keep their accounts and history — they simply can't submit proposals until the license issue is resolved, and they're flagged above and on their detail pages.</p>
+<% } %>
+
+<% if (mode === 'test') { %>
+  <% if (!error) { %>
+    <div class="card">
+      <h2 style="font-size:16px;">Parsed result</h2>
+      <% if (parsed && parsed.found) { %>
+        <div class="sumrow"><span>Found</span><span style="color:var(--good); font-weight:600;">Yes</span></div>
+        <div class="sumrow"><span>Name</span><span><%= parsed.name || '—' %></span></div>
+        <div class="sumrow"><span>License number</span><span><%= parsed.licenseNumber || '—' %></span></div>
+        <div class="sumrow"><span>Type</span><span><%= parsed.licenseType || '—' %></span></div>
+        <div class="sumrow"><span>Status</span><span><%= parsed.licenseStatus || '—' %></span></div>
+        <div class="sumrow"><span>Expiration</span><span><%= parsed.expiration || '—' %></span></div>
+        <div class="sumrow"><span>Brokerage</span><span><%= parsed.brokerage || '—' %></span></div>
+        <div class="sumrow"><span>City</span><span><%= parsed.city || '—' %></span></div>
+        <div class="sumrow"><span>Last verified by RELD</span><span><%= parsed.lastVerified || '—' %></span></div>
+      <% } else { %>
+        <p class="sub"><b>Not found.</b> RELD has no record for that state + license number.</p>
+      <% } %>
+      <p class="note">If a field above shows "—" but the raw response below clearly contains it under a different name, tell your developer the exact field name so the mapping can be adjusted before the audit runs.</p>
+    </div>
+  <% } %>
+  <div class="card">
+    <h2 style="font-size:16px;">Raw RELD response</h2>
+    <pre style="overflow-x:auto; background:#0F1B2D; color:#D7E3F4; padding:14px; border-radius:10px; font-size:12.5px; line-height:1.5;"><%= raw %></pre>
+  </div>
+  <p class="note">This test changed nothing in the database and used one API lookup.</p>
+<% } %>
+<%- include('../partials/foot') %>

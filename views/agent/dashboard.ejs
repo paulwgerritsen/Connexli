@@ -1,6 +1,16 @@
 <%- include('../partials/head') %>
 <h1>Welcome back, <%= user.name.split(' ')[0] %></h1>
-<p class="sub"><%= profile.brokerage %> · Utah · <span style="color:var(--good); font-weight:600;">✓ License verified</span> · <a href="/agent/settings">Account settings</a></p>
+<p class="sub"><%= profile.brokerage %> · Utah ·
+  <% if (profile.verification_status === 'verified') { %><span style="color:var(--good); font-weight:600;">✓ License verified</span>
+  <% } else if (licenseBlocked) { %><span style="color:var(--bad, #B42318); font-weight:600;">License issue — proposals paused</span>
+  <% } else { %><span style="color:var(--muted); font-weight:600;">License check pending</span><% } %>
+  · <a href="/agent/settings">Account settings</a></p>
+<% if (licenseBlocked) { %>
+  <div class="card" style="border-left:4px solid #B42318; padding:14px 18px;">
+    <b style="color:#B42318;">Your license could not be verified as active.</b>
+    <span class="sub" style="display:inline;">Proposal submissions are paused until this is resolved — your account, past proposals, and credits are unaffected. Please contact us if you believe this is an error.</span>
+  </div>
+<% } %>
 <% if (profile.transactions_seller_12mo === null && profile.transactions_buyer_12mo === null) { %>
   <div class="card" style="border-left:4px solid var(--blue); padding:14px 18px;">
     <b style="color:var(--navy);">Add your track record.</b>
@@ -14,6 +24,26 @@
   <div class="stat"><b><%= stats.submitted %></b><span>Proposals submitted</span></div>
   <div class="stat"><b><%= stats.shortlisted %></b><span>Times shortlisted</span></div>
   <div class="stat"><b><%= stats.connected %></b><span>Clients won</span></div>
+</div>
+
+<h2 style="margin-top:26px;">Your proposal balance</h2>
+<div class="card">
+  <div class="rowline">
+    <div>
+      <b style="color:var(--navy);"><%= credits.freeRemaining %> of <%= credits.freeTotal %> free proposals remaining this month</b>
+      <div class="meta">Renews <%= credits.nextReset %> · complimentary proposals don't carry over month to month</div>
+    </div>
+    <% if (credits.purchased > 0) { %>
+      <div class="actions"><span class="pill"><%= credits.purchased %> purchased proposal<%= credits.purchased === 1 ? '' : 's' %> (never expire)</span></div>
+    <% } %>
+  </div>
+  <div class="rowline">
+    <div>
+      <b style="color:var(--navy);">Buy more proposals <span class="badge pending">Coming soon</span></b>
+      <div class="meta">5 for $50 or 10 for $100 ($10 per proposal). Purchased proposals never expire and roll over month to month.</div>
+    </div>
+  </div>
+  <p class="note" style="margin-bottom:0;">Each credit covers one proposal <b>submission</b> — up to <%= credits.freeTotal %> proposal submissions per month on us during the Utah launch. Submitting a proposal never guarantees a connection or a client; editing a proposal you've already submitted doesn't use another credit.</p>
 </div>
 
 <% if (wins.length > 0) { %>
