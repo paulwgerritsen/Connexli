@@ -30,6 +30,21 @@ function csrf(req, res, next) {
   next();
 }
 
+// Email-verification activation gate (Paul, Aug 31 §8). Enforced server-side
+// on every endpoint that makes a request/profile live to professionals or
+// triggers professional notifications — hiding a button is never the
+// protection. Browsing, drafting, and logging in are never blocked.
+// REQUIRE_EMAIL_VERIFICATION='false' exists only for legacy automated tests.
+const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION !== 'false';
+async function assertEmailVerified(req, res) {
+  if (!REQUIRE_EMAIL_VERIFICATION) return true;
+  const { pool } = require('./db');
+  const { rows } = await pool.query(`SELECT email_verified FROM users WHERE id=$1`, [req.session.user.id]);
+  if (rows[0] && rows[0].email_verified) return true;
+  res.redirect('/verify-notice');
+  return false;
+}
+
 // Wraps a router so that errors thrown inside async page handlers are passed
 // to the error page instead of crashing the whole server.
 function safeRouter(router) {
@@ -41,5 +56,5 @@ function safeRouter(router) {
   return router;
 }
 
-module.exports = { requireLogin, requireRole, csrf, safeRouter };
+module.exports = { requireLogin, requireRole, csrf, safeRouter, assertEmailVerified, REQUIRE_EMAIL_VERIFICATION };
 

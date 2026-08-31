@@ -1,10 +1,25 @@
 // routes/agent.js — the professional experience.
 const express = require('express');
-const { pool, logEvent, creditSummary, consumeCredit } = require('../db');
+const { pool, logEvent, creditSummary, recordProposalCredit, PRIORITY_HOURS, CREDIT_BUNDLES } = require('../db');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
 const reld = require('../reld');
+
+// 5-hour paid-credit priority window (Paul, Aug 31 §3/§9). Enforced HERE on
+// the server — the browser countdown is a courtesy display, never the gate.
+// NULL/past priority_until (all pre-existing rows) means no restriction.
+const priorityActive = (row) => !!(row.priority_until && new Date(row.priority_until).getTime() > Date.now());
+
+// Which credit funds a NEW submission (Paul, Aug 31 §4): the professional
+// chooses; free-first auto-consumption is gone. When the form doesn't say
+// (older cached pages), default sensibly: complimentary when it's usable,
+// otherwise purchased.
+function chooseFunding(body, credits, priority) {
+  if (body.credit_choice === 'purchased') return 'purchased';
+  if (body.credit_choice === 'complimentary') return 'complimentary';
+  return (credits.freeRemaining > 0 && !priority) ? 'complimentary' : 'purchased';
+}
 
 // License gate (Paul, Aug 29 §25): a failed or expired RELD verification
 // blocks proposal submission — even for updates, and even when the
@@ -29,7 +44,8 @@ router.get('/agent', agent, async (req, res) => {
   if (!profile) return res.status(500).render('error', { title: 'Profile missing', message: 'Your professional profile was not found. Contact support.' });
 
   if (profile.status !== 'approved') {
-    return res.render('agent/pending', { title: 'Verification in progress', profile });
+    const { rows: uRows } = await pool.query(`SELECT email_verified FROM users WHERE id=$1`, [req.session.user.id]);
+    return res.render('agent/pending', { title: 'Verification in progress', profile, emailVerified: !!(uRows[0] && uRows[0].email_verified) });
   }
 
   const uid = req.session.user.id;
@@ -139,7 +155,7 @@ router.get('/agent', agent, async (req, res) => {
     title: 'Opportunities', profile, H,
     opportunities, myProposals: mine.rows, stats: stats.rows[0], wins,
     buyerOpps: buyerOppsNear, buyerWins, myBuyerProposals, feedbackDone,
-    credits, licenseBlocked: licenseBlocked(profile),
+    credits, licenseBlocked: licenseBlocked(profile), CREDIT_BUNDLES,
   });
 });
 
@@ -198,6 +214,7 @@ router.get('/agent/buyers/:id(\\d+)', agent, async (req, res) => {
   res.render('agent/buyer-opportunity', {
     title: 'Buyer opportunity', buyer, proposal: mine[0] || null, H, error: null,
     credits, blockedLicense: licenseBlocked(profile),
+    priority: priorityActive(buyer), priorityUntil: buyer.priority_until, PRIORITY_HOURS,
   });
 });
 
@@ -224,12 +241,23 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     return res.status(403).render('error', { title: 'New round in progress', message: 'This buyer opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
   }
 
-  // Credit gate (§14): a NEW submission needs a credit; editing an existing
-  // proposal never costs a second one.
+  // Credit gate (Paul, Aug 31): a NEW submission needs a credit the
+  // professional CHOOSES; editing an existing proposal never costs a second
+  // one. During the priority window only purchased credits may submit —
+  // enforced here regardless of anything the browser showed.
+  let funding = null;
   if (!mineBefore.length) {
     const credits = await creditSummary(req.session.user.id);
-    if (!credits.canSubmit) {
-      return res.status(403).render('error', { title: 'Monthly proposal allowance used', message: `You've used your ${credits.freeTotal} complimentary proposals for this month. Your free proposal allowance renews ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+    const priority = priorityActive(buyer);
+    funding = chooseFunding(req.body, credits, priority);
+    if (funding === 'complimentary' && priority) {
+      return res.status(403).render('error', { title: "Complimentary access hasn't opened yet", message: `Purchased proposal credits receive ${PRIORITY_HOURS}-hour priority access to new opportunities. Your complimentary access to this opportunity opens at ${new Date(buyer.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain). Additional proposal credits will be available for purchase soon.` });
+    }
+    if (funding === 'complimentary' && credits.freeRemaining <= 0) {
+      return res.status(403).render('error', { title: 'Complimentary credits used', message: `You've used your ${credits.freeTotal} complimentary proposal credits for this month. Your complimentary credits reset ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+    }
+    if (funding === 'purchased' && credits.purchased <= 0) {
+      return res.status(403).render('error', { title: 'No purchased credits', message: `You have no purchased proposal credits available.${priority ? ` Purchased credits receive ${PRIORITY_HOURS}-hour priority access; your complimentary access to this opportunity opens at ${new Date(buyer.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).` : ' Choose a complimentary credit instead, or check back when credit purchases open.'}` });
     }
   }
 
@@ -301,18 +329,27 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
       if (!wasUpdate && newCount >= live.proposal_cap) {
         await client.query(`UPDATE buyer_profiles SET window_notified=true, closes_at=now() WHERE id=$1`, [buyer.id]);
       }
+      // Credit + proposal are ONE atomic unit (Paul, Aug 31 §10): the chosen
+      // credit is recorded inside this same transaction. If the balance
+      // check fails (two tabs racing over the last purchased credit), the
+      // whole transaction — proposal included — rolls back: a failed
+      // submission never costs a credit, and balances never go negative.
+      if (!wasUpdate) {
+        const creditError = await recordProposalCredit(client, req.session.user.id, funding, 'buyer_proposals', savedId);
+        if (creditError) {
+          await client.query('ROLLBACK'); client.release();
+          return res.status(403).render('error', { title: 'No credit available', message: creditError + ' Your proposal was not submitted and nothing was charged to your balance.' });
+        }
+      }
     }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); client.release(); throw e; }
   client.release();
 
   if (capReached) {
-    return res.status(400).render('error', { title: 'Proposal cap reached', message: `This buyer already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.` });
-  }
-  // Ledger: a successful NEW submission consumes one credit (free first,
-  // then purchased). Updates and blocked attempts never reach this line.
-  if (!wasUpdate && savedId) {
-    await consumeCredit(req.session.user.id, 'buyer_proposals', savedId);
+    // The cap filled before this submission landed — nothing was inserted,
+    // so no credit was consumed (Paul, Aug 31 §10).
+    return res.status(400).render('error', { title: 'Proposal cap reached', message: `This buyer already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. No credit was used. Keep an eye out for the next opportunity.` });
   }
 
   const roundFull = newCount >= buyer.proposal_cap;
@@ -447,6 +484,7 @@ router.get('/agent/opportunities/:id(\\d+)', agent, async (req, res) => {
   res.render('agent/opportunity', {
     title: 'Opportunity', request, proposal: mine[0] || null, H, error: null,
     credits, blockedLicense: licenseBlocked(profile),
+    priority: priorityActive(request), priorityUntil: request.priority_until, PRIORITY_HOURS,
   });
 });
 
@@ -495,12 +533,23 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     return res.status(403).render('error', { title: 'New round in progress', message: 'This homeowner opened a fresh round of proposals reserved for professionals who have not yet proposed. Your original sealed proposal is still in their stack.' });
   }
 
-  // Credit gate (§14): a NEW submission needs a credit; editing an existing
-  // proposal never costs a second one.
+  // Credit gate (Paul, Aug 31): a NEW submission needs a credit the
+  // professional CHOOSES; editing an existing proposal never costs a second
+  // one. During the priority window only purchased credits may submit —
+  // enforced here regardless of anything the browser showed.
+  let funding = null;
   if (!mineBefore.rows.length) {
     const credits = await creditSummary(req.session.user.id);
-    if (!credits.canSubmit) {
-      return res.status(403).render('error', { title: 'Monthly proposal allowance used', message: `You've used your ${credits.freeTotal} complimentary proposals for this month. Your free proposal allowance renews ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+    const priority = priorityActive(request);
+    funding = chooseFunding(req.body, credits, priority);
+    if (funding === 'complimentary' && priority) {
+      return res.status(403).render('error', { title: "Complimentary access hasn't opened yet", message: `Purchased proposal credits receive ${PRIORITY_HOURS}-hour priority access to new opportunities. Your complimentary access to this opportunity opens at ${new Date(request.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain). Additional proposal credits will be available for purchase soon.` });
+    }
+    if (funding === 'complimentary' && credits.freeRemaining <= 0) {
+      return res.status(403).render('error', { title: 'Complimentary credits used', message: `You've used your ${credits.freeTotal} complimentary proposal credits for this month. Your complimentary credits reset ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+    }
+    if (funding === 'purchased' && credits.purchased <= 0) {
+      return res.status(403).render('error', { title: 'No purchased credits', message: `You have no purchased proposal credits available.${priority ? ` Purchased credits receive ${PRIORITY_HOURS}-hour priority access; your complimentary access to this opportunity opens at ${new Date(request.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).` : ' Choose a complimentary credit instead, or check back when credit purchases open.'}` });
     }
   }
 
@@ -549,18 +598,27 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
         await client.query(`UPDATE requests SET status='closed', closes_at=now() WHERE id=$1`, [request.id]);
         capClosed = true;
       }
+      // Credit + proposal are ONE atomic unit (Paul, Aug 31 §10): the chosen
+      // credit is recorded inside this same transaction. If the balance
+      // check fails (two tabs racing over the last purchased credit), the
+      // whole transaction — proposal included — rolls back: a failed
+      // submission never costs a credit, and balances never go negative.
+      if (!wasUpdate) {
+        const creditError = await recordProposalCredit(client, req.session.user.id, funding, 'proposals', savedId);
+        if (creditError) {
+          await client.query('ROLLBACK'); client.release();
+          return res.status(403).render('error', { title: 'No credit available', message: creditError + ' Your proposal was not submitted and nothing was charged to your balance.' });
+        }
+      }
     }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); client.release(); throw e; }
   client.release();
 
   if (capReached) {
-    return res.status(400).render('error', { title: 'Proposal cap reached', message: `This homeowner already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. Keep an eye out for the next opportunity.` });
-  }
-  // Ledger: a successful NEW submission consumes one credit (free first,
-  // then purchased). Updates and blocked attempts never reach this line.
-  if (!wasUpdate && savedId) {
-    await consumeCredit(req.session.user.id, 'proposals', savedId);
+    // The cap filled before this submission landed — nothing was inserted,
+    // so no credit was consumed (Paul, Aug 31 §10).
+    return res.status(400).render('error', { title: 'Proposal cap reached', message: `This homeowner already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. No credit was used. Keep an eye out for the next opportunity.` });
   }
   logEvent(wasUpdate ? 'proposal_updated' : 'proposal_submitted', {
     userId: req.session.user.id, requestId: request.id, proposalId: savedId,

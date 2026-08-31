@@ -6,6 +6,13 @@
   <% } else if (profile.status === 'rejected') { %>
     <div class="error">We couldn't verify this license with the information provided. If you believe this is a mistake, contact us at hello@connexli.com and we'll take another look.</div>
   <% } else { %>
+    <% if (typeof emailVerified !== 'undefined' && !emailVerified) { %>
+      <div class="card" style="border-left:4px solid var(--blue);">
+        <b style="color:var(--navy);">First step: verify your email.</b>
+        <span class="sub" style="display:inline;">We've sent a verification link to <b><%= user.email %></b> — your license check and account review start the moment you click it.</span>
+        <a href="/verify-notice" style="font-weight:600;">Resend the email ›</a>
+      </div>
+    <% } %>
     <p class="sub">Your license is being verified with the Utah Division of Real Estate. Most professionals are approved within one business day.</p>
     <div class="checkrow"><span class="c">✓</span><span>We'll notify you by email at <b><%= user.email %></b> as soon as you're ready to receive homeowner opportunities.</span></div>
     <div class="card">

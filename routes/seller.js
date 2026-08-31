@@ -1,7 +1,7 @@
 // routes/seller.js — the homeowner experience.
 const express = require('express');
-const { pool, logEvent } = require('../db');
-const { requireRole } = require('../middleware');
+const { pool, logEvent, PRIORITY_HOURS } = require('../db');
+const { requireRole, assertEmailVerified } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
 
@@ -66,11 +66,18 @@ router.post('/settings', seller, async (req, res) => {
 });
 
 // New request form
-router.get('/requests/new', seller, (req, res) => {
+router.get('/requests/new', seller, async (req, res) => {
+  // Verify email BEFORE the form, so nobody fills it out and then loses their
+  // answers at the gate. The POST below still enforces it server-side.
+  if (!(await assertEmailVerified(req, res))) return;
   res.render('seller/new-request', { title: 'Tell us about your home', H, error: null, form: {} });
 });
 
 router.post('/requests/new', seller, async (req, res) => {
+  // Email verification gate (Paul, Aug 31): a request that goes live triggers
+  // professional notifications, so it requires a verified email — enforced
+  // here on the server, not by hiding a button.
+  if (!(await assertEmailVerified(req, res))) return;
   const f = {
     property_type: H.oneOf(req.body.property_type, H.PROPERTY_TYPES, null),
     zip: H.clean(req.body.zip, 10),
@@ -116,11 +123,13 @@ router.post('/requests/new', seller, async (req, res) => {
 
   const { rows } = await pool.query(
     `INSERT INTO requests (seller_id, property_type, zip, city, neighborhood, beds, baths, sqft_range,
-       year_built, hoa, condition, price_range, priorities, window_hours, closes_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now() + make_interval(hours => $14))
+       year_built, hoa, condition, price_range, priorities, window_hours, closes_at, priority_until)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now() + make_interval(hours => $14),
+       now() + make_interval(mins => $15))
      RETURNING id`,
     [req.session.user.id, f.property_type, f.zip, f.city, f.neighborhood, f.beds, f.baths, f.sqft_range,
-     f.year_built, f.hoa, f.condition, f.price_range, priorities.join(' + '), f.window_hours]
+     f.year_built, f.hoa, f.condition, f.price_range, priorities.join(' + '), f.window_hours,
+     Math.round(PRIORITY_HOURS * 60)] // 5-hour paid-credit priority window (Paul, Aug 31 §3)
   );
   const { rows: fullRows } = await pool.query(`SELECT * FROM requests WHERE id=$1`, [rows[0].id]);
   mailer.agentsNewRequest(fullRows[0]); // fire and forget: notify nearby approved professionals
@@ -204,10 +213,13 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
   if (cnt[0].n < request.proposal_cap) return res.redirect('/requests/' + request.id);
 
+  // A fresh round becomes newly available to professionals who haven't
+  // proposed, so the 5-hour paid-credit priority window restarts with it.
   const { rows } = await pool.query(
     `UPDATE requests SET round = round + 1, status='open', closes_at = now() + make_interval(hours => window_hours),
-       proposal_cap = (SELECT COUNT(*) FROM proposals WHERE request_id=$1) + 10
-     WHERE id=$1 AND status='closed' RETURNING *`, [request.id]);
+       proposal_cap = (SELECT COUNT(*) FROM proposals WHERE request_id=$1) + 10,
+       priority_until = now() + make_interval(mins => $2)
+     WHERE id=$1 AND status='closed' RETURNING *`, [request.id, Math.round(PRIORITY_HOURS * 60)]);
   if (!rows[0]) return res.redirect('/requests/' + request.id);
 
   // Professionals who already proposed are excluded from the new-round emails.

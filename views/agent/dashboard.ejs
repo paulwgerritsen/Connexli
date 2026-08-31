@@ -26,24 +26,33 @@
   <div class="stat"><b><%= stats.connected %></b><span>Clients won</span></div>
 </div>
 
-<h2 style="margin-top:26px;">Your proposal balance</h2>
+<h2 style="margin-top:26px;">Proposal credits</h2>
 <div class="card">
   <div class="rowline">
     <div>
-      <b style="color:var(--navy);"><%= credits.freeRemaining %> of <%= credits.freeTotal %> free proposals remaining this month</b>
-      <div class="meta">Renews <%= credits.nextReset %> · complimentary proposals don't carry over month to month</div>
+      <b style="color:var(--navy);">Complimentary</b>
+      <div style="font-size:17px; font-weight:700; color:var(--navy); margin:2px 0;"><%= credits.freeRemaining %> of <%= credits.freeTotal %> remaining</div>
+      <div class="meta">Resets <%= credits.nextReset %> · complimentary credits don't carry over month to month</div>
     </div>
-    <% if (credits.purchased > 0) { %>
-      <div class="actions"><span class="pill"><%= credits.purchased %> purchased proposal<%= credits.purchased === 1 ? '' : 's' %> (never expire)</span></div>
-    <% } %>
-  </div>
-  <div class="rowline">
-    <div>
-      <b style="color:var(--navy);">Buy more proposals <span class="badge pending">Coming soon</span></b>
-      <div class="meta">5 for $50 or 10 for $100 ($10 per proposal). Purchased proposals never expire and roll over month to month.</div>
+    <div style="text-align:right;">
+      <b style="color:var(--navy);">Purchased</b>
+      <div style="font-size:17px; font-weight:700; color:var(--navy); margin:2px 0;"><%= credits.purchased %> credit<%= credits.purchased === 1 ? '' : 's' %></div>
+      <div class="meta">Purchased credits never expire</div>
     </div>
   </div>
-  <p class="note" style="margin-bottom:0;">Each credit covers one proposal <b>submission</b> — up to <%= credits.freeTotal %> proposal submissions per month on us during the Utah launch. Submitting a proposal never guarantees a connection or a client; editing a proposal you've already submitted doesn't use another credit.</p>
+  <div style="margin-top:14px;">
+    <b style="color:var(--navy);">Buy More Proposal Credits <span class="badge pending">Coming soon</span></b>
+    <div class="tblwrap" style="margin-top:8px;">
+      <table class="dt">
+        <tr><th>Package</th><th>Price</th></tr>
+        <% CREDIT_BUNDLES.forEach(b => { %>
+          <tr><td><%= b.label %></td><td>$<%= b.price %></td></tr>
+        <% }) %>
+      </table>
+    </div>
+    <p class="note" style="margin-top:8px; margin-bottom:0;">Purchased proposal credits never expire, carry over month to month, can be used at any time, and receive <b>5-hour priority access</b> to new opportunities. Purchasing opens once payments are enabled — nothing can be bought yet.</p>
+  </div>
+  <p class="note" style="margin-bottom:0;">Each credit covers one proposal <b>submission</b> — you'll choose which credit to use when you submit. A credit is not a guaranteed opportunity, connection, or client; actual opportunities depend on consumer activity, location, and eligibility. Editing a proposal you've already submitted never uses another credit.</p>
 </div>
 
 <% if (wins.length > 0) { %>

@@ -22,6 +22,8 @@
   <div class="sumrow"><span>Service area</span><span><%= agent.service_zip || 'not provided' %><%= agent.service_city ? ' · ' + agent.service_city + ', ' + (agent.service_state || '') : '' %></span></div>
   <div class="sumrow"><span>Registered</span><span><%= new Date(agent.registered_at).toLocaleDateString('en-US') %></span></div>
   <% if (agent.reviewed_at) { %><div class="sumrow"><span>Reviewed</span><span><%= new Date(agent.reviewed_at).toLocaleDateString('en-US') %></span></div><% } %>
+  <% if (agent.rejection_reason) { %><div class="sumrow"><span>Rejection reason</span><span style="color:#B42318;"><%= agent.rejection_reason %></span></div><% } %>
+  <div class="sumrow"><span>Email verified</span><span><%= agent.email_verified ? '✓ Yes' : 'Not yet — license verification and review start after they verify' %></span></div>
 </div>
 
 <div class="card">
@@ -90,7 +92,11 @@
   <div class="actions" style="margin-top:12px;">
     <% if (agent.status === 'pending') { %>
       <form method="POST" action="/admin/agents/<%= agent.user_id %>/approve"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn sm" type="submit">Approve</button></form>
-      <form method="POST" action="/admin/agents/<%= agent.user_id %>/reject" onsubmit="return confirm('Reject this professional?');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Reject</button></form>
+      <form method="POST" action="/admin/agents/<%= agent.user_id %>/reject" onsubmit="return confirm('Reject this professional?');" style="display:flex; gap:8px; align-items:center;">
+        <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail">
+        <input type="text" name="reason" maxlength="300" placeholder="Rejection reason (optional, kept on record)" style="min-width:260px; margin:0;">
+        <button class="btn danger sm" type="submit">Reject</button>
+      </form>
     <% } %>
     <% if (agent.status === 'approved') { %>
       <form method="POST" action="/admin/agents/<%= agent.user_id %>/suspend" onsubmit="return confirm('Suspend this professional? They immediately lose access to opportunities and proposals.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Suspend</button></form>

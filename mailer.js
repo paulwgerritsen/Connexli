@@ -262,6 +262,18 @@ function buyerAgentWon(email, name, profile) {
     ], 'See my new client', APP_URL + '/agent'), true); // always sent: a real client is waiting on this professional
 }
 
+// Email address verification (Paul, Aug 31). Single-use link, 24-hour
+// expiry. Always sent (force) — the account can't activate requests or start
+// license verification without it, regardless of notification preferences.
+function verifyEmail(email, name, verifyUrl) {
+  return send(email, 'Verify your Connexli email address',
+    template('Verify your email', [
+      `${name.split(' ')[0]}, welcome to Connexli! Please confirm this is your email address.`,
+      'Click the button below to verify. The link works once and expires in 24 hours.',
+      "Verifying keeps Connexli real: it's how we make sure every request and every professional on the marketplace belongs to an actual person.",
+    ], 'Verify my email', verifyUrl), true);
+}
+
 // Password reset. The link is single-use and expires in 60 minutes.
 function passwordReset(email, name, resetUrl) {
   return send(email, 'Reset your Connexli password',
@@ -385,7 +397,7 @@ async function processFollowups() {
 module.exports = {
   adminNewAgent, agentApproved, agentRejected, agentsNewRequest, processFollowups, contactMessage,
   sellerRequestReceived, buyerProfileLive,
-  sellerProposalsReady, agentWon, passwordReset,
+  sellerProposalsReady, agentWon, passwordReset, verifyEmail,
   agentsNewBuyerProfile, buyerNewProposal, buyerProposalsReady, buyerAgentWon, cityDistance,
   zipInfo, zipDistance, RADIUS_MILES,
 };

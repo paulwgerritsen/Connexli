@@ -97,10 +97,13 @@
 
 </details>
 
-<details class="sect" open><summary><h2>Reviewed professionals · <%= agents.length %></h2></summary>
+<%# Approved vs Rejected are SEPARATE sections (Paul, Aug 31 §13–§15):
+    account status (pending/approved/rejected) and RELD license verification
+    stay two different dimensions and are never collapsed into one badge. %>
+<details class="sect" open><summary><h2>Approved professionals · <%= agents.length %></h2></summary>
 <div class="tblwrap">
   <table class="dt">
-    <tr><th>Name</th><th>License</th><th>License check</th><th>Brokerage</th><th>Status</th><th>Reviewed</th></tr>
+    <tr><th>Name</th><th>License</th><th>License verification</th><th>Brokerage</th><th>Account status</th><th>Reviewed</th></tr>
     <% agents.forEach(a => { %>
       <tr>
         <td><a href="/admin/agents/<%= a.user_id %>"><%= a.name %></a> · <%= a.email %></td>
@@ -113,6 +116,30 @@
     <% }) %>
   </table>
 </div>
+</details>
+
+<details class="sect"><summary><h2>Rejected professionals<% if (rejected.length) { %> · <%= rejected.length %><% } %></h2></summary>
+<% if (rejected.length === 0) { %>
+  <div class="card"><p class="sub">No rejected registrations.</p></div>
+<% } else { %>
+<div class="tblwrap">
+  <table class="dt">
+    <tr><th>Name / Email</th><th>License</th><th>License verification</th><th>Brokerage</th><th>Registered</th><th>Rejected</th><th>Reason</th></tr>
+    <% rejected.forEach(a => { %>
+      <tr>
+        <td><a href="/admin/agents/<%= a.user_id %>"><%= a.name %></a><br><span class="meta"><%= a.email %></span></td>
+        <td><%= a.license_number %><% if (a.license_state && a.license_state !== 'UT') { %> (<%= a.license_state %>)<% } %></td>
+        <td><span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span></td>
+        <td><%= a.brokerage %></td>
+        <td><%= new Date(a.registered_at).toLocaleDateString('en-US') %></td>
+        <td><%= a.reviewed_at ? new Date(a.reviewed_at).toLocaleDateString('en-US') : '' %></td>
+        <td class="meta"><%= a.rejection_reason || '—' %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+<p class="note">Rejected accounts are never deleted — open any record to review its full history. Keeping suspicious or fraudulent registrations on file is deliberate.</p>
+<% } %>
 </details>
 
 <details class="sect"><summary><h2>License verification (RELD)</h2></summary>

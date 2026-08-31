@@ -3,8 +3,8 @@
 // profile. Readiness is computed, never judged: Ready Now and Preparing
 // profiles publish to agents; Exploring profiles get the Get Ready track.
 const express = require('express');
-const { pool, logEvent } = require('../db');
-const { requireRole } = require('../middleware');
+const { pool, logEvent, PRIORITY_HOURS } = require('../db');
+const { requireRole, assertEmailVerified } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
 
@@ -105,11 +105,15 @@ router.get('/buyer/new', consumer, async (req, res) => {
   // withdrawn — the buyer can start a new one; "+ New buying request" on an
   // open request lands on its hub with an explanatory note.
   if (await openProfile(req.session.user.id)) return res.redirect('/buyer?existing=1');
+  // Verify email BEFORE the form (Paul, Aug 31): a published profile notifies
+  // professionals, and gating here means no one loses a filled-out form.
+  if (!(await assertEmailVerified(req, res))) return;
   res.render('buyer/new', { title: "Find Your Buyer's Agent", H, error: null, form: {} });
 });
 
 router.post('/buyer/new', consumer, async (req, res) => {
   if (await openProfile(req.session.user.id)) return res.redirect('/buyer');
+  if (!(await assertEmailVerified(req, res))) return; // server-side gate, not a hidden button
 
   const f = {
     financing_type: H.oneOf(req.body.financing_type, H.B_FINANCING, null),
@@ -178,6 +182,14 @@ router.post('/buyer/new', consumer, async (req, res) => {
   );
   const profile = rows[0];
 
+  // 5-hour paid-credit priority window starts the moment the profile is live
+  // to professionals (Paul, Aug 31 §3). Unpublished (Exploring) drafts get it
+  // when they publish via upgrade instead.
+  if (published) {
+    await pool.query(`UPDATE buyer_profiles SET priority_until = now() + make_interval(mins => $2) WHERE id=$1`,
+      [profile.id, Math.round(PRIORITY_HOURS * 60)]);
+  }
+
   logEvent('buyer_profile_created', { userId: req.session.user.id, meta: { readiness: badge, published, in_utah: f.in_utah, price_range: f.price_range } });
   if (f.lender_status === "No — I'd like a recommendation") {
     logEvent('lender_recommendation_requested', { userId: req.session.user.id }); // the Phase-2 demand counter
@@ -230,14 +242,18 @@ router.get('/buyer/get-ready', consumer, async (req, res) => {
 router.post('/buyer/upgrade', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile) return res.redirect('/buyer/new');
+  // Publishing makes the profile live to professionals → verified email only.
+  if (!profile.published && !(await assertEmailVerified(req, res))) return;
   const updated = { ...profile, lender_status: 'Yes — preapproved' };
   const badge = H.readiness(updated);
   const published = badge !== 'exploring';
-  // Publishing starts the proposal window fresh from this moment.
+  // Publishing starts the proposal window — and the 5-hour paid-credit
+  // priority window — fresh from this moment.
   await pool.query(`UPDATE buyer_profiles SET lender_status='Yes — preapproved', readiness=$1, published=$2,
-      closes_at = CASE WHEN $2 AND NOT published THEN now() + make_interval(hours => window_hours) ELSE closes_at END
+      closes_at = CASE WHEN $2 AND NOT published THEN now() + make_interval(hours => window_hours) ELSE closes_at END,
+      priority_until = CASE WHEN $2 AND NOT published THEN now() + make_interval(mins => $4) ELSE priority_until END
     WHERE id=$3`,
-    [badge, published, profile.id]);
+    [badge, published, profile.id, Math.round(PRIORITY_HOURS * 60)]);
   logEvent('buyer_upgraded_ready', { userId: req.session.user.id, meta: { readiness: badge } });
   if (published && !profile.published) {
     mailer.agentsNewBuyerProfile({ ...profile, lender_status: 'Yes — preapproved' }, H.READINESS_LABELS[badge]);
@@ -262,10 +278,13 @@ router.post('/buyer/rebid', consumer, async (req, res) => {
   // an unfilled round uses the one-time 24-hour extension instead.
   if (cnt[0].n < profile.proposal_cap) return res.redirect('/buyer');
 
+  // A fresh round becomes newly available to professionals who haven't
+  // proposed, so the 5-hour paid-credit priority window restarts with it.
   const { rows } = await pool.query(
     `UPDATE buyer_profiles SET round = round + 1, proposal_cap = $2 + 10, window_notified = false,
-       closes_at = now() + make_interval(hours => window_hours), expires_at = now() + interval '30 days'
-     WHERE id=$1 AND status='active' RETURNING *`, [profile.id, cnt[0].n]);
+       closes_at = now() + make_interval(hours => window_hours), expires_at = now() + interval '30 days',
+       priority_until = now() + make_interval(mins => $3)
+     WHERE id=$1 AND status='active' RETURNING *`, [profile.id, cnt[0].n, Math.round(PRIORITY_HOURS * 60)]);
   if (!rows[0]) return res.redirect('/buyer');
 
   const { rows: prior } = await pool.query(`SELECT agent_id FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);

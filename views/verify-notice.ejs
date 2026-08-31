@@ -1,0 +1,17 @@
+<%- include('partials/head') %>
+<div class="narrow">
+  <h1>Check your email 📬</h1>
+  <p class="sub">We've sent a verification link to:</p>
+  <div class="card" style="text-align:center;">
+    <p style="font-size:17px; font-weight:700; color:var(--navy); margin:4px 0 10px;"><%= email %></p>
+    <p class="sub" style="margin-bottom:14px;">Please verify your email to continue. The link works once and expires in 24 hours — check your spam folder if you don't see it within a couple of minutes.</p>
+    <% if (resent) { %><div class="success" style="margin-bottom:12px;">A fresh verification email is on its way.</div><% } %>
+    <% if (error) { %><div class="error" style="margin-bottom:12px;"><%= error %></div><% } %>
+    <form method="POST" action="/resend-verification">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn ghost" type="submit">Resend verification email</button>
+    </form>
+  </div>
+  <p class="note">Verifying your email is what lets your requests go live to professionals — until then you can still look around. <a href="/">Continue to my dashboard ›</a></p>
+</div>
+<%- include('partials/foot') %>

@@ -46,11 +46,20 @@
       <h2 style="color:#B42318;">License verification required</h2>
       <p class="sub">Your real estate license could not be verified as active, so proposal submissions are paused. Your account and any proposal credits are unaffected. Please contact us to resolve your license status.</p>
     </div>
-  <% } else if (!(proposal && proposal.id) && typeof credits !== 'undefined' && !credits.canSubmit) { %>
+  <% } else if (!(proposal && proposal.id) && priority && credits.purchased <= 0) { %>
     <div class="card" style="border-left:4px solid var(--blue); margin-top:22px;">
-      <h2>Monthly proposal allowance used</h2>
-      <p class="sub">You've used your <%= credits.freeTotal %> complimentary proposals for this month. Your free proposal allowance renews <%= credits.nextReset %>. Additional proposal credits will also be available for purchase soon.</p>
-      <p class="note" style="margin-bottom:0;">You can keep browsing every open opportunity — nothing about your account changes when your allowance runs out.</p>
+      <h2>🔒 Complimentary proposal access hasn't opened yet</h2>
+      <p class="sub">Purchased proposal credits receive <%= PRIORITY_HOURS %>-hour priority access to new Connexli opportunities.</p>
+      <p style="font-weight:700; color:var(--navy); margin:10px 0 2px;">Your complimentary access opens in:</p>
+      <p style="font-size:26px; font-weight:800; color:var(--navy); margin:0 0 10px;"><span data-priority-countdown="<%= new Date(priorityUntil).toISOString() %>">…</span></p>
+      <b style="color:var(--navy);">Purchase proposal credits for immediate access <span class="badge pending">Coming soon</span></b>
+      <p class="note" style="margin-bottom:0;">You can review everything about this buyer now and submit the moment the countdown ends. Nothing about your account changes while you wait — but proposal spots can fill during the priority period.</p>
+    </div>
+  <% } else if (!(proposal && proposal.id) && !priority && credits.freeRemaining <= 0 && credits.purchased <= 0) { %>
+    <div class="card" style="border-left:4px solid var(--blue); margin-top:22px;">
+      <h2>Complimentary credits used for this month</h2>
+      <p class="sub">You've used your <%= credits.freeTotal %> complimentary proposal credits for this month. Your complimentary credits reset <%= credits.nextReset %>. Additional proposal credits will also be available for purchase soon.</p>
+      <p class="note" style="margin-bottom:0;">You can keep browsing every open opportunity — nothing about your account changes when your credits run out.</p>
     </div>
   <% } else { %>
   <h2 style="margin-top:22px;"><%= proposal && proposal.id ? 'Update your sealed proposal' : 'Submit your sealed proposal' %></h2>
@@ -107,6 +116,28 @@
       })();
       </script>
     </div>
+    <% if (!(proposal && proposal.id)) { %>
+      <div class="card">
+        <%# Credit choice (Paul, Aug 31 §4) — server-enforced regardless. %>
+        <label>Submit this proposal using</label>
+        <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+          <label class="opt" style="<%= (priority || credits.freeRemaining <= 0) ? 'opacity:.55;' : '' %>">
+            <input type="radio" name="credit_choice" value="complimentary"
+              <%= (priority || credits.freeRemaining <= 0) ? 'disabled' : '' %>
+              <%= (!priority && credits.freeRemaining > 0) ? 'checked' : '' %>>
+            <span class="tile"><span><b>Use a complimentary credit</b>
+              <span class="desc"><% if (priority) { %>🔒 opens in <span data-priority-countdown="<%= new Date(priorityUntil).toISOString() %>">…</span> — purchased credits get <%= PRIORITY_HOURS %>-hour priority<% } else if (credits.freeRemaining <= 0) { %>0 remaining this month · resets <%= credits.nextReset %><% } else { %><%= credits.freeRemaining %> remaining this month · resets <%= credits.nextReset %><% } %></span></span></span>
+          </label>
+          <label class="opt" style="<%= credits.purchased <= 0 ? 'opacity:.55;' : '' %>">
+            <input type="radio" name="credit_choice" value="purchased"
+              <%= credits.purchased <= 0 ? 'disabled' : '' %>
+              <%= (credits.purchased > 0 && (priority || credits.freeRemaining <= 0)) ? 'checked' : '' %>>
+            <span class="tile"><span><b>Use a purchased credit</b>
+              <span class="desc"><%= credits.purchased %> available · purchased credits never expire</span></span></span>
+          </label>
+        </div>
+      </div>
+    <% } %>
     <button class="btn full" type="submit"><%= proposal && proposal.id ? 'Update my sealed proposal' : 'Submit my sealed proposal' %></button>
   </form>
   <% } %>
@@ -139,5 +170,21 @@ if (document.getElementById('comp_amount')) {
   document.getElementById('comp_amount').addEventListener('input', bPrev);
   bFee();
 }
+// Priority-window countdown (display only — the server enforces the rule).
+(function(){
+  var els = document.querySelectorAll('[data-priority-countdown]');
+  if (!els.length) return;
+  function tick(){
+    var done = false;
+    els.forEach(function(el){
+      var left = new Date(el.dataset.priorityCountdown).getTime() - Date.now();
+      if (left <= 0) { done = true; return; }
+      var h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000), s = Math.floor(left%60000/1000);
+      el.textContent = h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+    });
+    if (done) location.reload();
+  }
+  tick(); setInterval(tick, 1000);
+})();
 </script>
 <%- include('../partials/foot') %>

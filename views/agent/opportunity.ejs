@@ -23,11 +23,20 @@
       <h2 style="color:#B42318;">License verification required</h2>
       <p class="sub">Your real estate license could not be verified as active, so proposal submissions are paused. Your account and any proposal credits are unaffected. Please contact us to resolve your license status.</p>
     </div>
-  <% } else if (!proposal && !credits.canSubmit) { %>
+  <% } else if (!proposal && priority && credits.purchased <= 0) { %>
     <div class="card" style="border-left:4px solid var(--blue);">
-      <h2>Monthly proposal allowance used</h2>
-      <p class="sub">You've used your <%= credits.freeTotal %> complimentary proposals for this month. Your free proposal allowance renews <%= credits.nextReset %>. Additional proposal credits will also be available for purchase soon.</p>
-      <p class="note" style="margin-bottom:0;">You can keep browsing every open opportunity — nothing about your account changes when your allowance runs out.</p>
+      <h2>🔒 Complimentary proposal access hasn't opened yet</h2>
+      <p class="sub">Purchased proposal credits receive <%= PRIORITY_HOURS %>-hour priority access to new Connexli opportunities.</p>
+      <p style="font-weight:700; color:var(--navy); margin:10px 0 2px;">Your complimentary access opens in:</p>
+      <p style="font-size:26px; font-weight:800; color:var(--navy); margin:0 0 10px;"><span data-priority-countdown="<%= new Date(priorityUntil).toISOString() %>">…</span></p>
+      <b style="color:var(--navy);">Purchase proposal credits for immediate access <span class="badge pending">Coming soon</span></b>
+      <p class="note" style="margin-bottom:0;">You can review everything about this opportunity now and submit the moment the countdown ends. Nothing about your account changes while you wait — but proposal spots can fill during the priority period.</p>
+    </div>
+  <% } else if (!proposal && !priority && credits.freeRemaining <= 0 && credits.purchased <= 0) { %>
+    <div class="card" style="border-left:4px solid var(--blue);">
+      <h2>Complimentary credits used for this month</h2>
+      <p class="sub">You've used your <%= credits.freeTotal %> complimentary proposal credits for this month. Your complimentary credits reset <%= credits.nextReset %>. Additional proposal credits will also be available for purchase soon.</p>
+      <p class="note" style="margin-bottom:0;">You can keep browsing every open opportunity — nothing about your account changes when your credits run out.</p>
     </div>
   <% } else { %>
     <div class="card">
@@ -67,6 +76,29 @@
           <% H.CANCELLATION.forEach(c => { %><option <%= (proposal && proposal.cancellation_terms === c) ? 'selected' : '' %>><%= c %></option><% }) %>
         </select>
 
+        <% if (!proposal) { %>
+          <%# Credit choice (Paul, Aug 31 §4): the professional picks which
+              credit funds this NEW submission. During the priority window the
+              complimentary option is locked — and the server enforces the
+              same rule regardless of what the browser shows. %>
+          <label style="margin-top:16px;">Submit this proposal using</label>
+          <div class="optgrid cols">
+            <label class="opt" style="<%= (priority || credits.freeRemaining <= 0) ? 'opacity:.55;' : '' %>">
+              <input type="radio" name="credit_choice" value="complimentary"
+                <%= (priority || credits.freeRemaining <= 0) ? 'disabled' : '' %>
+                <%= (!priority && credits.freeRemaining > 0) ? 'checked' : '' %>>
+              <span class="tile"><span><b>Use a complimentary credit</b>
+                <span class="desc"><% if (priority) { %>🔒 opens in <span data-priority-countdown="<%= new Date(priorityUntil).toISOString() %>">…</span> — purchased credits get <%= PRIORITY_HOURS %>-hour priority<% } else if (credits.freeRemaining <= 0) { %>0 remaining this month · resets <%= credits.nextReset %><% } else { %><%= credits.freeRemaining %> remaining this month · resets <%= credits.nextReset %><% } %></span></span></span>
+            </label>
+            <label class="opt" style="<%= credits.purchased <= 0 ? 'opacity:.55;' : '' %>">
+              <input type="radio" name="credit_choice" value="purchased"
+                <%= credits.purchased <= 0 ? 'disabled' : '' %>
+                <%= (credits.purchased > 0 && (priority || credits.freeRemaining <= 0)) ? 'checked' : '' %>>
+              <span class="tile"><span><b>Use a purchased credit</b>
+                <span class="desc"><%= credits.purchased %> available · purchased credits never expire</span></span></span>
+            </label>
+          </div>
+        <% } %>
         <label style="display:flex; gap:10px; align-items:flex-start; margin-top:16px; cursor:pointer;">
           <input type="checkbox" name="listing_ack" value="yes" required style="margin-top:4px; width:16px; height:16px; flex:none; accent-color:var(--blue);">
           <span style="font-size:13px; color:var(--muted); line-height:1.5; font-weight:400;">I understand that the compensation entered above represents my proposed listing-side compensation. Connexli will present it to the homeowner as separate from any compensation that may involve a buyer's agent.</span>
@@ -102,6 +134,23 @@ if (document.getElementById('fee_amount')) {
   document.getElementById('fee_amount').addEventListener('input', prev);
   feeLbl();
 }
+// Priority-window countdown (display only — the server enforces the rule).
+// When it reaches zero the page reloads so the complimentary option unlocks.
+(function(){
+  var els = document.querySelectorAll('[data-priority-countdown]');
+  if (!els.length) return;
+  function tick(){
+    var done = false;
+    els.forEach(function(el){
+      var left = new Date(el.dataset.priorityCountdown).getTime() - Date.now();
+      if (left <= 0) { done = true; return; }
+      var h = Math.floor(left/3600000), m = Math.floor(left%3600000/60000), s = Math.floor(left%60000/1000);
+      el.textContent = h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+    });
+    if (done) location.reload();
+  }
+  tick(); setInterval(tick, 1000);
+})();
 var line = document.getElementById('closesLine');
 var left = new Date(line.dataset.closes).getTime() - Date.now();
 if (left > 0) {

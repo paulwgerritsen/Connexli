@@ -1,0 +1,19 @@
+<%- include('partials/head') %>
+<div class="narrow">
+  <% if (ok) { %>
+    <h1>Email verified ✓</h1>
+    <div class="checkrow"><span class="c">✓</span><span>Thanks — your email address is confirmed and your account is fully active.</span></div>
+    <div class="card">
+      <p class="sub" style="margin-bottom:14px;">You're all set. If you're a homeowner or buyer, your requests can now go live to verified professionals. If you're a professional, your license check has started and your account moves into the normal Connexli review.</p>
+      <a class="btn full" href="<%= loggedIn ? '/' : '/login' %>"><%= loggedIn ? 'Continue to my dashboard' : 'Log in to continue' %></a>
+    </div>
+  <% } else { %>
+    <h1>That link didn't work</h1>
+    <div class="error">This verification link is invalid, has expired, or was already used.</div>
+    <div class="card">
+      <p class="sub" style="margin-bottom:14px;"><% if (loggedIn) { %>No problem — request a fresh link below and try again.<% } else { %>Log in and we'll help you request a fresh verification link.<% } %></p>
+      <a class="btn full" href="<%= loggedIn ? '/verify-notice' : '/login' %>"><%= loggedIn ? 'Get a new verification link' : 'Log in' %></a>
+    </div>
+  <% } %>
+</div>
+<%- include('partials/foot') %>

@@ -61,6 +61,10 @@
         <p class="note">Utah pilot: your license is checked against the Utah Division of Real Estate registry before your account is activated. By registering you confirm your brokerage authorizes you to offer pricing and services on Connexli.</p>
       </div>
 
+      <% if (typeof turnstileSiteKey === 'string' && turnstileSiteKey) { %>
+        <div class="cf-turnstile" data-sitekey="<%= turnstileSiteKey %>" style="margin-top:16px;"></div>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+      <% } %>
       <button class="btn full" type="submit" style="margin-top:18px;">Create account</button>
       <p class="note" style="text-align:center;">By creating an account you agree to the <a href="https://connexli.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://connexli.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
     </form>

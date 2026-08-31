@@ -16,9 +16,12 @@ router.get('/admin', admin, async (req, res) => {
     pool.query(
       `SELECT ap.*, u.name, u.email, u.phone FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
        WHERE ap.status='pending' ORDER BY ap.created_at ASC`),
+    // Approved (and suspended) professionals — the primary operational list.
+    // Rejected registrations live in their own section (Paul, Aug 31 §13/§14)
+    // so a fraudulent signup never sits next to real approved professionals.
     pool.query(
       `SELECT ap.*, u.name, u.email FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
-       WHERE ap.status <> 'pending' ORDER BY ap.reviewed_at DESC NULLS LAST LIMIT 50`),
+       WHERE ap.status IN ('approved','suspended') ORDER BY ap.reviewed_at DESC NULLS LAST LIMIT 50`),
     pool.query(
       `SELECT r.*, u.name AS seller_name,
          (SELECT COUNT(*) FROM proposals p WHERE p.request_id=r.id)::int AS proposal_count
@@ -51,9 +54,16 @@ router.get('/admin', admin, async (req, res) => {
        (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
      FROM buyer_profiles b JOIN users u ON u.id=b.user_id ORDER BY b.created_at DESC LIMIT 50`);
 
+  // Rejected professional registrations (Paul, Aug 31 §14): kept — never
+  // deleted — with full history, in their own section.
+  const { rows: rejected } = await pool.query(
+    `SELECT ap.*, u.name, u.email, u.created_at AS registered_at
+     FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
+     WHERE ap.status='rejected' ORDER BY ap.reviewed_at DESC NULLS LAST LIMIT 100`);
+
   res.render('admin/dashboard', {
     title: 'Admin', H,
-    pending: pending.rows, agents: agents.rows, requests: requests.rows, m: metrics.rows[0], buyers,
+    pending: pending.rows, agents: agents.rows, rejected, requests: requests.rows, m: metrics.rows[0], buyers,
     reldConfigured: reld.configured(),
     VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE,
   });
@@ -246,7 +256,7 @@ router.get('/admin/contact', admin, async (req, res) => {
 // ---------- professional detail ----------
 router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT ap.*, u.name, u.email, u.phone, u.created_at AS registered_at
+    `SELECT ap.*, u.name, u.email, u.phone, u.created_at AS registered_at, u.email_verified
      FROM agent_profiles ap JOIN users u ON u.id=ap.user_id WHERE ap.user_id=$1`, [req.params.id]);
   const agent = rows[0];
   if (!agent) return res.status(404).render('error', { title: 'Not found', message: 'That professional does not exist.' });
@@ -439,6 +449,12 @@ router.get('/admin/buyers/:id(\\d+)', admin, async (req, res) => {
 router.post('/admin/agents/:id(\\d+)/:action(approve|reject|suspend|reinstate)', admin, async (req, res) => {
   const map = { approve: 'approved', reject: 'rejected', suspend: 'suspended', reinstate: 'approved' };
   const status = map[req.params.action];
+  // Optional rejection reason (Paul, Aug 31 §14) — captured from the detail
+  // page's reject form and shown in the Rejected professionals section.
+  // Preserved on the record even after a reinstate, for history.
+  if (req.params.action === 'reject' && H.clean(req.body.reason, 300)) {
+    await pool.query(`UPDATE agent_profiles SET rejection_reason=$1 WHERE user_id=$2`, [H.clean(req.body.reason, 300), req.params.id]);
+  }
   await pool.query(`UPDATE agent_profiles SET status=$1, reviewed_at=now() WHERE user_id=$2`, [status, req.params.id]);
   const eventNames = { approve: 'agent_approved', reject: 'agent_rejected', suspend: 'agent_suspended', reinstate: 'agent_reinstated' };
   logEvent(eventNames[req.params.action], { userId: parseInt(req.params.id) });

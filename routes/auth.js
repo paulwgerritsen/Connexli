@@ -6,6 +6,11 @@ const rateLimit = require('express-rate-limit');
 const { pool, logEvent } = require('../db');
 const { clean, oneOf, US_STATES } = require('../helpers');
 const mailer = require('../mailer');
+const turnstile = require('../turnstile');
+
+// Email verification is enforced by default. The 'false' setting exists ONLY
+// for legacy automated test runs — never set it in production.
+const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION !== 'false';
 
 const router = require('../middleware').safeRouter(express.Router());
 
@@ -145,8 +150,18 @@ router.post('/reset/:token', authLimiter, async (req, res) => {
 
 router.get('/register', (req, res) => {
   if (req.session.user) return res.redirect('/');
-  res.render('register', { title: 'Create your account', error: null, form: {}, H: require('../helpers') });
+  res.render('register', { title: 'Create your account', error: null, form: {}, H: require('../helpers'), turnstileSiteKey: turnstile.configured() ? turnstile.TURNSTILE_SITE_KEY : null });
 });
+
+// Issue (or re-issue) an email-verification link for one user. Stores only a
+// SHA-256 hash of the token; the link itself goes out through Resend.
+async function sendVerification(userId, email, name) {
+  const token = crypto.randomBytes(32).toString('hex');
+  await pool.query(
+    `UPDATE users SET verify_token_hash=$1, verify_expires = now() + interval '24 hours', verify_sent_at = now() WHERE id=$2`,
+    [hashToken(token), userId]);
+  mailer.verifyEmail(email, name, `${APP_URL}/verify-email/${token}`); // fire and forget
+}
 
 router.post('/register', authLimiter, async (req, res) => {
   const form = {
@@ -161,10 +176,22 @@ router.post('/register', authLimiter, async (req, res) => {
   };
   const password = String(req.body.password || '');
 
-  const fail = (msg) => res.status(400).render('register', { title: 'Create your account', error: msg, form, H: require('../helpers') });
+  const fail = (msg) => res.status(400).render('register', { title: 'Create your account', error: msg, form, H: require('../helpers'), turnstileSiteKey: turnstile.configured() ? turnstile.TURNSTILE_SITE_KEY : null });
 
   if (!form.name || !form.email.includes('@')) return fail('Please enter your name and a valid email address.');
   if (password.length < 8) return fail('Password must be at least 8 characters.');
+
+  // Human verification (Paul, Aug 31): the Cloudflare Turnstile token from
+  // the signup page is validated server-side BEFORE any account is created —
+  // and therefore before any verification email or RELD lookup can happen.
+  // Bots hitting this endpoint directly have no valid token and stop here.
+  if (turnstile.configured()) {
+    const human = await turnstile.verify(req.body['cf-turnstile-response'], req.ip);
+    if (!human.ok) {
+      logEvent('turnstile_rejected', { meta: { error: human.error, role: form.role } });
+      return fail("We couldn't confirm you're human. Please complete the verification box and try again.");
+    }
+  }
   if (form.role === 'agent' && (!form.license_number || !form.brokerage)) {
     return fail('Professionals must provide a license number and brokerage. This is how Connexli keeps the marketplace verified.');
   }
@@ -180,7 +207,7 @@ router.post('/register', authLimiter, async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO users (role, name, email, phone, password_hash) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      `INSERT INTO users (role, name, email, phone, password_hash, email_verified) VALUES ($1,$2,$3,$4,$5,false) RETURNING id`,
       [form.role, form.name, form.email, form.phone, hash]
     );
     if (form.role === 'agent') {
@@ -193,19 +220,20 @@ router.post('/register', authLimiter, async (req, res) => {
     await client.query('COMMIT');
     if (form.role === 'agent') {
       mailer.adminNewAgent({ ...form, service_city: geo ? geo.city : null }); // fire and forget
-      // RELD license verification (Paul, Aug 29): a deliberate signup event.
-      // Only runs when RELD_API_KEY is configured; an outage or missing key
-      // leaves the account in the normal needs_verification review flow.
-      const reld = require('../reld');
-      if (reld.configured()) {
-        try { await reld.verifyProfessional(rows[0].id); }
-        catch (e) { console.error('RELD signup verification error:', e.message); }
-      }
+      // RELD (Paul, Aug 31 §5): the license lookup no longer runs at signup —
+      // it runs when the professional clicks their email-verification link
+      // (see /verify-email below). A bot that submits this form can never
+      // trigger a RELD API request: Turnstile blocks it above, and even a
+      // token-passing bot would still need to control the email inbox.
     }
     logEvent(form.role === 'agent' ? 'agent_registered' : 'seller_registered',
       { userId: rows[0].id, meta: form.role === 'agent' ? { service_zip: form.service_zip } : {} });
     req.session.user = { id: rows[0].id, role: form.role, name: form.name, email: form.email };
-    res.redirect('/');
+    // Email-ownership verification (Paul, Aug 31): send the link, then show
+    // the "check your email" screen. With enforcement disabled (legacy test
+    // runs only) the old straight-to-dashboard redirect is kept.
+    await sendVerification(rows[0].id, form.email, form.name);
+    res.redirect(REQUIRE_EMAIL_VERIFICATION ? '/verify-notice' : '/');
   } catch (e) {
     await client.query('ROLLBACK');
     if (e.code === '23505') return fail('An account with that email already exists. Try logging in instead.');
@@ -217,6 +245,67 @@ router.post('/register', authLimiter, async (req, res) => {
 
 router.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
+});
+
+// ---------- email verification (Paul, Aug 31) ----------
+// "Check your email" screen shown right after signup (and any time an
+// unverified user is sent here by an activation gate).
+router.get('/verify-notice', async (req, res) => {
+  if (!req.session.user) return res.redirect('/login');
+  const { rows } = await pool.query(`SELECT email_verified, email FROM users WHERE id=$1`, [req.session.user.id]);
+  if (!rows[0] || rows[0].email_verified) return res.redirect('/');
+  res.render('verify-notice', { title: 'Check your email', email: rows[0].email, resent: req.query.resent === '1', error: req.query.wait === '1' ? 'A verification email was just sent — please wait a minute before requesting another.' : null });
+});
+
+// The link from the verification email. Single-use, 24-hour expiry; works
+// whether or not the user is still logged in on this device.
+router.get('/verify-email/:token', async (req, res) => {
+  if (!/^[a-f0-9]{64}$/.test(String(req.params.token || ''))) {
+    return res.status(400).render('verify-done', { title: 'Verification link problem', ok: false, loggedIn: !!req.session.user });
+  }
+  const { rows } = await pool.query(
+    `UPDATE users SET email_verified=true, verify_token_hash=NULL, verify_expires=NULL
+     WHERE verify_token_hash=$1 AND verify_expires > now() AND email_verified=false
+     RETURNING id, role, name, email`, [hashToken(req.params.token)]);
+  const user = rows[0];
+  if (!user) {
+    return res.status(400).render('verify-done', { title: 'Verification link problem', ok: false, loggedIn: !!req.session.user });
+  }
+  logEvent('email_verified', { userId: user.id });
+  // RELD license verification now runs HERE for professionals (Paul, Aug 31
+  // §5): human check passed at signup, email ownership just proven — only
+  // then is a limited RELD lookup spent. Failures never block verification.
+  if (user.role === 'agent') {
+    const reld = require('../reld');
+    if (reld.configured()) {
+      try { await reld.verifyProfessional(user.id); }
+      catch (e) { console.error('RELD post-verification lookup error:', e.message); }
+    }
+  }
+  res.render('verify-done', { title: 'Email verified', ok: true, loggedIn: !!req.session.user });
+});
+
+// Resend the verification email. Rate-limited two ways: per connection (the
+// limiter) and per account (at most one email per 60 seconds).
+const resendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many verification emails requested. Please wait 15 minutes and try again.',
+});
+
+router.post('/resend-verification', resendLimiter, async (req, res) => {
+  if (!req.session.user) return res.redirect('/login');
+  const { rows } = await pool.query(`SELECT id, email, name, email_verified, verify_sent_at FROM users WHERE id=$1`, [req.session.user.id]);
+  const user = rows[0];
+  if (!user || user.email_verified) return res.redirect('/');
+  if (user.verify_sent_at && Date.now() - new Date(user.verify_sent_at).getTime() < 60000) {
+    return res.redirect('/verify-notice?wait=1');
+  }
+  await sendVerification(user.id, user.email, user.name);
+  logEvent('verification_resent', { userId: user.id });
+  res.redirect('/verify-notice?resent=1');
 });
 
 // ---------- public contact form (Paul, Aug 23) ----------

@@ -77,7 +77,7 @@ app.use(async (req, res, next) => { await closeAndNotify(); next(); });
 // Every feature area the app expects to serve. If a route file is missing the
 // server refuses to start with a clear message — a half-deployed update can
 // never boot silently with features missing.
-const APP_VERSION = '2026-08-30-reld-credits';
+const APP_VERSION = '2026-08-31-credits-priority-verification';
 const ROUTE_MODULES = ['auth', 'seller', 'buyer', 'agent', 'admin'];
 for (const m of ROUTE_MODULES) {
   app.use('/', require('./routes/' + m));

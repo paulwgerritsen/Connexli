@@ -325,10 +325,46 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_credit_ledger_agent ON credit_ledger(agent_id, created_at);
+
+-- v19 (Paul, Aug 31): email verification + Turnstile bot protection.
+-- email_verified gates consumer request ACTIVATION and the professional RELD
+-- lookup — it never blocks logging in or browsing. Existing accounts are
+-- grandfathered as verified by init() the first time this column appears.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_token_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_expires TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_sent_at TIMESTAMPTZ;
+
+-- v19: 5-hour paid-credit priority window (Paul, Aug 31 §3/§9). Set when a
+-- request/profile becomes live to professionals (creation, publish, or a new
+-- round). NULL or past = no priority restriction. Server-enforced.
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS priority_until TIMESTAMPTZ;
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS priority_until TIMESTAMPTZ;
+
+-- v19: rejected professionals get their own admin section; an optional
+-- rejection reason can be captured from the detail page.
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+
+-- v19: payment ARCHITECTURE only (Paul, Aug 31 §8) — no processor is
+-- integrated. These columns let a future confirmed payment be recorded
+-- against its ledger entry without locking us to any provider.
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS payment_provider TEXT;
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS payment_transaction_id TEXT;
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS package_key TEXT;
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS amount_paid_cents INTEGER;
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS payment_status TEXT;
 `;
 
 async function init() {
   await pool.query(SCHEMA);
+
+  // Grandfather migration (Paul, Aug 31 §9 of the verification PDF): accounts
+  // created before email verification existed are treated as verified — their
+  // requests, proposals, and history keep working exactly as before. Runs
+  // only on rows where the new column is still NULL (i.e. exactly once per
+  // pre-existing account); every NEW account is created with false explicitly.
+  await pool.query(`UPDATE users SET email_verified = true WHERE email_verified IS NULL`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT false`);
 
   // Enforce ONE account per email address, case-insensitively (Paul, Aug 15).
   // The CREATE TABLE above declares UNIQUE(email), but a production table
@@ -442,12 +478,33 @@ function scheduleFollowups(type, oppId, client, professional, connectedAt = new 
   }
 }
 
-// ---------- proposal credits (Paul, Aug 29) ----------
+// ---------- proposal credits (Paul, Aug 29; updated Aug 31) ----------
 // Free monthly allowance is DERIVED from the ledger (no reset job): count of
 // this month's complimentary submissions vs the allowance. Month = calendar
 // month in America/Denver. Purchased balance = SUM(amount) over all entries.
-const FREE_PROPOSALS_PER_MONTH = parseInt(process.env.FREE_PROPOSALS_PER_MONTH, 10) || 10;
+// Aug 31: allowance is now 5 (was 10). Because the balance is derived, the
+// change is the source of truth immediately: a tester who already used more
+// than 5 this month simply shows 0 remaining — never a negative number.
+const FREE_PROPOSALS_PER_MONTH = parseInt(process.env.FREE_PROPOSALS_PER_MONTH, 10) || 5;
 const CREDIT_TZ = 'America/Denver';
+
+// 5-hour paid-credit priority window (Paul, Aug 31 §3). Configurable via env;
+// legacy test suites run with PRIORITY_HOURS=0 to disable it.
+const PRIORITY_HOURS = process.env.PRIORITY_HOURS !== undefined
+  ? Math.max(0, parseFloat(process.env.PRIORITY_HOURS) || 0) : 5;
+
+// Paid bundle pricing (Paul, Aug 31 §6) — configurable, not hard-coded at
+// call sites. Override with a CREDIT_BUNDLES env var containing JSON of the
+// same shape to change pricing without a code deploy.
+let CREDIT_BUNDLES = [
+  { key: 'bundle5', credits: 5, price: 50, label: '5 Proposal Credits' },
+  { key: 'bundle11', credits: 11, price: 100, label: '11 Proposal Credits — Buy 10, Get 1 Free' },
+  { key: 'bundle25', credits: 25, price: 200, label: '25 Proposal Credits — Buy 20, Get 5 Free' },
+];
+if (process.env.CREDIT_BUNDLES) {
+  try { CREDIT_BUNDLES = JSON.parse(process.env.CREDIT_BUNDLES); }
+  catch (e) { console.error('Ignoring malformed CREDIT_BUNDLES env var:', e.message); }
+}
 
 async function creditSummary(agentId) {
   const { rows } = await pool.query(
@@ -468,16 +525,30 @@ async function creditSummary(agentId) {
   };
 }
 
-// Consume one credit for a just-inserted proposal. Complimentary first
-// (Paul §15); purchased only once the monthly allowance is exhausted.
-async function consumeCredit(agentId, proposalTable, proposalId) {
-  const s = await creditSummary(agentId);
-  const funding = s.freeRemaining > 0 ? 'complimentary' : 'purchased';
-  await pool.query(
+// Record one credit for a just-inserted proposal, INSIDE the caller's open
+// transaction (Paul, Aug 31 §4/§10): the professional CHOOSES the funding
+// source — free-first auto-consumption is gone. Returns null on success or a
+// human-readable error string; on error the caller must ROLLBACK, which also
+// undoes the proposal insert — so a failed submission never costs a credit
+// and a race can never drive the purchased balance negative.
+async function recordProposalCredit(client, agentId, funding, proposalTable, proposalId) {
+  await client.query(
     `INSERT INTO credit_ledger (agent_id, entry_type, funding_source, amount, proposal_table, proposal_id)
      VALUES ($1, 'proposal_submitted', $2, $3, $4, $5)`,
     [agentId, funding, funding === 'purchased' ? -1 : 0, proposalTable, proposalId]);
-  return funding;
+  if (funding === 'purchased') {
+    const { rows } = await client.query(
+      `SELECT COALESCE(SUM(amount),0)::int AS bal FROM credit_ledger WHERE agent_id=$1`, [agentId]);
+    if (rows[0].bal < 0) return 'You have no purchased proposal credits available.';
+  } else {
+    const { rows } = await client.query(
+      `SELECT COUNT(*)::int AS used FROM credit_ledger
+       WHERE agent_id=$1 AND entry_type='proposal_submitted' AND funding_source='complimentary'
+         AND (created_at AT TIME ZONE $2) >= date_trunc('month', now() AT TIME ZONE $2)`,
+      [agentId, CREDIT_TZ]);
+    if (rows[0].used > FREE_PROPOSALS_PER_MONTH) return `You've used your ${FREE_PROPOSALS_PER_MONTH} complimentary proposal credits for this month.`;
+  }
+  return null;
 }
 
 // Record a marketplace event. Fire-and-forget: analytics must never be able
@@ -492,5 +563,6 @@ function logEvent(eventType, { userId = null, requestId = null, proposalId = nul
 
 module.exports = {
   pool, init, closeExpired, expireBuyerProfiles, logEvent, scheduleFollowups,
-  creditSummary, consumeCredit, FREE_PROPOSALS_PER_MONTH, CREDIT_TZ,
+  creditSummary, recordProposalCredit, FREE_PROPOSALS_PER_MONTH, CREDIT_TZ,
+  PRIORITY_HOURS, CREDIT_BUNDLES,
 };
