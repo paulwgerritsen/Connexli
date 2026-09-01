@@ -366,6 +366,16 @@ ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS review_resolved_by TEXT;
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS review_resolution TEXT;
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS confirmed_reld_name TEXT;
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS confirmed_reld_brokerage TEXT;
+
+-- v21 (Paul, Sep 1 — buyer UX): expected home tours moved from the
+-- professional's proposal to the BUYER's request (an estimate, never a
+-- contractual limit); the shortfall yes/no question becomes an explicit
+-- policy choice. Historical columns (included_tours, rebate,
+-- gap_responsibility) are PRESERVED — old proposals keep their data; the
+-- fields are simply no longer collected on new proposals.
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS expected_tours TEXT;
+ALTER TABLE buyer_proposals ADD COLUMN IF NOT EXISTS shortfall_policy TEXT
+  CHECK (shortfall_policy IN ('buyer_pays','min_fee') OR shortfall_policy IS NULL);
 `;
 
 async function init() {

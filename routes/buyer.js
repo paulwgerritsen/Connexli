@@ -124,6 +124,9 @@ router.post('/buyer/new', consumer, async (req, res) => {
     search_areas: H.clean(req.body.search_areas, 200),
     price_range: Object.keys(H.PRICE_RANGES).includes(req.body.price_range) ? req.body.price_range : null,
     timeline: H.oneOf(req.body.timeline, H.B_TIMELINE, null),
+    // Buyer's own touring estimate (Paul, Sep 1 UX #1) — optional, an
+    // estimate only, never a contractual limit on showings.
+    expected_tours: H.oneOf(req.body.expected_tours, H.B_EXPECTED_TOURS, null),
     in_utah: req.body.in_utah !== 'no',
     origin_state: H.oneOf(req.body.origin_state, H.US_STATES, ''), // dropdown: standardized state names only
     move_reason: H.clean(req.body.move_reason, 120),
@@ -170,13 +173,13 @@ router.post('/buyer/new', consumer, async (req, res) => {
   const published = badge !== 'exploring';
   const { rows } = await pool.query(
     `INSERT INTO buyer_profiles (user_id, readiness, published, financing_type, lender_status, down_payment,
-       current_situation, need_to_sell, search_areas, price_range, timeline, in_utah, origin_state,
+       current_situation, need_to_sell, search_areas, price_range, timeline, expected_tours, in_utah, origin_state,
        move_reason, visit_dates, video_tours, purchase_purpose, bba, bba_expires,
        window_hours, closes_at, search_geo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-       $20, now() + make_interval(hours => $20), $21) RETURNING *`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+       $21, now() + make_interval(hours => $21), $22) RETURNING *`,
     [req.session.user.id, badge, published, f.financing_type, f.lender_status, f.down_payment,
-     f.current_situation, f.need_to_sell, f.search_areas, f.price_range, f.timeline, f.in_utah,
+     f.current_situation, f.need_to_sell, f.search_areas, f.price_range, f.timeline, f.expected_tours, f.in_utah,
      f.origin_state, f.move_reason, f.visit_dates, f.video_tours, f.purchase_purpose, f.bba, f.bba_expires,
      f.window_hours, JSON.stringify(searchGeo)]
   );

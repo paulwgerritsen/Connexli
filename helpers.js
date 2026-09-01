@@ -41,6 +41,9 @@ const B_SELL_FIRST = ['No', 'Yes — not started', 'Yes — already listed', 'Ye
 const B_TIMELINE = ['ASAP', 'Within 30 days', '1–3 months', '3–6 months', '6–12 months', 'Just researching'];
 const B_PURPOSE = ['Primary residence', 'Second home', 'Investment'];
 const B_BBA = ['No', "Yes — it's expired or cancelled", 'Yes — currently active'];
+// Expected home tours (Paul, Sep 1 UX #1): the BUYER's estimate, asked in the
+// request — an estimate only, never a contractual limit on showings.
+const B_EXPECTED_TOURS = ['1–5 homes', '6–10 homes', '11–15 homes', '16–20 homes', 'More than 20', 'Not sure yet'];
 const B_PRIORITIES = ['Schools', 'Commute', 'Yard/lot size', 'Main-level living', 'Updated/move-in ready', 'Fixer-upper potential', 'New construction', 'Quiet neighborhood', 'Walkability', 'Views', 'Room to grow', 'Investment value'];
 // Buyer proposals: two structures only (Paul, Aug 11 — hourly/retainer removed
 // from the FORM for simplicity; legacy rows still display via buyerFeeLabel).
@@ -176,7 +179,7 @@ module.exports = {
   PROPERTY_TYPES, BEDS, BATHS, SQFT, YEARS, CONDITIONS, PRIORITIES, SERVICES,
   CANCELLATION, PRICE_RANGES, WINDOWS, ROUND_CAP,
   B_FINANCING, B_LENDER, B_DOWN, B_SITUATION, B_SELL_FIRST, B_TIMELINE,
-  B_PURPOSE, B_BBA, B_PRIORITIES, BP_STRUCTURES, BP_TOURS, BP_RESPONSE, BP_SPECIALTIES, US_STATES,
+  B_PURPOSE, B_BBA, B_PRIORITIES, B_EXPECTED_TOURS, BP_STRUCTURES, BP_TOURS, BP_RESPONSE, BP_SPECIALTIES, US_STATES,
   readiness, READINESS_LABELS, buyerFeeLabel,
   midPrice, money, estFee, feeLabel, clean, oneOf,
   estBuyerFee, windowOpen, spotsLeft, takenThisRound,

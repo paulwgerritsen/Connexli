@@ -26,6 +26,7 @@
     <div class="sumrow"><span>Financing</span><span><b><%= buyer.financing_type %></b> · <%= buyer.lender_status %> · <%= buyer.down_payment %> down</span></div>
     <div class="sumrow"><span>Price range & purpose</span><span><%= buyer.price_range %> · <%= buyer.purchase_purpose %></span></div>
     <div class="sumrow"><span>Timeline</span><span><%= buyer.timeline %></span></div>
+    <% if (buyer.expected_tours) { %><div class="sumrow"><span>Expected home tours</span><span><%= buyer.expected_tours %> <span class="hint">(buyer's estimate — not a limit on showings)</span></span></div><% } %>
     <div class="sumrow"><span>Search areas</span><span><%= buyer.search_areas %></span></div>
     <div class="sumrow"><span>Current home</span><span><%= buyer.current_situation %><%= buyer.need_to_sell !== 'No' ? ' · Must sell first (' + buyer.need_to_sell.replace('Yes — ','') + ')' : '' %></span></div>
     <% if (!buyer.in_utah) { %><div class="sumrow"><span>Relocation</span><span>From <%= buyer.origin_state %><%= buyer.move_reason ? ' · ' + buyer.move_reason : '' %><%= buyer.visit_dates ? ' · visiting ' + buyer.visit_dates : '' %></span></div><% } %>
@@ -70,28 +71,36 @@
     <div class="card">
       <p class="note" style="margin-top:2px;">The amount below is your <b>proposed buyer-agent compensation</b> — presented to the buyer with a reminder that the source of payment can vary by transaction and that their own agreement governs what they owe.</p>
       <label>Fee structure</label>
-      <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+      <div class="optgrid cols keep2">
         <label class="opt"><input type="radio" name="comp_structure" value="pct" <%= (!proposal || proposal.comp_structure === 'pct' || !['pct','flat'].includes(proposal.comp_structure)) ? 'checked' : '' %> onchange="bFee()"><span class="tile"><b>% of purchase price</b><span class="desc">at closing</span></span></label>
         <label class="opt"><input type="radio" name="comp_structure" value="flat" <%= (proposal && proposal.comp_structure === 'flat') ? 'checked' : '' %> onchange="bFee()"><span class="tile"><b>Flat fee ($)</b><span class="desc">at closing</span></span></label>
       </div>
       <label for="comp_amount" id="bFeeLbl">Your proposed buyer-agent compensation</label>
       <input type="text" id="comp_amount" name="comp_amount" inputmode="decimal" placeholder="e.g. 2.5 or 6000" value="<%= proposal ? parseFloat(proposal.comp_amount) || '' : '' %>" required>
       <p class="note" id="bFeePrev"></p>
-      <label for="min_fee">Minimum fee in dollars (optional)</label>
-      <input type="text" id="min_fee" name="min_fee" placeholder="e.g. 5000" value="<%= proposal && proposal.min_fee ? parseFloat(proposal.min_fee) : '' %>">
-      <label>If the seller does not pay the full buyer-agent compensation agreed between you and your client, will the buyer be responsible for paying the remaining balance at closing?</label>
-      <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
-        <label class="opt"><input type="radio" name="gap_responsibility" value="Yes" <%= (!proposal || proposal.gap_responsibility !== 'No') ? 'checked' : '' %>><span class="tile"><b>Yes</b><span class="desc">buyer covers any remaining balance</span></span></label>
-        <label class="opt"><input type="radio" name="gap_responsibility" value="No" <%= (proposal && proposal.gap_responsibility === 'No') ? 'checked' : '' %>><span class="tile"><b>No</b><span class="desc">I won't ask the buyer to cover a shortfall</span></span></label>
+      <%# Shortfall policy (Paul, Sep 1 UX #2): replaces the old yes/no
+          question. Option B requires the minimum-compensation amount.
+          Legacy proposals map: gap 'No' → minimum-fee policy. %>
+      <% const sfp = proposal ? (proposal.shortfall_policy || (proposal.gap_responsibility === 'No' ? 'min_fee' : 'buyer_pays')) : 'buyer_pays'; %>
+      <label>If seller-paid compensation is less than your proposed fee, how will you handle the difference?</label>
+      <div class="optgrid stack-sm">
+        <label class="opt"><input type="radio" name="shortfall_policy" value="buyer_pays" <%= sfp !== 'min_fee' ? 'checked' : '' %> onchange="sfTog()"><span class="tile"><span><b>Buyer pays the difference</b><span class="desc">Any seller-paid compensation is credited toward my proposed fee. The buyer is responsible for any remaining amount.</span></span></span></label>
+        <label class="opt"><input type="radio" name="shortfall_policy" value="min_fee" <%= sfp === 'min_fee' ? 'checked' : '' %> onchange="sfTog()"><span class="tile"><span><b>I'll accept the seller-paid amount, subject to a minimum fee</b><span class="desc">The buyer will not pay the full difference as long as my minimum compensation is met.</span></span></span></label>
       </div>
-      <label for="rebate">Rebate offer, if any (optional — rebates are legal in Utah)</label>
-      <input type="text" id="rebate" name="rebate" value="<%= proposal ? proposal.rebate : '' %>">
+      <div id="minFeeWrap" style="display:<%= sfp === 'min_fee' ? 'block' : 'none' %>;">
+        <label for="min_fee">Minimum compensation I will accept ($)</label>
+        <input type="text" id="min_fee" name="min_fee" inputmode="decimal" placeholder="e.g. 5000" value="<%= proposal && proposal.min_fee ? parseFloat(proposal.min_fee) : '' %>" <%= sfp === 'min_fee' ? 'required' : '' %>>
+      </div>
+      <script>
+      function sfTog(){
+        var isMin = document.querySelector('input[name="shortfall_policy"][value="min_fee"]').checked;
+        var wrap = document.getElementById('minFeeWrap');
+        wrap.style.display = isMin ? 'block' : 'none';
+        document.getElementById('min_fee').required = isMin;
+      }
+      </script>
     </div>
     <div class="card">
-      <label for="included_tours">Tours included</label>
-      <select id="included_tours" name="included_tours">
-        <% H.BP_TOURS.forEach(t => { %><option <%= proposal && proposal.included_tours === t ? 'selected' : '' %>><%= t %></option><% }) %>
-      </select>
       <div class="optgrid" style="margin-top:8px;">
         <label class="opt"><input type="checkbox" name="video_tours" value="yes" <%= proposal && proposal.video_tours ? 'checked' : '' %>><span class="tile"><b style="font-weight:600;">I offer video / virtual tours</b><span class="desc">important for relocating buyers</span></span></label>
       </div>
@@ -100,7 +109,7 @@
         <% H.BP_RESPONSE.forEach(r => { %><option <%= proposal && proposal.response_time === r ? 'selected' : '' %>><%= r %></option><% }) %>
       </select>
       <label>Your specialties</label>
-      <div class="optgrid cols">
+      <div class="optgrid cols chips">
         <% H.BP_SPECIALTIES.forEach(s => { %>
           <label class="opt"><input type="checkbox" name="specialties" value="<%= s %>" <%= proposal && (proposal.specialties || '').includes(s) ? 'checked' : '' %>><span class="tile"><b style="font-weight:500;"><%= s %></b></span></label>
         <% }) %>
@@ -120,7 +129,7 @@
       <div class="card">
         <%# Credit choice (Paul, Aug 31 §4) — server-enforced regardless. %>
         <label>Submit this proposal using</label>
-        <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+        <div class="optgrid cols">
           <label class="opt" style="<%= (priority || credits.freeRemaining <= 0) ? 'opacity:.55;' : '' %>">
             <input type="radio" name="credit_choice" value="complimentary"
               <%= (priority || credits.freeRemaining <= 0) ? 'disabled' : '' %>

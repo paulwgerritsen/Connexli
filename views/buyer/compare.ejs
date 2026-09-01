@@ -1,7 +1,7 @@
 <%- include('../partials/head') %>
 <a href="/buyer/requests/<%= profile.id %>" style="font-size:14px;">‹ Back to proposals</a>
 <h1 style="margin-top:8px;">Your proposals, side by side</h1>
-<p class="sub">Estimated compensation assumes a <%= H.money(H.midPrice(profile.price_range)) %> purchase (the middle of your range). Each amount is that professional's proposed <b>buyer-agent compensation</b> — sellers often contribute toward it, and each agent's answer on any shortfall is shown below. Scroll sideways on smaller screens.</p>
+<p class="sub">Estimated compensation assumes a <%= H.money(H.midPrice(profile.price_range)) %> purchase (the middle of your range). Each amount is that professional's proposed <b>buyer-agent compensation</b> — sellers often contribute toward it, and each professional's shortfall approach is explained below. These are proposal terms, not a contract: your final compensation obligation is governed by the representation agreement you would sign directly with the professional's brokerage. Scroll sideways on smaller screens.</p>
 
 <% if (proposals.length === 0) { %>
   <div class="card"><p class="sub">No proposals yet — they'll appear here the moment your window closes with proposals to compare.</p></div>
@@ -13,11 +13,16 @@
     <tr><td>12-mo transactions*</td><% proposals.forEach(p => { %><td><%= (p.transactions_seller_12mo === null && p.transactions_buyer_12mo === null) ? '—' : ((p.transactions_buyer_12mo ?? 0) + ' buyer · ' + (p.transactions_seller_12mo ?? 0) + ' seller') %></td><% }) %></tr>
     <tr><td>Proposed compensation</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.buyerFeeLabel(p) %></b></td><% }) %></tr>
     <tr><td>Est. compensation</td><% proposals.forEach(p => { %><% const est = H.estBuyerFee(p, profile.price_range); %><td><% if (est === null) { %>—<% } else { %><b style="color:var(--navy); font-size:15px;"><%= H.money(est) %></b><% } %></td><% }) %></tr>
-    <tr><td>Minimum fee</td><% proposals.forEach(p => { %><td><%= p.min_fee ? H.money(p.min_fee) : '—' %></td><% }) %></tr>
-    <tr><td>If the seller doesn't cover it all</td><% proposals.forEach(p => { %>
-      <td><% if (p.gap_responsibility === 'Yes') { %><span class="exc">You'd cover the balance</span><% } else if (p.gap_responsibility === 'No') { %><span class="inc">✓ Won't ask you to pay the difference</span><% } else { %>—<% } %></td>
+    <%# Shortfall policy in plain English (Paul, Sep 1 UX #2), with the
+        example amounts computed at the buyer's range midpoint. Legacy
+        proposals map from the old yes/no answer. %>
+    <tr><td>If the seller pays less than the fee</td><% proposals.forEach(p => { %>
+      <% const sfp = p.shortfall_policy || (p.gap_responsibility === 'No' ? (p.min_fee ? 'min_fee' : 'no_gap') : (p.gap_responsibility === 'Yes' ? 'buyer_pays' : null)); %>
+      <% const sfEst = H.estBuyerFee(p, profile.price_range); %>
+      <td><% if (sfp === 'buyer_pays') { %><span class="exc">Seller-paid amounts are credited toward the fee — you'd pay any remainder<% if (sfEst !== null) { %> (e.g. seller pays <%= H.money(Math.round(sfEst / 2)) %> → you'd cover <%= H.money(sfEst - Math.round(sfEst / 2)) %>)<% } %></span>
+      <% } else if (sfp === 'min_fee' && p.min_fee) { %><span class="inc">✓ Accepts the seller-paid amount, subject to a <%= H.money(p.min_fee) %> minimum — you'd only pay what it takes to reach that minimum</span>
+      <% } else if (sfp === 'no_gap') { %><span class="inc">✓ Won't ask you to pay the difference</span><% } else { %>—<% } %></td>
     <% }) %></tr>
-    <tr><td>Home tours included</td><% proposals.forEach(p => { %><td><%= p.included_tours || '—' %></td><% }) %></tr>
     <tr><td>Video tours</td><% proposals.forEach(p => { %><td><%- p.video_tours ? '<span class="inc">✓ Offered</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
     <tr><td>Response time</td><% proposals.forEach(p => { %><td><%= p.response_time || '—' %></td><% }) %></tr>
     <tr><td>Specialties</td><% proposals.forEach(p => { %><td><%= p.specialties || '—' %></td><% }) %></tr>

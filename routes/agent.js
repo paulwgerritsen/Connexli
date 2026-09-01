@@ -183,7 +183,7 @@ router.get('/agent/proposals/:id(\\d+)', agent, async (req, res) => {
 router.get('/agent/buyer-proposals/:id(\\d+)', agent, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT bp.*, b.readiness, b.financing_type, b.lender_status, b.down_payment, b.search_areas,
-       b.price_range AS b_price_range, b.timeline, b.purchase_purpose, b.in_utah, b.origin_state,
+       b.price_range AS b_price_range, b.timeline, b.expected_tours, b.purchase_purpose, b.in_utah, b.origin_state,
        b.property_prefs, b.priorities AS b_priorities, b.need_to_sell, b.first_time,
        b.status AS profile_status, b.round AS profile_round,
        (SELECT COUNT(*) FROM buyer_proposals x WHERE x.profile_id=bp.profile_id AND x.connected)::int AS someone_won
@@ -275,30 +275,44 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
   }
 
   const comp_structure = ['pct', 'flat'].includes(req.body.comp_structure) ? req.body.comp_structure : 'pct';
-  const gap_responsibility = req.body.gap_responsibility === 'No' ? 'No' : 'Yes';
+  // Shortfall policy (Paul, Sep 1 UX #2) replaces the old yes/no question:
+  //  buyer_pays — seller-paid compensation is credited toward the proposed
+  //              fee; the buyer covers any remaining amount.
+  //  min_fee   — the professional accepts the seller-paid amount, subject to
+  //              a REQUIRED minimum compensation figure.
+  // gap_responsibility is still stored (derived) so historical displays and
+  // analytics keep working.
+  const shortfall_policy = req.body.shortfall_policy === 'min_fee' ? 'min_fee' : 'buyer_pays';
+  const gap_responsibility = shortfall_policy === 'buyer_pays' ? 'Yes' : 'No';
   const comp_amount = parseFloat(String(req.body.comp_amount).replace(/[^0-9.]/g, ''));
-  const min_fee = String(req.body.min_fee || '').trim() === '' ? null : parseFloat(String(req.body.min_fee).replace(/[^0-9.]/g, ''));
+  const min_fee = shortfall_policy === 'min_fee'
+    ? (String(req.body.min_fee || '').trim() === '' ? NaN : parseFloat(String(req.body.min_fee).replace(/[^0-9.]/g, '')))
+    : null; // Option A has no minimum-fee concept
   let specialties = req.body.specialties || [];
   if (!Array.isArray(specialties)) specialties = [specialties];
   specialties = specialties.filter(s => H.BP_SPECIALTIES.includes(s));
   const fields = {
-    included_tours: H.oneOf(req.body.included_tours, H.BP_TOURS, H.BP_TOURS[3]),
+    // Tours-included and rebate are no longer collected (Paul, Sep 1 UX #1/#9)
+    // — the columns stay for historical proposals, new rows store NULL.
     video_tours: req.body.video_tours === 'yes',
     response_time: H.oneOf(req.body.response_time, H.BP_RESPONSE, H.BP_RESPONSE[1]),
     seller_contribution: H.clean(req.body.seller_contribution, 300),
-    rebate: H.clean(req.body.rebate, 200),
     plan: H.clean(req.body.plan, 2000),
   };
 
-  const bad = !comp_amount || comp_amount <= 0 ||
+  const badFee = !comp_amount || comp_amount <= 0 ||
     (comp_structure === 'pct' && comp_amount > 10) ||
-    (comp_structure === 'flat' && comp_amount > 100000) ||
-    (min_fee !== null && (Number.isNaN(min_fee) || min_fee < 0 || min_fee > 100000));
-  if (bad) {
+    (comp_structure === 'flat' && comp_amount > 100000);
+  const badMin = shortfall_policy === 'min_fee' && (Number.isNaN(min_fee) || min_fee <= 0 || min_fee > 100000);
+  if (badFee || badMin) {
     return res.status(400).render('agent/buyer-opportunity', {
       title: 'Buyer opportunity', buyer, H,
-      proposal: { comp_structure, comp_amount: req.body.comp_amount, min_fee: req.body.min_fee, specialties: specialties.join(', '), gap_responsibility, ...fields },
-      error: 'Please enter a valid amount for the fee structure you chose (percentages up to 10, or a flat dollar amount in a reasonable range).',
+      proposal: { comp_structure, comp_amount: req.body.comp_amount, min_fee: req.body.min_fee, specialties: specialties.join(', '), shortfall_policy, gap_responsibility, ...fields },
+      credits: await creditSummary(req.session.user.id), blockedLicense: false,
+      priority: priorityActive(buyer), priorityUntil: buyer.priority_until, PRIORITY_HOURS,
+      error: badFee
+        ? 'Please enter a valid amount for the fee structure you chose (percentages up to 10, or a flat dollar amount in a reasonable range).'
+        : 'You chose "subject to a minimum fee" — please enter the minimum compensation you will accept (a dollar amount in a reasonable range).',
     });
   }
 
@@ -317,17 +331,18 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     if (!wasUpdate && cnt[0].n >= live.proposal_cap) { capReached = true; }
     else {
       const { rows: saved } = await client.query(
-        `INSERT INTO buyer_proposals (profile_id, agent_id, comp_structure, comp_amount, min_fee, included_tours,
-           video_tours, response_time, specialties, seller_contribution, rebate, plan, round, gap_responsibility)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        `INSERT INTO buyer_proposals (profile_id, agent_id, comp_structure, comp_amount, min_fee,
+           video_tours, response_time, specialties, seller_contribution, plan, round, gap_responsibility, shortfall_policy)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT (profile_id, agent_id) DO UPDATE SET
            comp_structure=EXCLUDED.comp_structure, comp_amount=EXCLUDED.comp_amount, min_fee=EXCLUDED.min_fee,
-           included_tours=EXCLUDED.included_tours, video_tours=EXCLUDED.video_tours, response_time=EXCLUDED.response_time,
+           video_tours=EXCLUDED.video_tours, response_time=EXCLUDED.response_time,
            specialties=EXCLUDED.specialties, seller_contribution=EXCLUDED.seller_contribution,
-           rebate=EXCLUDED.rebate, plan=EXCLUDED.plan, gap_responsibility=EXCLUDED.gap_responsibility, updated_at=now()
+           plan=EXCLUDED.plan, gap_responsibility=EXCLUDED.gap_responsibility,
+           shortfall_policy=EXCLUDED.shortfall_policy, updated_at=now()
          RETURNING id`,
-        [buyer.id, req.session.user.id, comp_structure, comp_amount, min_fee, fields.included_tours,
-         fields.video_tours, fields.response_time, specialties.join(', '), fields.seller_contribution, fields.rebate, fields.plan, live.round, gap_responsibility]
+        [buyer.id, req.session.user.id, comp_structure, comp_amount, min_fee,
+         fields.video_tours, fields.response_time, specialties.join(', '), fields.seller_contribution, fields.plan, live.round, gap_responsibility, shortfall_policy]
       );
       savedId = saved[0].id;
       newCount = wasUpdate ? cnt[0].n : cnt[0].n + 1;
@@ -563,9 +578,14 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     (fee_type === 'flat' && fee_amount > 200000);
   const noAck = req.body.listing_ack !== 'yes';
   if (bad || noAck) {
+    // (Fixed Sep 1: this re-render previously omitted credits/priority
+    // context the template needs, so an invalid fee crashed instead of
+    // showing the friendly message.)
     return res.status(400).render('agent/opportunity', {
       title: 'Opportunity', request, H,
       proposal: { fee_type, fee_amount: req.body.fee_amount, services: services.join(', '), marketing_plan, cancellation_terms },
+      credits: await creditSummary(req.session.user.id), blockedLicense: false,
+      priority: priorityActive(request), priorityUntil: request.priority_until, PRIORITY_HOURS,
       error: bad
         ? (fee_type === 'pct'
           ? 'Please enter a percentage fee between 0.1 and 10.'

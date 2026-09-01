@@ -36,11 +36,15 @@ header{background:var(--navy); color:#fff;}
   .nav-right{gap:12px;}
   .nav-right .who{display:none;}
 }
-/* Very narrow phones (Paul, Aug 26): let the header wrap inside its dark bar
-   instead of squeezing links past the edge. */
-@media (max-width:400px){
-  .nav{height:auto; min-height:56px; flex-wrap:wrap; row-gap:2px; padding:8px 16px;}
-  .nav-right{flex-wrap:wrap; row-gap:2px;}
+/* Mobile navigation (Paul, Sep 1 UX #7): on narrow phones the header becomes
+   two clean rows — the Connexli brand on top, then an evenly spread row of
+   short links. Individual controls never wrap mid-word ("Log out" stays on
+   one line), and Home / + New request stay one tap away. */
+.nav-right a, .nav-right .linkbtn{white-space:nowrap;}
+@media (max-width:480px){
+  .nav{height:auto; flex-wrap:wrap; row-gap:0; padding:10px 16px 9px;}
+  .brand{flex:1 1 100%; margin-bottom:7px;}
+  .nav-right{flex:1 1 100%; justify-content:space-between; gap:8px; font-size:13px;}
 }
 .linkbtn{background:none; border:none; color:#B9C8DE; cursor:pointer; font-family:inherit; font-size:13.5px; text-decoration:underline;}
 .linkbtn:hover{color:#fff;}
@@ -92,6 +96,21 @@ input:focus, select:focus, textarea:focus{outline:3px solid var(--lightblue); bo
 .optgrid{display:grid; gap:9px; margin-top:8px;}
 .optgrid.cols{grid-template-columns:1fr 1fr;}
 @media (max-width:560px){ .optgrid.cols{grid-template-columns:1fr;} }
+/* Mobile selection controls (Paul, Sep 1 UX #5):
+   - default .cols grids stack full-width on phones (rule above) so longer
+     labels never get narrow or awkwardly wrapped;
+   - .keep2 marks pairs of SHORT choices (Yes/No, % vs flat) that stay
+     side-by-side even on phones;
+   - .chips marks LONG lists of short options (buyer priorities, professional
+     specialties): a compact two-column card layout on phones with ≥44px
+     touch targets. Desktop layouts are unchanged. */
+.optgrid.cols.keep2{grid-template-columns:1fr 1fr;}
+@media (max-width:560px){
+  .optgrid.cols.keep2{grid-template-columns:1fr 1fr;}
+  .optgrid.cols.chips{grid-template-columns:1fr 1fr; gap:7px;}
+  .optgrid.cols.chips .tile{padding:11px 10px; font-size:13.5px; min-height:44px; align-items:center;}
+  .optgrid.cols.chips .tile::before{flex-basis:16px; height:16px;}
+}
 .opt{position:relative; display:block; cursor:pointer;}
 .opt input{position:absolute; opacity:0; width:auto;}
 .opt .tile{

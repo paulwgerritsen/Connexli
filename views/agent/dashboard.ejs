@@ -131,7 +131,7 @@
         <tr>
           <td><b style="color:var(--navy);"><%= H.READINESS_LABELS[b.readiness] %></b>
             <% if (b.mine > 0) { %><span class="badge approved">In 🔒</span><% } else if (b.round > 1) { %><span class="badge open">Fresh round</span><% } %>
-            <br><span class="meta"><%= b.timeline %><% if (!b.in_utah) { %> · from <%= b.origin_state %><% } %></span></td>
+            <br><span class="meta"><%= b.timeline %><% if (b.expected_tours) { %> · ~<%= b.expected_tours %> tours<% } %><% if (!b.in_utah) { %> · from <%= b.origin_state %><% } %></span></td>
           <td><%= b.search_areas %></td>
           <td><%= b.price_range %></td>
           <td data-sort="<%= new Date(b.closes_at).toISOString() %>"><span data-closes="<%= new Date(b.closes_at).toISOString() %>">⏱</span><br><span class="meta"><%= H.spotsLeft(b) %> spot<%= H.spotsLeft(b) === 1 ? '' : 's' %> left</span></td>

@@ -22,6 +22,7 @@
     <div class="sumrow"><span>Readiness</span><span><b style="color:var(--blue);"><%= H.READINESS_LABELS[p.readiness] || p.readiness %></b></span></div>
     <div class="sumrow"><span>Search areas</span><span><%= p.search_areas %></span></div>
     <div class="sumrow"><span>Price range / timeline</span><span><%= p.b_price_range %> · <%= p.timeline %></span></div>
+    <% if (p.expected_tours) { %><div class="sumrow"><span>Expected home tours</span><span><%= p.expected_tours %> <span class="hint">(buyer's estimate — not a limit)</span></span></div><% } %>
     <div class="sumrow"><span>Financing</span><span><%= p.financing_type %> · <%= p.lender_status %> · <%= p.down_payment %> down</span></div>
     <div class="sumrow"><span>Purpose</span><span><%= p.purchase_purpose %><% if (!p.in_utah) { %> · relocating from <%= p.origin_state || 'out of state' %><% } %><% if (p.need_to_sell !== 'No') { %> · must sell current home<% } %><% if (p.first_time) { %> · first-time buyer<% } %></span></div>
     <% if (p.property_prefs) { %><div class="sumrow"><span>Property preferences</span><span><%= p.property_prefs %></span></div><% } %>
@@ -31,10 +32,13 @@
   <div class="card">
     <h2 style="font-size:16px;">What you proposed</h2>
     <div class="sumrow"><span>Buyer-agent compensation</span><span><b style="color:var(--navy);"><%= H.buyerFeeLabel(p) %></b><% if (p.min_fee) { %> · <%= H.money(p.min_fee) %> minimum<% } %></span></div>
-    <div class="sumrow"><span>Tours / response</span><span><%= p.included_tours %> · responds <%= (p.response_time || '').toLowerCase() %><% if (p.video_tours) { %> · video tours<% } %></span></div>
+    <% const sfp = p.shortfall_policy || (p.gap_responsibility === 'No' ? (p.min_fee ? 'min_fee' : 'no_gap') : (p.gap_responsibility === 'Yes' ? 'buyer_pays' : null)); %>
+    <% if (sfp === 'buyer_pays') { %><div class="sumrow"><span>Shortfall approach</span><span>Buyer pays the difference (seller-paid amounts credited toward the fee)</span></div>
+    <% } else if (sfp === 'min_fee') { %><div class="sumrow"><span>Shortfall approach</span><span>Accept seller-paid amount, subject to the <%= p.min_fee ? H.money(p.min_fee) : '' %> minimum</span></div>
+    <% } else if (sfp === 'no_gap') { %><div class="sumrow"><span>Shortfall approach</span><span>Won't ask the buyer to cover a shortfall</span></div><% } %>
+    <div class="sumrow"><span>Service</span><span><% if (p.included_tours) { %><%= p.included_tours %> · <% } %>responds <%= (p.response_time || '').toLowerCase() %><% if (p.video_tours) { %> · video tours<% } %></span></div>
     <% if (p.specialties) { %><div class="sumrow"><span>Specialties</span><span><%= p.specialties %></span></div><% } %>
     <% if (p.seller_contribution) { %><div class="sumrow"><span>Seller contributions</span><span><%= p.seller_contribution %></span></div><% } %>
-    <% if (p.rebate) { %><div class="sumrow"><span>Rebate</span><span><%= p.rebate %></span></div><% } %>
     <% if (p.plan) { %><div class="sumrow"><span>Your plan</span><span><%= p.plan %></span></div><% } %>
     <div class="sumrow"><span>Submitted</span><span><%= new Date(p.created_at).toLocaleDateString('en-US') %> · round <%= p.round %></span></div>
   </div>

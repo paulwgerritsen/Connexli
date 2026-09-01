@@ -16,7 +16,7 @@
   <h2 style="font-size:16px;">Complete buyer profile</h2>
   <div class="sumrow"><span>Readiness</span><span><b><%= H.READINESS_LABELS[buyer.readiness] %></b></span></div>
   <div class="sumrow"><span>Financing</span><span><%= buyer.financing_type %> · <%= buyer.lender_status %> · <%= buyer.down_payment %> down</span></div>
-  <div class="sumrow"><span>Search / price / timeline</span><span><%= buyer.search_areas %> · <%= buyer.price_range %> · <%= buyer.timeline %></span></div>
+  <div class="sumrow"><span>Search / price / timeline</span><span><%= buyer.search_areas %> · <%= buyer.price_range %> · <%= buyer.timeline %><% if (buyer.expected_tours) { %> · ~<%= buyer.expected_tours %> tours expected<% } %></span></div>
   <div class="sumrow"><span>Purpose / situation</span><span><%= buyer.purchase_purpose %> · <%= buyer.current_situation %><% if (buyer.need_to_sell !== 'No') { %> · must sell first<% } %></span></div>
   <% if (!buyer.in_utah) { %><div class="sumrow"><span>Relocation</span><span>From <%= buyer.origin_state %><%= buyer.move_reason ? ' · ' + buyer.move_reason : '' %></span></div><% } %>
   <% if (buyer.video_tours) { %><div class="sumrow"><span>Video tours</span><span>Requested</span></div><% } %>

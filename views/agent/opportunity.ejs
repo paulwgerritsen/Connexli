@@ -45,7 +45,7 @@
         <input type="hidden" name="_csrf" value="<%= csrf %>">
         <p class="note" style="margin-top:2px;">The amount below is your <b>proposed listing-side compensation</b> — what you propose to charge for representing the seller. Connexli presents it to the homeowner as separate from any compensation that may involve a buyer's agent.</p>
         <label>Compensation type</label>
-        <div class="optgrid cols">
+        <div class="optgrid cols keep2">
           <label class="opt"><input type="radio" name="fee_type" value="pct" <%= (!proposal || proposal.fee_type === 'pct') ? 'checked' : '' %> onchange="feeLbl()"><span class="tile"><b>% of sale price</b></span></label>
           <label class="opt"><input type="radio" name="fee_type" value="flat" <%= (proposal && proposal.fee_type === 'flat') ? 'checked' : '' %> onchange="feeLbl()"><span class="tile"><b>Flat fee ($)</b></span></label>
         </div>

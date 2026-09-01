@@ -128,9 +128,19 @@
               <% const est = H.estBuyerFee(p, profile.price_range); %>
               <% if (est !== null) { %><span class="est">Est. compensation: ≈ <%= H.money(est) %><% if (p.comp_structure === 'pct') { %> at your range midpoint (<%= H.money(H.midPrice(profile.price_range)) %>)<% } %></span><% } %>
             </div>
-            <% if (p.min_fee) { %><p class="note">Minimum fee: <%= H.money(p.min_fee) %></p><% } %>
-            <% if (p.gap_responsibility === 'Yes') { %><p class="note"><b>If the seller doesn't cover the full amount:</b> you would be responsible for the remaining balance at closing.</p>
-            <% } else if (p.gap_responsibility === 'No') { %><p class="note"><b>If the seller doesn't cover the full amount:</b> this agent will not ask you to pay the difference.</p><% } %>
+            <%# Shortfall policy in plain English with a worked example at the
+                buyer's range midpoint (Paul, Sep 1 UX #2). Legacy proposals
+                map from the old yes/no answer. These are proposal terms, not
+                the representation contract. %>
+            <% const sfp = p.shortfall_policy || (p.gap_responsibility === 'No' ? (p.min_fee ? 'min_fee' : 'no_gap') : (p.gap_responsibility === 'Yes' ? 'buyer_pays' : null)); %>
+            <% const sfEst = H.estBuyerFee(p, profile.price_range); %>
+            <% if (sfp === 'buyer_pays') { %>
+              <p class="note"><b>If the seller pays less than the proposed fee:</b> any seller-paid compensation is credited toward the fee, and you would be responsible for the remaining amount.<% if (sfEst !== null) { %> <span style="color:var(--muted);">Example at your range midpoint: proposed fee ≈ <%= H.money(sfEst) %> — if the seller contributed <%= H.money(Math.round(sfEst / 2)) %>, you would cover the remaining <%= H.money(sfEst - Math.round(sfEst / 2)) %>.</span><% } %></p>
+            <% } else if (sfp === 'min_fee' && p.min_fee) { %>
+              <p class="note"><b>If the seller pays less than the proposed fee:</b> this professional accepts the seller-paid amount as long as their minimum compensation of <b><%= H.money(p.min_fee) %></b> is met — you'd only ever pay what it takes to reach that minimum, not the full difference.<% if (sfEst !== null) { %> <span style="color:var(--muted);">Example at your range midpoint: proposed fee ≈ <%= H.money(sfEst) %>, but if the seller contributed nothing you would owe at most <%= H.money(p.min_fee) %>.</span><% } %></p>
+            <% } else if (sfp === 'no_gap') { %>
+              <p class="note"><b>If the seller doesn't cover the full amount:</b> this agent will not ask you to pay the difference.</p>
+            <% } %>
             <div class="pillrow">
               <% if (p.included_tours) { %><span class="pill"><%= p.included_tours %></span><% } %>
               <% if (p.video_tours) { %><span class="pill">Video tours</span><% } %>
@@ -138,7 +148,6 @@
               <% (p.specialties ? p.specialties.split(', ') : []).forEach(s => { %><span class="pill"><%= s %></span><% }) %>
             </div>
             <% if (p.seller_contribution) { %><p class="note" style="margin-top:9px;"><b>Seller contributions:</b> <%= p.seller_contribution %></p><% } %>
-            <% if (p.rebate) { %><p class="note"><b>Rebate:</b> <%= p.rebate %></p><% } %>
             <% if (p.plan) { %><p class="note"><b>Their plan for you:</b> <%= p.plan %></p><% } %>
           </div>
           <div class="cardbtns">

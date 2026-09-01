@@ -149,6 +149,12 @@
         <option value="" disabled <%= !form.timeline ? 'selected' : '' %>>Choose one…</option>
         <% H.B_TIMELINE.forEach(o => { %><option <%= form.timeline === o ? 'selected' : '' %>><%= o %></option><% }) %>
       </select>
+      <label for="expected_tours">About how many homes do you anticipate touring before making a decision?</label>
+      <select id="expected_tours" name="expected_tours">
+        <option value="" <%= !form.expected_tours ? 'selected' : '' %>>Choose one…</option>
+        <% H.B_EXPECTED_TOURS.forEach(o => { %><option <%= form.expected_tours === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+      <p class="note">We know plans can change — your best estimate helps professionals understand the time and service you may need.</p>
       <label for="purchase_purpose">This home will be a…</label>
       <select id="purchase_purpose" name="purchase_purpose">
         <% H.B_PURPOSE.forEach(o => { %><option <%= (form.purchase_purpose || 'Primary residence') === o ? 'selected' : '' %>><%= o %></option><% }) %>
@@ -170,7 +176,7 @@
     <div class="card">
       <h2 style="font-size:16px;">Where you're located</h2>
       <label>Are you currently in Utah?</label>
-      <div class="optgrid cols" style="grid-template-columns:1fr 1fr;">
+      <div class="optgrid cols">
         <label class="opt"><input type="radio" name="in_utah" value="yes" <%= form.in_utah !== 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='none'"><span class="tile"><b>Yes</b></span></label>
         <label class="opt"><input type="radio" name="in_utah" value="no" <%= form.in_utah === 'no' ? 'checked' : '' %> onchange="document.getElementById('relo').style.display='block'"><span class="tile"><b>No — I'm relocating</b></span></label>
       </div>
@@ -185,8 +191,12 @@
         <label for="visit_dates">When do you plan to visit Utah? (optional)</label>
         <input type="text" id="visit_dates" name="visit_dates" placeholder="e.g. Sept 12–15" value="<%= form.visit_dates || '' %>">
       </div>
-      <div class="optgrid" style="margin-top:10px;">
-        <label class="opt"><input type="checkbox" name="video_tours" value="yes" <%= form.video_tours === 'yes' ? 'checked' : '' %>><span class="tile"><b style="font-weight:600;">I'd like video / virtual tours</b><span class="desc">Helpful if you're relocating, traveling, or just prefer a first look on video.</span></span></label>
+      <%# Separate question (Paul, Sep 1 UX #4): virtual tours are independent
+          of the Utah/relocating answer — a buyer can be relocating AND want
+          video tours. Never part of the same mutually-exclusive choice. %>
+      <label style="margin-top:14px;">Would video/virtual tours be helpful?</label>
+      <div class="optgrid">
+        <label class="opt"><input type="checkbox" name="video_tours" value="yes" <%= form.video_tours === 'yes' ? 'checked' : '' %>><span class="tile"><b style="font-weight:600;">Yes, I'd like this option</b><span class="desc">Helpful if you're relocating, traveling, or just prefer a first look on video.</span></span></label>
       </div>
     </div>
 
@@ -210,11 +220,15 @@
     <div class="card">
       <h2 style="font-size:16px;">One important question</h2>
       <label for="bba">Have you signed a Buyer Broker Agreement with another agent?</label>
-      <select id="bba" name="bba">
+      <select id="bba" name="bba" onchange="var on=this.value==='Yes — currently active'; document.getElementById('bbaExpiresWrap').style.display=on?'block':'none';">
         <% H.B_BBA.forEach(o => { %><option <%= (form.bba || 'No') === o ? 'selected' : '' %>><%= o %></option><% }) %>
       </select>
-      <label for="bba_expires">If currently active: when does it expire? (optional)</label>
-      <input type="text" id="bba_expires" name="bba_expires" placeholder="e.g. October 2026" value="<%= form.bba_expires || '' %>">
+      <%# Conditional (Paul, Sep 1 UX #3): the expiration question only
+          appears when an agreement currently exists. %>
+      <div id="bbaExpiresWrap" style="display:<%= (form.bba === 'Yes — currently active') ? 'block' : 'none' %>;">
+        <label for="bba_expires">When does it expire? (optional)</label>
+        <input type="text" id="bba_expires" name="bba_expires" placeholder="e.g. October 2026" value="<%= form.bba_expires || '' %>">
+      </div>
       <p class="note">An active exclusive agreement means that agent already represents you — we'll explain what that means on the next screen if it applies.</p>
     </div>
 
