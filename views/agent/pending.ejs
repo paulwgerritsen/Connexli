@@ -3,6 +3,39 @@
   <h1><%= profile.status === 'rejected' ? 'Verification unsuccessful' : profile.status === 'suspended' ? 'Account suspended' : 'Thanks for joining Connexli!' %></h1>
   <% if (profile.status === 'suspended') { %>
     <div class="error">Your Connexli account is currently suspended and you cannot view opportunities or submit proposals. If you believe this is a mistake, contact us at hello@connexli.com.</div>
+  <% } else if (profile.status === 'rejected' && profile.verification_status === 'failed') { %>
+    <%# Automatic rejection (Paul, Sep 1 §11): a professional message with a
+        typo-correction path — no internal security details. The correction
+        endpoint is rate-limited and cache-aware server-side. %>
+    <div class="error">We were unable to verify the real estate license information provided. Please confirm that your license state and license number were entered correctly.</div>
+    <% if (typeof corrected !== 'undefined' && corrected) { %>
+      <div class="card"><p class="sub" style="margin:0;">We checked the updated details, and unfortunately the license still couldn't be verified. Please compare the state and number against your official license documents carefully — or contact us at hello@connexli.com and we'll help directly.</p></div>
+    <% } %>
+    <% if (typeof correctLimit !== 'undefined' && correctLimit) { %>
+      <div class="card"><p class="sub" style="margin:0;">You've reached today's limit for license updates. Please double-check your license details against your official documents and try again tomorrow, or contact us at hello@connexli.com and we'll help directly.</p></div>
+    <% } else { %>
+      <div class="card">
+        <h2 style="font-size:16px;">Correct your license details</h2>
+        <p class="sub">A single typo is the most common cause. Enter your license exactly as it appears on your real estate license, and we'll check it again.</p>
+        <form method="POST" action="/agent/license-correction">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <div class="grid2">
+            <div>
+              <label for="license_state">License state</label>
+              <select id="license_state" name="license_state">
+                <% H.LICENSE_STATES.forEach(s => { %><option value="<%= s[0] %>" <%= (profile.license_state || 'UT') === s[0] ? 'selected' : '' %>><%= s[1] %></option><% }) %>
+              </select>
+            </div>
+            <div>
+              <label for="license_number">License number</label>
+              <input type="text" id="license_number" name="license_number" value="<%= profile.license_number %>" required>
+            </div>
+          </div>
+          <button class="btn full" type="submit" style="margin-top:14px;">Re-check my license</button>
+        </form>
+        <p class="note" style="margin-bottom:0;">Still stuck? Contact us at hello@connexli.com and we'll take a look together.</p>
+      </div>
+    <% } %>
   <% } else if (profile.status === 'rejected') { %>
     <div class="error">We couldn't verify this license with the information provided. If you believe this is a mistake, contact us at hello@connexli.com and we'll take another look.</div>
   <% } else { %>

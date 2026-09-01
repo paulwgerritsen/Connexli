@@ -163,6 +163,24 @@ async function sendVerification(userId, email, name) {
   mailer.verifyEmail(email, name, `${APP_URL}/verify-email/${token}`); // fire and forget
 }
 
+// v20 (Paul, Sep 1 §9): per-email and per-license attempt tracking, on top of
+// the per-connection authLimiter. Counts every POST regardless of validity so
+// scripts can't probe. Thresholds intentionally generous for real people and
+// never revealed to the applicant. In-memory: resets on deploy, which is fine
+// — its job is stopping bursts of scripted registrations.
+const REG_ATTEMPTS = new Map(); // key → [timestamps]
+function regAttemptExceeded(key, max = 6, windowMs = 60 * 60 * 1000) {
+  const now = Date.now();
+  const arr = (REG_ATTEMPTS.get(key) || []).filter(t => now - t < windowMs);
+  arr.push(now);
+  REG_ATTEMPTS.set(key, arr);
+  if (REG_ATTEMPTS.size > 5000) { // prune oldest keys so memory stays bounded
+    for (const k of REG_ATTEMPTS.keys()) { REG_ATTEMPTS.delete(k); if (REG_ATTEMPTS.size <= 2500) break; }
+  }
+  return arr.length > max;
+}
+const LICENSE_NUMBER_RE = /^[A-Za-z0-9][A-Za-z0-9 .\-\/]{1,39}$/;
+
 router.post('/register', authLimiter, async (req, res) => {
   const form = {
     role: req.body.role === 'agent' ? 'agent' : 'seller',
@@ -178,13 +196,21 @@ router.post('/register', authLimiter, async (req, res) => {
 
   const fail = (msg) => res.status(400).render('register', { title: 'Create your account', error: msg, form, H: require('../helpers'), turnstileSiteKey: turnstile.configured() ? turnstile.TURNSTILE_SITE_KEY : null });
 
-  if (!form.name || !form.email.includes('@')) return fail('Please enter your name and a valid email address.');
-  if (password.length < 8) return fail('Password must be at least 8 characters.');
+  // Attempt limits (Paul, Sep 1 §9): same email or same license combination
+  // hammering the form gets a generic message. Never consumes a RELD lookup —
+  // RELD isn't called at signup at all.
+  const overEmail = form.email && regAttemptExceeded('email:' + form.email);
+  const overLicense = form.role === 'agent' && form.license_number &&
+    regAttemptExceeded('lic:' + form.license_state + ':' + form.license_number.toLowerCase());
+  if (overEmail || overLicense) {
+    logEvent('registration_rate_limited', { meta: { role: form.role } });
+    return res.status(429).render('register', { title: 'Create your account', error: 'Too many registration attempts. Please try again later.', form, H: require('../helpers'), turnstileSiteKey: turnstile.configured() ? turnstile.TURNSTILE_SITE_KEY : null });
+  }
 
-  // Human verification (Paul, Aug 31): the Cloudflare Turnstile token from
-  // the signup page is validated server-side BEFORE any account is created —
-  // and therefore before any verification email or RELD lookup can happen.
-  // Bots hitting this endpoint directly have no valid token and stop here.
+  // Human verification FIRST (Paul, Sep 1 §1): the Cloudflare Turnstile token
+  // is validated server-side before any account is created — and therefore
+  // before any verification email or RELD lookup can happen. Bots hitting
+  // this endpoint directly have no valid token and stop here at zero cost.
   if (turnstile.configured()) {
     const human = await turnstile.verify(req.body['cf-turnstile-response'], req.ip);
     if (!human.ok) {
@@ -192,11 +218,21 @@ router.post('/register', authLimiter, async (req, res) => {
       return fail("We couldn't confirm you're human. Please complete the verification box and try again.");
     }
   }
-  if (form.role === 'agent' && (!form.license_number || !form.brokerage)) {
+
+  // Server-side validation (Paul, Sep 1 §2): sanity only — whether a license
+  // is REAL stays RELD's job, and RELD is not called here.
+  if (!form.name || form.name.length < 2 || !form.email.includes('@') || form.email.length < 6) {
+    return fail('Please enter your name and a valid email address.');
+  }
+  if (password.length < 8) return fail('Password must be at least 8 characters.');
+  if (form.role === 'agent' && (!form.license_number || !form.brokerage || form.brokerage.length < 2)) {
     return fail('Professionals must provide a license number and brokerage. This is how Connexli keeps the marketplace verified.');
   }
   let geo = null;
   if (form.role === 'agent') {
+    if (!LICENSE_NUMBER_RE.test(form.license_number)) {
+      return fail('That license number doesn\'t look right — please enter it exactly as it appears on your real estate license (letters, numbers, and dashes only).');
+    }
     if (!form.service_zip.match(/^\d{5}$/)) return fail('Please enter the 5-digit ZIP code at the center of your service area.');
     geo = mailer.zipInfo(form.service_zip);
     if (!geo) return fail('We could not find that ZIP code. Please double-check your primary service ZIP.');
@@ -272,13 +308,17 @@ router.get('/verify-email/:token', async (req, res) => {
     return res.status(400).render('verify-done', { title: 'Verification link problem', ok: false, loggedIn: !!req.session.user });
   }
   logEvent('email_verified', { userId: user.id });
-  // RELD license verification now runs HERE for professionals (Paul, Aug 31
-  // §5): human check passed at signup, email ownership just proven — only
-  // then is a limited RELD lookup spent. Failures never block verification.
+  // RELD license verification runs HERE for professionals (Paul, Aug 31 §5 /
+  // Sep 1): human check passed at signup, email ownership just proven — only
+  // then is a limited RELD lookup spent (or a recent cached result reused).
+  // autoDecide applies the Sep 1 rules: strong match auto-approves, a
+  // definitive license-not-found auto-rejects, anything ambiguous or any API
+  // problem waits for an administrator / retry. RELD errors never block the
+  // email verification itself.
   if (user.role === 'agent') {
     const reld = require('../reld');
     if (reld.configured()) {
-      try { await reld.verifyProfessional(user.id); }
+      try { await reld.verifyProfessional(user.id, { useCache: true, autoDecide: true }); }
       catch (e) { console.error('RELD post-verification lookup error:', e.message); }
     }
   }

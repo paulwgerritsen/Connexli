@@ -14,14 +14,15 @@
 </div>
 
 <div class="card">
-  <div class="sumrow"><span>Full name</span><span><%= agent.name %></span></div>
+  <div class="sumrow"><span>Preferred name</span><span><%= agent.name %> <span class="meta">(shown to consumers)</span></span></div>
+  <% if (agent.reld_name) { %><div class="sumrow"><span>License name</span><span><%= agent.reld_name %> <span class="meta">(per registry — used for verification)</span></span></div><% } %>
   <div class="sumrow"><span>Email</span><span><%= agent.email %></span></div>
   <% if (agent.phone) { %><div class="sumrow"><span>Phone</span><span><%= agent.phone %></span></div><% } %>
   <div class="sumrow"><span>Brokerage</span><span><%= agent.brokerage %></span></div>
   <div class="sumrow"><span>License number</span><span><%= agent.license_number %> · <span class="badge <%= agent.status %>"><%= agent.status %></span></span></div>
   <div class="sumrow"><span>Service area</span><span><%= agent.service_zip || 'not provided' %><%= agent.service_city ? ' · ' + agent.service_city + ', ' + (agent.service_state || '') : '' %></span></div>
   <div class="sumrow"><span>Registered</span><span><%= new Date(agent.registered_at).toLocaleDateString('en-US') %></span></div>
-  <% if (agent.reviewed_at) { %><div class="sumrow"><span>Reviewed</span><span><%= new Date(agent.reviewed_at).toLocaleDateString('en-US') %></span></div><% } %>
+  <% if (agent.reviewed_at) { %><div class="sumrow"><span>Reviewed</span><span><%= new Date(agent.reviewed_at).toLocaleDateString('en-US') %><%= agent.reviewed_by ? ' · by ' + agent.reviewed_by : '' %></span></div><% } %>
   <% if (agent.rejection_reason) { %><div class="sumrow"><span>Rejection reason</span><span style="color:#B42318;"><%= agent.rejection_reason %></span></div><% } %>
   <div class="sumrow"><span>Email verified</span><span><%= agent.email_verified ? '✓ Yes' : 'Not yet — license verification and review start after they verify' %></span></div>
 </div>
@@ -29,18 +30,33 @@
 <div class="card">
   <h2 style="font-size:16px;">License verification</h2>
   <% if (recheckMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:4px;"><%= recheckMsg %></p><% } %>
+  <% if (typeof reviewMsg !== 'undefined' && reviewMsg) { %><p class="note" style="color:var(--good); font-weight:600; margin-top:4px;"><%= reviewMsg %></p><% } %>
   <div class="sumrow"><span>Verification status</span><span><span class="badge <%= VB[agent.verification_status] || 'pending' %>"><%= VL[agent.verification_status] || agent.verification_status %></span> <span class="meta">(separate from account status: <span class="badge <%= agent.status %>"><%= agent.status %></span>)</span></span></div>
   <div class="sumrow"><span>License on file</span><span><%= agent.license_number %> (<%= agent.license_state || 'UT' %>)</span></div>
   <% if (agent.reld_name) { %>
-    <div class="sumrow"><span>Registry name</span><span><%= agent.reld_name %><% if (agent.name_mismatch) { %> <b style="color:#B45309;">≠ "<%= agent.name %>" on Connexli — review</b><% } %></span></div>
+    <div class="sumrow"><span>Registry name</span><span><%= agent.reld_name %><% if (agent.name_mismatch && agent.verification_status === 'needs_review') { %> <b style="color:#B45309;">≠ "<%= agent.name %>" on Connexli — review</b><% } else if (agent.name_mismatch && agent.review_resolved_at) { %> <span class="meta" style="color:var(--good);">differs from preferred name — identity confirmed</span><% } %></span></div>
     <div class="sumrow"><span>Registry type / status</span><span><%= agent.reld_license_type || '—' %> · <%= agent.reld_license_status || '—' %></span></div>
     <div class="sumrow"><span>Registry expiration</span><span><%= agent.reld_expiration || '—' %></span></div>
-    <div class="sumrow"><span>Registry brokerage</span><span><%= agent.reld_brokerage || '—' %><% if (agent.brokerage_mismatch) { %> <span style="color:#B45309;">≠ "<%= agent.brokerage %>" on Connexli</span> <span class="meta">(informational — a brokerage move alone never rejects anyone)</span><% } %></span></div>
+    <div class="sumrow"><span>Registry brokerage</span><span><%= agent.reld_brokerage || '—' %><% if (agent.brokerage_mismatch && agent.verification_status === 'needs_review') { %> <span style="color:#B45309;">≠ "<%= agent.brokerage %>" on Connexli — review</span> <span class="meta">(a brokerage difference alone never rejects anyone)</span><% } else if (agent.brokerage_mismatch && agent.review_resolved_at) { %> <span class="meta" style="color:var(--good);">difference acknowledged by admin</span><% } %></span></div>
     <% if (agent.reld_city) { %><div class="sumrow"><span>Registry city</span><span><%= agent.reld_city %></span></div><% } %>
     <% if (agent.reld_last_verified) { %><div class="sumrow"><span>RELD data as of</span><span><%= agent.reld_last_verified %></span></div><% } %>
   <% } %>
   <% if (agent.reld_error) { %><div class="sumrow"><span>Last check note</span><span style="color:#B42318;"><%= agent.reld_error %></span></div><% } %>
   <div class="sumrow"><span>Last checked</span><span><%= agent.reld_checked_at ? new Date(agent.reld_checked_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) + ' (Mountain)' : 'never' %></span></div>
+  <% if (agent.review_resolved_at) { %>
+    <div class="sumrow"><span>Identity review</span><span style="color:var(--good);">Confirmed by <%= agent.review_resolved_by %> on <%= new Date(agent.review_resolved_at).toLocaleDateString('en-US') %><% if (agent.review_resolution) { %> — <span class="meta"><%= agent.review_resolution %></span><% } %></span></div>
+  <% } %>
+  <% if (agent.verification_status === 'needs_review' && agent.reld_name) { %>
+    <%# Confirm Identity / Clear Review (Paul, Sep 1 — PDF 2): the admin
+        confirms this account belongs to the licensed individual. Verification
+        flips to Verified, the confirmed registry values are remembered so
+        future rechecks don't re-flag, and the audit trail stays intact. %>
+    <form method="POST" action="/admin/agents/<%= agent.user_id %>/resolve-review" style="margin-top:12px; display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;" onsubmit="return confirm('Confirm this professional is the same person as the licensed individual (<%= agent.reld_name %>)? Verification will change to Verified.');">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div style="flex:1; min-width:240px;"><label style="font-size:13px;">Note (optional, kept on record)</label><input type="text" name="reason" maxlength="300" placeholder="e.g. confirmed — goes by Pablo Gerri professionally"></div>
+      <button class="btn sm" type="submit">Confirm identity / clear review</button>
+    </form>
+  <% } %>
   <form method="POST" action="/admin/agents/<%= agent.user_id %>/recheck" style="margin-top:12px;" onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Checking…'; return true;">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <button class="btn sm" type="submit" <%= (reldConfigured && !recentCheck) ? '' : 'disabled' %>>Recheck license</button>
@@ -89,9 +105,22 @@
 
 <div class="card">
   <h2 style="font-size:16px;">Administrator actions</h2>
+  <%# No Approve/Reinstate while the license is definitively Failed
+      (Paul, Sep 1 §6): an admin should never accidentally approve a
+      professional whose license RELD says doesn't exist. The record stays
+      fully viewable for audit; a corrected license (or a Recheck that
+      succeeds) restores the normal buttons. %>
+  <% const licenseFailed = agent.verification_status === 'failed'; %>
+  <% if (licenseFailed && agent.reviewed_by === 'RELD auto-verification') { %>
+    <p class="note" style="color:#B42318; font-weight:600; margin-top:8px;">Automatically Rejected · Reason: License not found in RELD. Approval is disabled while the license check stands at Failed.</p>
+  <% } else if (licenseFailed) { %>
+    <p class="note" style="color:#B42318; font-weight:600; margin-top:8px;">License check: Failed — license not found in RELD. Approval is disabled until a successful recheck or a corrected license.</p>
+  <% } %>
   <div class="actions" style="margin-top:12px;">
     <% if (agent.status === 'pending') { %>
-      <form method="POST" action="/admin/agents/<%= agent.user_id %>/approve"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn sm" type="submit">Approve</button></form>
+      <% if (!licenseFailed) { %>
+        <form method="POST" action="/admin/agents/<%= agent.user_id %>/approve"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn sm" type="submit">Approve</button></form>
+      <% } %>
       <form method="POST" action="/admin/agents/<%= agent.user_id %>/reject" onsubmit="return confirm('Reject this professional?');" style="display:flex; gap:8px; align-items:center;">
         <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail">
         <input type="text" name="reason" maxlength="300" placeholder="Rejection reason (optional, kept on record)" style="min-width:260px; margin:0;">
@@ -101,7 +130,7 @@
     <% if (agent.status === 'approved') { %>
       <form method="POST" action="/admin/agents/<%= agent.user_id %>/suspend" onsubmit="return confirm('Suspend this professional? They immediately lose access to opportunities and proposals.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Suspend</button></form>
     <% } %>
-    <% if (agent.status === 'suspended' || agent.status === 'rejected') { %>
+    <% if ((agent.status === 'suspended' || agent.status === 'rejected') && !licenseFailed) { %>
       <form method="POST" action="/admin/agents/<%= agent.user_id %>/reinstate" onsubmit="return confirm('Reinstate this professional as approved?');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn sm" type="submit">Reinstate</button></form>
     <% } %>
     <form method="POST" action="/admin/agents/<%= agent.user_id %>/remove" onsubmit="return confirm('PERMANENTLY remove <%= agent.name %>? This deletes their account and all of their proposals. This cannot be undone.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Permanently remove</button></form>

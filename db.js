@@ -353,6 +353,19 @@ ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS payment_transaction_id TEXT;
 ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS package_key TEXT;
 ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS amount_paid_cents INTEGER;
 ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS payment_status TEXT;
+
+-- v20 (Paul, Sep 1): automatic RELD decisions + preferred-name review
+-- resolution. reviewed_by records WHO decided an application ('RELD
+-- auto-verification' or an admin's email). confirmed_reld_* store the
+-- registry name/brokerage an administrator confirmed as belonging to this
+-- professional, so a resolved Needs Review flag stays resolved on future
+-- rechecks while the original mismatch remains in the audit trail.
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reviewed_by TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS review_resolved_at TIMESTAMPTZ;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS review_resolved_by TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS review_resolution TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS confirmed_reld_name TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS confirmed_reld_brokerage TEXT;
 `;
 
 async function init() {

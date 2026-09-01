@@ -13,8 +13,9 @@
     <div class="card">
       <h2 style="font-size:16px;">Contact information</h2>
       <p class="note" style="margin-top:2px;">Released only to a homeowner who selects your proposal.</p>
-      <label for="name">Full name</label>
+      <label for="name">Preferred name</label>
       <input type="text" id="name" name="name" value="<%= p.name %>" required>
+      <p class="note" style="margin-top:2px;">This is the name consumers will see on Connexli. Your legal name associated with your real-estate license will remain on file for verification.</p>
       <label for="email">Email address</label>
       <input type="email" id="email" name="email" value="<%= p.email %>" autocomplete="email" required>
       <label for="phone">Phone (optional)</label>
@@ -29,6 +30,7 @@
       <input type="text" id="service_zip" name="service_zip" inputmode="numeric" pattern="\d{5}" value="<%= p.service_zip || '' %>" required>
       <p class="note">We use this to send you opportunities near your area<%= p.service_city ? ' — currently ' + p.service_city + ', ' + (p.service_state || '') : '' %>.</p>
       <div class="sumrow"><span>License number</span><span><%= p.license_number %> (<%= p.license_state || 'UT' %>) · <span class="badge <%= p.status %>"><%= p.status %></span></span></div>
+      <% if (p.reld_name) { %><div class="sumrow"><span>License name</span><span><%= p.reld_name %> <span class="hint">(per the licensing registry — kept on file for verification)</span></span></div><% } %>
       <% if (p.verification_status === 'verified') { %>
         <div class="sumrow"><span>License verification</span><span style="color:var(--good); font-weight:600;">✓ Verified<%= p.reld_license_type ? ' · ' + p.reld_license_type : '' %><%= p.reld_expiration ? ' · expires ' + p.reld_expiration : '' %></span></div>
         <% if (p.reld_checked_at) { %><p class="note" style="margin-top:2px;">Last checked <%= new Date(p.reld_checked_at).toLocaleDateString('en-US', { timeZone: 'America/Denver' }) %> against the licensing registry.</p><% } %>

@@ -23,18 +23,29 @@
 <% } else { %>
   <div class="card">
     <% pending.forEach(a => { %>
+      <%# v20 (Paul, Sep 1 §10): each pending application shows WHERE it is in
+          the pipeline. Auto-rejected applications never appear here at all —
+          they land in Rejected professionals. %>
+      <% const stage = !a.email_verified ? 'Awaiting email verification'
+           : a.verification_status === 'needs_review' ? 'Needs review'
+           : ['needs_verification', 'unable_to_verify'].includes(a.verification_status) ? 'Awaiting license verification'
+           : null; %>
       <div class="rowline">
         <div>
-          <a href="/admin/agents/<%= a.user_id %>" style="font-weight:700; color:var(--navy);"><%= a.name %></a> <span class="meta">· <%= a.email %><% if (a.phone) { %> · <%= a.phone %><% } %></span>
+          <a href="/admin/agents/<%= a.user_id %>" style="font-weight:700; color:var(--navy);"><%= a.name %></a> <span class="meta">· <%= a.email %><% if (a.phone) { %> · <%= a.phone %><% } %></span><% if (stage) { %> <span class="badge pending"><%= stage %></span><% } %>
           <div class="meta">License <b><%= a.license_number %></b> · <%= a.brokerage %> · <%= a.state %><% if (a.service_zip) { %> · Serves <%= a.service_zip %><%= a.service_city ? ' (' + a.service_city + ')' : '' %><% } %> · applied <%= new Date(a.created_at).toLocaleDateString('en-US') %></div>
-          <div class="meta">License check: <span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span><% if (a.name_mismatch) { %> · <b style="color:#B45309;">name differs from registry</b><% } %><% if (a.brokerage_mismatch) { %> · brokerage differs from registry<% } %><% if (a.reld_error) { %> · <span style="color:#B42318;"><%= a.reld_error %></span><% } %></div>
+          <div class="meta">License check: <span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span><% if (a.name_mismatch && a.verification_status === 'needs_review') { %> · <b style="color:#B45309;">name differs from registry</b><% } %><% if (a.brokerage_mismatch && a.verification_status === 'needs_review') { %> · <b style="color:#B45309;">brokerage differs from registry</b><% } %><% if (a.reld_error) { %> · <span style="color:#B42318;"><%= a.reld_error %></span><% } %></div>
           <div class="meta"><a href="https://secure.utah.gov/llv/search/index.html" target="_blank" rel="noopener">Check license in the Utah license lookup ↗</a> (verify: active status, name matches, brokerage matches)</div>
         </div>
         <div class="actions">
-          <form method="POST" action="/admin/agents/<%= a.user_id %>/approve">
-            <input type="hidden" name="_csrf" value="<%= csrf %>">
-            <button class="btn sm" type="submit">Approve</button>
-          </form>
+          <% if (a.verification_status === 'failed') { %>
+            <span class="meta" style="color:#B42318; font-weight:600;">License not found — cannot approve</span>
+          <% } else { %>
+            <form method="POST" action="/admin/agents/<%= a.user_id %>/approve">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <button class="btn sm" type="submit">Approve</button>
+            </form>
+          <% } %>
           <form method="POST" action="/admin/agents/<%= a.user_id %>/reject" onsubmit="return confirm('Reject this professional? They will be told verification was unsuccessful.');">
             <input type="hidden" name="_csrf" value="<%= csrf %>">
             <button class="btn danger sm" type="submit">Reject</button>
@@ -108,10 +119,10 @@
       <tr>
         <td><a href="/admin/agents/<%= a.user_id %>"><%= a.name %></a> · <%= a.email %></td>
         <td><%= a.license_number %><% if (a.license_state && a.license_state !== 'UT') { %> (<%= a.license_state %>)<% } %></td>
-        <td><span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span><% if (a.name_mismatch) { %><br><span class="meta" style="color:#B45309;">name differs</span><% } %></td>
+        <td><span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span><% if (a.name_mismatch && a.verification_status === 'needs_review') { %><br><span class="meta" style="color:#B45309;">name differs</span><% } else if (a.review_resolved_at) { %><br><span class="meta" style="color:var(--good);">identity confirmed</span><% } %></td>
         <td><%= a.brokerage %></td>
         <td><span class="badge <%= a.status %>"><%= a.status %></span></td>
-        <td><%= a.reviewed_at ? new Date(a.reviewed_at).toLocaleDateString('en-US') : '' %></td>
+        <td><%= a.reviewed_at ? new Date(a.reviewed_at).toLocaleDateString('en-US') : '' %><% if (a.reviewed_by === 'RELD auto-verification') { %><br><span class="meta">RELD Auto Verification</span><% } %></td>
       </tr>
     <% }) %>
   </table>
@@ -132,7 +143,7 @@
         <td><span class="badge <%= VB[a.verification_status] || 'pending' %>"><%= VL[a.verification_status] || a.verification_status %></span></td>
         <td><%= a.brokerage %></td>
         <td><%= new Date(a.registered_at).toLocaleDateString('en-US') %></td>
-        <td><%= a.reviewed_at ? new Date(a.reviewed_at).toLocaleDateString('en-US') : '' %></td>
+        <td><%= a.reviewed_at ? new Date(a.reviewed_at).toLocaleDateString('en-US') : '' %><% if (a.reviewed_by === 'RELD auto-verification') { %><br><span class="meta">RELD Auto Verification</span><% } %></td>
         <td class="meta"><%= a.rejection_reason || '—' %></td>
       </tr>
     <% }) %>

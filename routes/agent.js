@@ -45,7 +45,12 @@ router.get('/agent', agent, async (req, res) => {
 
   if (profile.status !== 'approved') {
     const { rows: uRows } = await pool.query(`SELECT email_verified FROM users WHERE id=$1`, [req.session.user.id]);
-    return res.render('agent/pending', { title: 'Verification in progress', profile, emailVerified: !!(uRows[0] && uRows[0].email_verified) });
+    return res.render('agent/pending', {
+      title: 'Verification in progress', profile, H,
+      emailVerified: !!(uRows[0] && uRows[0].email_verified),
+      corrected: req.query.corrected === '1',
+      correctLimit: req.query.correct === 'limit',
+    });
   }
 
   const uid = req.session.user.id;
@@ -641,6 +646,50 @@ router.post('/agent/opportunities/:id(\\d+)/withdraw', agent, async (req, res) =
   );
   if (rowCount) logEvent('proposal_withdrawn', { userId: req.session.user.id, requestId: parseInt(req.params.id) });
   res.redirect('/agent');
+});
+
+// ---------- license correction after automatic rejection (Paul, Sep 1 §11) ----------
+// Legitimate professionals make typos. An auto-rejected applicant can correct
+// their license state/number, which restores the application to pending and
+// re-verifies — using the cached result first, so re-submitting the SAME
+// wrong number costs zero RELD lookups, and rate-limited so a bot can't cycle
+// numbers to burn credits. At most 3 corrections per account per day.
+const correctionLimiter = require('express-rate-limit')({
+  windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  message: 'Too many attempts. Please try again later.',
+});
+
+router.post('/agent/license-correction', agent, correctionLimiter, async (req, res) => {
+  const profile = await profileOf(req.session.user.id);
+  if (!profile) return res.redirect('/agent');
+  // Only meaningful while the license is definitively failed (auto-rejected
+  // applicants) — everything else goes through normal admin channels.
+  if (profile.verification_status !== 'failed' || !['rejected', 'pending'].includes(profile.status)) {
+    return res.redirect('/agent');
+  }
+  // Per-account cap: 3 corrections per rolling day, counted in the audit log.
+  const { rows: cnt } = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM events
+     WHERE event_type='license_correction' AND user_id=$1 AND created_at > now() - interval '24 hours'`,
+    [req.session.user.id]);
+  if (cnt[0].n >= 3) return res.redirect('/agent?correct=limit');
+
+  const license_state = H.LICENSE_STATE_CODES.includes(req.body.license_state) ? req.body.license_state : 'UT';
+  const license_number = H.clean(req.body.license_number, 40);
+  if (!/^[A-Za-z0-9][A-Za-z0-9 .\-\/]{1,39}$/.test(license_number)) {
+    return res.redirect('/agent');
+  }
+  await pool.query(
+    `UPDATE agent_profiles SET license_state=$1, license_number=$2, verification_status='needs_verification',
+       status='pending', rejection_reason=NULL, reviewed_by=NULL, reviewed_at=NULL, reld_error=NULL
+     WHERE user_id=$3`, [license_state, license_number, req.session.user.id]);
+  logEvent('license_correction', { userId: req.session.user.id, meta: { license_state, license_number } });
+  const reld = require('../reld');
+  if (reld.configured()) {
+    try { await reld.verifyProfessional(req.session.user.id, { useCache: true, autoDecide: true }); }
+    catch (e) { console.error('RELD correction verification error:', e.message); }
+  }
+  res.redirect('/agent?corrected=1');
 });
 
 module.exports = router;

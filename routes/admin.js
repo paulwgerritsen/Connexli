@@ -14,7 +14,7 @@ const admin = requireRole('admin');
 router.get('/admin', admin, async (req, res) => {
   const [pending, agents, requests, metrics] = await Promise.all([
     pool.query(
-      `SELECT ap.*, u.name, u.email, u.phone FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
+      `SELECT ap.*, u.name, u.email, u.phone, u.email_verified FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
        WHERE ap.status='pending' ORDER BY ap.created_at ASC`),
     // Approved (and suspended) professionals — the primary operational list.
     // Rejected registrations live in their own section (Paul, Aug 31 §13/§14)
@@ -321,6 +321,7 @@ router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
     recheckMsg: req.query.recheck === 'done' ? 'License recheck complete — the result below is current.'
       : (req.query.recheck === 'skipped' ? 'A check ran less than a minute ago — result below is already current, no second lookup was spent.'
       : (req.query.recheck === 'unconfigured' ? 'RELD is not configured yet (RELD_API_KEY is not set), so no lookup was made.' : null)),
+    reviewMsg: req.query.review === 'resolved' ? 'Identity confirmed — the review flag is cleared and this professional now shows as Verified.' : null,
   });
 });
 
@@ -334,9 +335,37 @@ router.post('/admin/agents/:id(\\d+)/recheck', admin, async (req, res) => {
   if (rows[0].reld_checked_at && Date.now() - new Date(rows[0].reld_checked_at).getTime() < 60000) {
     return res.redirect('/admin/agents/' + req.params.id + '?recheck=skipped');
   }
-  const status = await reld.verifyProfessional(parseInt(req.params.id, 10));
+  // Deliberate admin action: always a fresh API lookup (no cache), and NEVER
+  // an automatic account decision — the administrator is right here to decide.
+  const status = await reld.verifyProfessional(parseInt(req.params.id, 10), { useCache: false, autoDecide: false });
   logEvent('reld_recheck', { userId: parseInt(req.params.id, 10), meta: { result: status } });
   res.redirect('/admin/agents/' + req.params.id + '?recheck=done');
+});
+
+// ---------- confirm identity / clear review (Paul, Sep 1 — PDF 2) ----------
+// When the admin confirms the professional IS the person on the license
+// (e.g. preferred name "Pablo Gerri" vs registry "PAUL GERRITSEN"), this
+// clears the Needs Review flag: verification becomes Verified, the confirmed
+// registry name/brokerage are remembered so future rechecks don't re-flag,
+// and who/when/why is recorded. The original mismatch flags stay in the
+// record — the audit trail is preserved, only the active warning clears.
+router.post('/admin/agents/:id(\\d+)/resolve-review', admin, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT verification_status, reld_name, reld_brokerage FROM agent_profiles WHERE user_id=$1`, [req.params.id]);
+  const p = rows[0];
+  if (!p) return res.status(404).render('error', { title: 'Not found', message: 'That professional does not exist.' });
+  if (p.verification_status !== 'needs_review' || !p.reld_name) {
+    return res.redirect('/admin/agents/' + req.params.id);
+  }
+  const reason = H.clean(req.body.reason, 300) || 'Confirmed preferred-name / brokerage difference — same person as the licensed individual';
+  await pool.query(
+    `UPDATE agent_profiles SET verification_status='verified', reld_verified=true,
+       confirmed_reld_name=reld_name, confirmed_reld_brokerage=reld_brokerage,
+       review_resolved_at=now(), review_resolved_by=$1, review_resolution=$2
+     WHERE user_id=$3`,
+    [req.session.user.email, reason, req.params.id]);
+  logEvent('review_resolved', { userId: parseInt(req.params.id, 10), meta: { by: req.session.user.email, reason } });
+  res.redirect('/admin/agents/' + req.params.id + '?review=resolved');
 });
 
 // One-time batch audit of every professional with a license on file.
