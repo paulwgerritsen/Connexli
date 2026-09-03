@@ -5,6 +5,12 @@
 const zipcodes = require('zipcodes');
 const { pool } = require('./db');
 const H = require('./helpers');
+const schedule = require('./schedule');
+
+// Overnight submissions open at 7:00 AM Mountain (Paul, Sep 2 §6): the
+// consumer's confirmation says so plainly, so a quiet inbox at midnight never
+// reads as "something went wrong".
+const isScheduled = (row) => !!(row && row.live_at && new Date(row.live_at).getTime() > Date.now() + 60 * 1000);
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.MAIL_FROM || 'Connexli <onboarding@resend.dev>';
@@ -248,7 +254,7 @@ function buyerProposalsReady(email, name, profile, filledEarly = false) {
       filledEarly
         ? `${name.split(' ')[0]}, your buyer request filled every proposal spot before the window even ended — so we closed it and your proposals are ready now, sooner than expected.`
         : `${name.split(' ')[0]}, the proposal window for your home search in ${profile.search_areas} has closed.`,
-      'Log in to compare every sealed proposal side by side: compensation, tours, response times, and each agent\'s plan for you.',
+      'Log in to compare every sealed proposal side by side: compensation, experience, response times, and each agent\'s plan for you.',
       'Want more options after reviewing? You can receive 10 more proposals — shown only to agents who haven\'t proposed yet. Your name and contact info stay hidden until you choose to connect.',
     ], 'Compare my proposals', APP_URL + '/buyer'));
 }
@@ -288,6 +294,15 @@ function passwordReset(email, name, resetUrl) {
 // Paul (Aug 7): reassure the requester right away, then the "ready" email
 // closes the loop later.
 function sellerRequestReceived(email, name, request) {
+  if (isScheduled(request)) {
+    return send(email, 'Your Connexli request is ready',
+      template('Your request is ready 🏡', [
+        `${name.split(' ')[0]}, thanks for inviting proposals — your request was created successfully.`,
+        `To give professionals a fair opportunity to respond, requests submitted overnight begin accepting proposals at 7:00 AM Mountain Time. Yours opens <b>${schedule.describe(request.live_at)}</b>, and eligible professionals near ${request.city} will be notified then.`,
+        `Your full proposal window starts at that moment and closes <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b> — or the moment all 10 proposal spots fill, whichever comes first.`,
+        "You don't need to do anything. We'll email you the instant your sealed proposals are ready to compare. Your address and contact info stay hidden until you choose to share them.",
+      ], 'Watch my request', APP_URL + '/requests/' + request.id));
+  }
   return send(email, 'Your Connexli request is live',
     template('Your request is live 🏡', [
       `${name.split(' ')[0]}, thanks for inviting proposals — verified professionals near ${request.city} are being notified right now.`,
@@ -298,6 +313,14 @@ function sellerRequestReceived(email, name, request) {
 
 // Same confirmation for buyers when their profile publishes to agents.
 function buyerProfileLive(email, name, profile) {
+  if (isScheduled(profile)) {
+    return send(email, 'Your buyer request is ready',
+      template('Your request is ready 🔑', [
+        `${name.split(' ')[0]}, thanks for creating your buyer profile — your request was created successfully.`,
+        `To give professionals a fair opportunity to respond, requests submitted overnight begin accepting proposals at 7:00 AM Mountain Time. Yours opens <b>${schedule.describe(profile.live_at)}</b>, and eligible buyer's agents near ${profile.search_areas} will be notified then.`,
+        "You don't need to do anything. We'll email you as each sealed proposal arrives (up to 10 this round), and your name and contact info stay hidden until you choose to connect.",
+      ], 'See my profile', APP_URL + '/buyer'));
+  }
   return send(email, 'Your buyer profile is live',
     template('Your profile is live 🔑', [
       `${name.split(' ')[0]}, thanks for creating your buyer profile — verified buyer's agents near ${profile.search_areas} are being notified right now.`,

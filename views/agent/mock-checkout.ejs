@@ -1,0 +1,18 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:520px;">
+  <h1>Test checkout</h1>
+  <div class="card" style="border-left:4px solid #B45309;">
+    <p class="sub" style="margin:0;"><b>This is a pretend payment page</b> used for automated tests and local demos. No card is charged and no money moves. It cannot run on the live site.</p>
+  </div>
+  <div class="card">
+    <div class="sumrow"><span>Item</span><span><%= pkg ? pkg.label : order.credits + ' proposal credit(s)' %></span></div>
+    <div class="sumrow"><span>Total</span><span>$<%= (order.amount_cents / 100).toFixed(2) %></span></div>
+    <div class="sumrow"><span>Order</span><span>#<%= order.id %></span></div>
+  </div>
+  <form method="POST" action="/agent/credits/mock-checkout/<%= order.id %>">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <button class="btn full" type="submit" name="action" value="pay">Pay $<%= (order.amount_cents / 100).toFixed(2) %> (simulated)</button>
+    <button class="btn ghost full" type="submit" name="action" value="cancel" style="margin-top:10px;">Cancel and go back</button>
+  </form>
+</div>
+<%- include('../partials/foot') %>

@@ -376,6 +376,57 @@ ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS confirmed_reld_brokerage TEX
 ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS expected_tours TEXT;
 ALTER TABLE buyer_proposals ADD COLUMN IF NOT EXISTS shortfall_policy TEXT
   CHECK (shortfall_policy IN ('buyer_pays','min_fee') OR shortfall_policy IS NULL);
+
+-- v22 (Paul, Sep 2 — priority timing): opportunities have a GO-LIVE moment
+-- that can be later than creation. Overnight submissions (7 PM – 6:59:59 AM
+-- Mountain) are stored right away with live_at = the next 7:00 AM; the
+-- proposal window, the purchased-credit priority window, and professional
+-- notifications all start from live_at, never from created_at.
+-- live_notified: the go-live sweep flips this when notifications are sent,
+-- so they go out exactly once. Pre-existing rows default to already-live /
+-- already-notified — nothing about existing requests changes at deploy.
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS live_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS live_notified BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS live_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS live_notified BOOLEAN NOT NULL DEFAULT true;
+CREATE INDEX IF NOT EXISTS idx_requests_live ON requests(live_at) WHERE live_notified = false;
+CREATE INDEX IF NOT EXISTS idx_buyer_profiles_live ON buyer_profiles(live_at) WHERE live_notified = false;
+
+-- v22: credit purchase ORDERS (Paul, Sep 2 §8–§10). One row per checkout
+-- attempt. Credits are added to the ledger ONLY when an order moves from
+-- 'pending' to 'paid' via a server-verified confirmation — never on the
+-- strength of a browser redirect alone. Price and credit count are copied
+-- from the server-side package table at creation, never taken from a form.
+CREATE TABLE IF NOT EXISTS credit_orders (
+  id SERIAL PRIMARY KEY,
+  agent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  package_key TEXT NOT NULL,
+  credits INTEGER NOT NULL CHECK (credits > 0),
+  amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
+  provider TEXT NOT NULL,
+  provider_session_id TEXT,
+  provider_transaction_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','cancelled','failed')),
+  return_path TEXT NOT NULL DEFAULT '/agent',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_credit_orders_agent ON credit_orders(agent_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_orders_session ON credit_orders(provider, provider_session_id)
+  WHERE provider_session_id IS NOT NULL;
+
+-- v22: proposal DRAFTS (Paul, Sep 2 §10 — "this is critical"). Everything a
+-- professional typed into a proposal form is saved here the moment they
+-- click Buy a credit, and restored when they return — success or cancel.
+-- Deleted when the proposal is actually submitted.
+CREATE TABLE IF NOT EXISTS proposal_drafts (
+  agent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  opportunity_type TEXT NOT NULL CHECK (opportunity_type IN ('seller','buyer')),
+  opportunity_id INTEGER NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (agent_id, opportunity_type, opportunity_id)
+);
 `;
 
 async function init() {
@@ -469,10 +520,11 @@ async function init() {
 
 // Any request whose window has passed becomes 'closed' (the sealed reveal).
 // Returns the requests that were closed by THIS call (each returns exactly
-// once, so "proposals ready" emails are never sent twice).
+// once, so "proposals ready" emails are never sent twice). A scheduled
+// (not-yet-live) request can never match: its closes_at is live_at + window.
 async function closeExpired() {
   const { rows } = await pool.query(
-    `UPDATE requests SET status='closed' WHERE status='open' AND closes_at <= now()
+    `UPDATE requests SET status='closed' WHERE status='open' AND closes_at <= now() AND live_at <= now()
      RETURNING id, seller_id, property_type, city, zip, price_range`);
   return rows;
 }
@@ -511,15 +563,19 @@ function scheduleFollowups(type, oppId, client, professional, connectedAt = new 
 const FREE_PROPOSALS_PER_MONTH = parseInt(process.env.FREE_PROPOSALS_PER_MONTH, 10) || 5;
 const CREDIT_TZ = 'America/Denver';
 
-// 5-hour paid-credit priority window (Paul, Aug 31 §3). Configurable via env;
-// legacy test suites run with PRIORITY_HOURS=0 to disable it.
+// Purchased-credit priority window (Paul, Aug 31 §3; shortened from 5 to 3
+// hours Sep 2 §1). Starts at the opportunity's go-live moment. Configurable
+// via env; legacy test suites run with PRIORITY_HOURS=0 to disable it.
 const PRIORITY_HOURS = process.env.PRIORITY_HOURS !== undefined
-  ? Math.max(0, parseFloat(process.env.PRIORITY_HOURS) || 0) : 5;
+  ? Math.max(0, parseFloat(process.env.PRIORITY_HOURS) || 0) : 3;
 
-// Paid bundle pricing (Paul, Aug 31 §6) — configurable, not hard-coded at
-// call sites. Override with a CREDIT_BUNDLES env var containing JSON of the
-// same shape to change pricing without a code deploy.
+// Paid credit pricing (Paul, Aug 31 §6; single credit added Sep 2 §9) —
+// configurable, not hard-coded at call sites. Override with a CREDIT_BUNDLES
+// env var containing JSON of the same shape to change pricing without a code
+// deploy. The 'single' package is what the in-opportunity "Buy a credit"
+// button sells; the bundles are offered on the dashboard.
 let CREDIT_BUNDLES = [
+  { key: 'single', credits: 1, price: 10, label: '1 Proposal Credit', single: true },
   { key: 'bundle5', credits: 5, price: 50, label: '5 Proposal Credits' },
   { key: 'bundle11', credits: 11, price: 100, label: '11 Proposal Credits — Buy 10, Get 1 Free' },
   { key: 'bundle25', credits: 25, price: 200, label: '25 Proposal Credits — Buy 20, Get 5 Free' },

@@ -25,6 +25,12 @@ services:
         sync: false   # Cloudflare Turnstile Site Key (public — shown in page source by design)
       - key: TURNSTILE_SECRET_KEY
         sync: false   # Cloudflare Turnstile Secret Key (server-side ONLY — never in code or GitHub)
+      - key: PAYMENTS_PROVIDER
+        sync: false   # leave EMPTY until a processor is chosen; then "stripe"
+      - key: STRIPE_SECRET_KEY
+        sync: false   # Stripe secret key (server-side ONLY — never in code or GitHub)
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false   # Stripe webhook signing secret for /webhooks/stripe
       - key: DATABASE_URL
         fromDatabase:
           name: connexli-db

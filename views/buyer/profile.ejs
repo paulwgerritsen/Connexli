@@ -44,24 +44,32 @@
     <p class="sub" style="margin-bottom:10px;">You're in the <b>Exploring</b> stage. Agents compete hardest for prepared buyers — our Get Ready guide shows the fastest path, and the moment you're preapproved, one tap publishes your profile.</p>
     <a class="btn" href="/buyer/get-ready">Get ready to buy</a>
   </div>
+<% } else if (scheduled) { %>
+  <%# Overnight submission (Paul, Sep 2 §6): saved, opens at 7:00 AM Mountain. %>
+  <div class="success">✓ <b>Your request is ready.</b> To give professionals a fair opportunity to respond, requests submitted overnight begin accepting proposals at 7:00 AM Mountain Time. Eligible professionals will be notified then.</div>
 <% } else { %>
   <div class="checkrow"><span class="c">🔒</span><span>Your profile is live and anonymous. Agents see your search, never your name — sealed proposals reveal together when your window closes, and competing agents never see each other's terms.</span></div>
 <% } %>
 
 <% if (profile.status === 'active' && profile.published && windowIsOpen) { %>
   <div class="card" style="text-align:center; margin-top:14px;">
-    <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;">Proposal window closes in</div>
-    <div class="count" id="clock" data-closes="<%= new Date(profile.closes_at).toISOString() %>">…</div>
+    <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;"><%= scheduled ? 'Opens for proposals in' : 'Proposal window closes in' %></div>
+    <div class="count" id="clock" data-closes="<%= new Date(scheduled ? profile.live_at : profile.closes_at).toISOString() %>">…</div>
     <div class="bar"><i id="clockbar" style="width:0%"></i></div>
+    <% if (scheduled) { %>
+      <p style="margin-top:12px; font-size:15px;">Proposal window: <b><%= liveAtText %></b> until <b><%= new Date(profile.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %> Mountain Time</b></p>
+      <p class="note" style="margin-top:4px;">Your full <%= profile.window_hours >= 24 ? (profile.window_hours / 24) + '-day' : profile.window_hours + '-hour' %> window starts when it opens — none of the overnight wait counts against it. This page updates itself.</p>
+    <% } else { %>
     <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= profile.proposal_count %></b> of <b><%= profile.proposal_cap %></b> sealed proposals received</p>
     <p class="note" style="margin-top:4px;">If all 10 spots for this round fill before the countdown ends, the window closes early and your comparison is ready sooner.</p>
+    <% } %>
     <div class="sealed">🔒 <span><b>Why sealed?</b> Agents can't see each other's offers, so each one gives you their best proposal, not the minimum needed to beat a rival. You'll see everything the moment the window closes.</span></div>
   </div>
   <script>
   (function(){
     var el = document.getElementById('clock');
     var closes = new Date(el.dataset.closes).getTime();
-    var total = <%= profile.window_hours %> * 3600 * 1000;
+    var total = <%= scheduled ? Math.max(1, new Date(profile.live_at).getTime() - new Date(profile.created_at).getTime()) : profile.window_hours * 3600 * 1000 %>;
     function tick(){
       var left = closes - Date.now();
       if (left <= 0) { location.reload(); return; }
@@ -142,7 +150,6 @@
               <p class="note"><b>If the seller doesn't cover the full amount:</b> this agent will not ask you to pay the difference.</p>
             <% } %>
             <div class="pillrow">
-              <% if (p.included_tours) { %><span class="pill"><%= p.included_tours %></span><% } %>
               <% if (p.video_tours) { %><span class="pill">Video tours</span><% } %>
               <% if (p.response_time) { %><span class="pill">Responds: <%= p.response_time.toLowerCase() %></span><% } %>
               <% (p.specialties ? p.specialties.split(', ') : []).forEach(s => { %><span class="pill"><%= s %></span><% }) %>

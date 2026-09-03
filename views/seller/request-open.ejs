@@ -1,8 +1,15 @@
 <%- include('../partials/head') %>
 <div class="narrow" style="max-width:720px;">
   <a href="/dashboard" style="font-size:14px;">‹ Back to my requests</a>
-  <h1 style="margin-top:8px;">Your request is live<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
-  <p class="sub">Verified professionals in Utah can now submit sealed proposals.<% if (request.round > 1) { %> This round is shown only to professionals who haven't proposed yet — your earlier proposals are saved.<% } %></p>
+  <% if (scheduled) { %>
+    <%# Overnight submission (Paul, Sep 2 §6): saved, opens at 7:00 AM Mountain. %>
+    <h1 style="margin-top:8px;">Your request is ready<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
+    <div class="success" style="margin-bottom:12px;">✓ <b>Your request was created successfully.</b> To give professionals a fair opportunity to respond, requests submitted overnight begin accepting proposals at 7:00 AM Mountain Time. Eligible professionals will be notified then.</div>
+    <p class="sub">Opens for sealed proposals <b><%= liveAtText %></b>. Your <%= request.window_hours >= 24 ? (request.window_hours / 24) + '-day' : request.window_hours + '-hour' %> proposal window starts at that moment — none of the overnight wait counts against it.</p>
+  <% } else { %>
+    <h1 style="margin-top:8px;">Your request is live<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
+    <p class="sub">Verified professionals in Utah can now submit sealed proposals.<% if (request.round > 1) { %> This round is shown only to professionals who haven't proposed yet — your earlier proposals are saved.<% } %></p>
+  <% } %>
   <div class="checkrow"><span class="c">✓</span><span>Your address and contact info are hidden until you choose to share them.</span></div>
 
   <div class="card">
@@ -13,19 +20,26 @@
   </div>
 
   <div class="card" style="text-align:center;">
-    <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;">Proposal window closes in</div>
-    <div class="count" id="clock" data-closes="<%= new Date(request.closes_at).toISOString() %>">…</div>
+    <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.7px;"><%= scheduled ? 'Opens for proposals in' : 'Proposal window closes in' %></div>
+    <div class="count" id="clock" data-closes="<%= new Date(scheduled ? request.live_at : request.closes_at).toISOString() %>">…</div>
     <div class="bar"><i id="clockbar" style="width:0%"></i></div>
+    <% if (scheduled) { %>
+      <p style="margin-top:12px; font-size:15px;">Proposal window: <b><%= liveAtText %></b> until <b><%= new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %> Mountain Time</b></p>
+      <p class="note" style="margin-top:4px;">Nothing to do until then — this page updates itself when your request opens. If all 10 spots for this round fill before the window ends, it closes early and your proposals are ready sooner.</p>
+    <% } else { %>
     <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= proposalCount %></b> of <b><%= roundCap %></b> sealed proposal<%= roundCap === 1 ? '' : 's' %> received</p>
     <p class="note" style="margin-top:4px;">If all 10 spots for this round fill before the countdown ends, the window closes early and your proposals are ready sooner.</p>
+    <% } %>
     <div class="sealed">🔒 <span><b>Why sealed?</b> Professionals can't see each other's offers, so each one gives you their best proposal, not the minimum needed to beat a rival. You'll see everything the moment the window closes.</span></div>
   </div>
 
+  <% if (!scheduled) { %>
   <form method="POST" action="/requests/<%= request.id %>/close" onsubmit="return confirm('End the window now? Professionals will no longer be able to submit, and your proposals will be revealed.');">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <button class="btn ghost full" type="submit">End the window early &amp; reveal proposals</button>
   </form>
   <p class="note">Ending early is fine if you're satisfied with the number of proposals. Otherwise, sit tight. This page updates the moment the countdown ends.</p>
+  <% } %>
 
   <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
     <h2 style="font-size:16px;">Buying your next home too?</h2>
@@ -37,7 +51,7 @@
 (function(){
   var el = document.getElementById('clock');
   var closes = new Date(el.dataset.closes).getTime();
-  var total = <%= request.window_hours %> * 3600 * 1000;
+  var total = <%= scheduled ? Math.max(1, new Date(request.live_at).getTime() - new Date(request.created_at).getTime()) : request.window_hours * 3600 * 1000 %>;
   function tick(){
     var left = closes - Date.now();
     if (left <= 0) { location.reload(); return; }

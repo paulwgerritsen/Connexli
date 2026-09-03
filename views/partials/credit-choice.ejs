@@ -1,0 +1,47 @@
+<%# "Submit this proposal using" — shared by the seller and buyer opportunity
+    forms (Paul, Aug 31 §4; Buy-a-credit CTA added Sep 2 §8–§9). The
+    professional picks which credit funds this NEW submission. During the
+    priority window the complimentary option is locked (countdown shown);
+    the server enforces the same rule regardless of what the browser shows.
+    Expects: credits, priority, priorityUntil, PRIORITY_HOURS, purchasing,
+    singlePkg, oppType. %>
+<% const canFree = !priority && credits.freeRemaining > 0; const canPaid = credits.purchased > 0; %>
+<label style="margin-top:16px;">Submit this proposal using</label>
+<div class="optgrid cols">
+  <label class="opt" style="<%= !canFree ? 'opacity:.55;' : '' %>">
+    <input type="radio" name="credit_choice" value="complimentary" <%= !canFree ? 'disabled' : '' %> <%= canFree ? 'checked' : '' %>>
+    <span class="tile"><span><b>Use a complimentary credit</b>
+      <span class="desc"><% if (priority) { %>🔒 Opens in <span data-priority-countdown="<%= new Date(priorityUntil).toISOString() %>">…</span><br>Purchased credits get <%= PRIORITY_HOURS %>-hour priority access.<% } else if (credits.freeRemaining <= 0) { %>0 remaining this month · resets <%= credits.nextReset %><% } else { %><%= credits.freeRemaining %> remaining this month · resets <%= credits.nextReset %><% } %></span></span></span>
+  </label>
+  <label class="opt" style="<%= !canPaid ? 'opacity:.55;' : '' %>">
+    <input type="radio" name="credit_choice" value="purchased" <%= !canPaid ? 'disabled' : '' %> <%= (canPaid && !canFree) ? 'checked' : '' %>>
+    <span class="tile"><span><b>Use a purchased credit</b>
+      <span class="desc"><%= credits.purchased %> available · purchased credits never expire<%= priority && canPaid ? ' · submit immediately' : '' %></span></span></span>
+  </label>
+</div>
+<% if (!canPaid) { %>
+  <div class="buycta" style="margin-top:12px; padding:14px 16px; border:1px solid var(--line, #E1E7F0); border-radius:12px; background:var(--soft, #F5F8FC);">
+    <b style="color:var(--navy);"><%= priority ? 'Want to propose now?' : (canFree ? 'Prefer to save your complimentary credits?' : 'Want to propose now?') %></b>
+    <p class="note" style="margin:4px 0 10px;"><%= priority ? 'Purchase a proposal credit to unlock priority access.' : 'Purchase a proposal credit to submit this proposal.' %> Purchased proposal credits never expire and roll over indefinitely.</p>
+    <% if (purchasing) { %>
+      <%# formnovalidate: buying must never be blocked by an unfinished form —
+          the draft is saved as-is and restored after checkout (§10). %>
+      <button class="btn" type="submit" formaction="/agent/credits/checkout" formmethod="POST" formnovalidate name="package_key" value="<%= singlePkg.key %>">Buy a credit — $<%= singlePkg.price %></button>
+      <p class="note" style="margin:8px 0 0;">Your draft is saved automatically. Bundles are on your dashboard.</p>
+    <% } else { %>
+      <b style="color:var(--navy);">Buy a credit <span class="badge pending">Coming soon</span></b>
+      <p class="note" style="margin:6px 0 0;">1 proposal credit = $<%= singlePkg.price %> once payments are enabled.</p>
+    <% } %>
+  </div>
+<% } %>
+<% if (!canFree && !canPaid) { %>
+  <script>
+  // No usable credit right now: the main button is switched off so a click
+  // can't send the professional to an error page and lose their draft. The
+  // server enforces the same rule; this is a courtesy only.
+  document.addEventListener('DOMContentLoaded', function(){
+    var b = document.getElementById('submitProposal');
+    if (b) { b.disabled = true; b.style.opacity = '.5'; b.title = <%- JSON.stringify(priority ? 'Opens for complimentary credits when the countdown ends' + (purchasing ? ' — or buy a credit to submit now' : '') : 'No proposal credit available this month' + (purchasing ? ' — buy a credit to submit now' : '')) %>; }
+  });
+  </script>
+<% } %>

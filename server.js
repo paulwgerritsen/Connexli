@@ -9,6 +9,7 @@ const path = require('path');
 
 const { pool, init, closeExpired, expireBuyerProfiles, logEvent } = require('./db');
 const mailer = require('./mailer');
+const golive = require('./golive');
 const { csrf } = require('./middleware');
 
 const app = express();
@@ -17,6 +18,12 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('trust proxy', 1); // Render sits behind a proxy
 
 app.use(helmet({ contentSecurityPolicy: false })); // CSP kept simple for the pilot (Google Fonts)
+
+// Payment-provider webhook (Paul, Sep 2 §9): mounted BEFORE sessions, CSRF
+// and the form parser because Stripe signs the RAW request body. It is a
+// no-op (404) unless PAYMENTS_PROVIDER=stripe is configured on Render.
+app.post('/webhooks/stripe', express.raw({ type: '*/*', limit: '1mb' }), require('./routes/credits').stripeWebhook);
+
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -48,6 +55,9 @@ app.use(csrf);
 // returned exactly once, so emails never duplicate.
 async function closeAndNotify() {
   try {
+    // Opportunities whose go-live moment has arrived (overnight submissions
+    // scheduled for 7:00 AM Mountain) open and notify professionals first.
+    await golive.activateDue();
     const closed = await closeExpired();
     for (const r of closed) {
       const { rows } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [r.seller_id]);
@@ -72,13 +82,16 @@ async function closeAndNotify() {
   } catch (e) { console.error('closeAndNotify:', e.message); }
 }
 setInterval(closeAndNotify, 5 * 60 * 1000);
+// Go-live is checked every minute as well (Paul, Sep 2 §2): a request
+// scheduled for 7:00 AM opens at 7:00 AM, not at the next 5-minute tick.
+setInterval(golive.activateSoon, 60 * 1000);
 app.use(async (req, res, next) => { await closeAndNotify(); next(); });
 
 // Every feature area the app expects to serve. If a route file is missing the
 // server refuses to start with a clear message — a half-deployed update can
 // never boot silently with features missing.
-const APP_VERSION = '2026-09-01-buyer-ux-compensation';
-const ROUTE_MODULES = ['auth', 'seller', 'buyer', 'agent', 'admin'];
+const APP_VERSION = '2026-09-02-overnight-scheduling-credit-purchase';
+const ROUTE_MODULES = ['auth', 'seller', 'buyer', 'agent', 'credits', 'admin'];
 for (const m of ROUTE_MODULES) {
   app.use('/', require('./routes/' + m));
 }

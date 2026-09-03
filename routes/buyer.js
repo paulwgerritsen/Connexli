@@ -7,6 +7,8 @@ const { pool, logEvent, PRIORITY_HOURS } = require('../db');
 const { requireRole, assertEmailVerified } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
+const schedule = require('../schedule');
+const golive = require('../golive');
 
 const router = require('../middleware').safeRouter(express.Router());
 const consumer = requireRole('seller'); // homeowner/buyer accounts share one role
@@ -36,6 +38,8 @@ async function openProfile(userId) {
 async function renderProfile(req, res, profile) {
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
   profile.proposal_count = cnt[0].n;
+  // Scheduled = published overnight, opens at 7:00 AM Mountain (Paul, Sep 2 §6).
+  const scheduled = profile.status === 'active' && profile.published && new Date(profile.live_at).getTime() > Date.now();
   const open = profile.status === 'active' && profile.published && H.windowOpen(profile);
 
   let proposals = [];
@@ -55,7 +59,8 @@ async function renderProfile(req, res, profile) {
       `SELECT 1 FROM connection_feedback WHERE opportunity_type='buyer' AND opportunity_id=$1 AND respondent_role='client'`, [profile.id]);
     feedbackGiven = fb.length > 0;
   }
-  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H, existingNote: req.query.existing === '1', feedbackGiven });
+  res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H, existingNote: req.query.existing === '1', feedbackGiven,
+    scheduled, liveAtText: schedule.describe(profile.live_at) });
 }
 
 router.get('/buyer', consumer, async (req, res) => {
@@ -171,42 +176,45 @@ router.post('/buyer/new', consumer, async (req, res) => {
 
   const badge = H.readiness(f);
   const published = badge !== 'exploring';
+  // Go-live timing (Paul, Sep 2 §2–§4): a profile published overnight (7 PM
+  // – 6:59:59 AM Mountain) is saved now and opens at the next 7:00 AM; the
+  // proposal window and the purchased-credit priority window both start
+  // from that go-live moment. Unpublished (Exploring) profiles get their
+  // timing when they publish via upgrade instead.
+  const liveAt = published ? schedule.goLiveAt(schedule.now(req)) : null; // null = right now
   const { rows } = await pool.query(
     `INSERT INTO buyer_profiles (user_id, readiness, published, financing_type, lender_status, down_payment,
        current_situation, need_to_sell, search_areas, price_range, timeline, expected_tours, in_utah, origin_state,
        move_reason, visit_dates, video_tours, purchase_purpose, bba, bba_expires,
-       window_hours, closes_at, search_geo)
+       window_hours, live_at, live_notified, closes_at, priority_until, search_geo)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-       $21, now() + make_interval(hours => $21), $22) RETURNING *`,
+       $21, COALESCE($24::timestamptz, now()), NOT $3::boolean,
+       COALESCE($24::timestamptz, now()) + make_interval(hours => $21),
+       CASE WHEN $3::boolean THEN COALESCE($24::timestamptz, now()) + make_interval(mins => $23) ELSE NULL END,
+       $22) RETURNING *`,
     [req.session.user.id, badge, published, f.financing_type, f.lender_status, f.down_payment,
      f.current_situation, f.need_to_sell, f.search_areas, f.price_range, f.timeline, f.expected_tours, f.in_utah,
      f.origin_state, f.move_reason, f.visit_dates, f.video_tours, f.purchase_purpose, f.bba, f.bba_expires,
-     f.window_hours, JSON.stringify(searchGeo)]
+     f.window_hours, JSON.stringify(searchGeo), Math.round(PRIORITY_HOURS * 60), liveAt]
   );
   const profile = rows[0];
-
-  // 5-hour paid-credit priority window starts the moment the profile is live
-  // to professionals (Paul, Aug 31 §3). Unpublished (Exploring) drafts get it
-  // when they publish via upgrade instead.
-  if (published) {
-    await pool.query(`UPDATE buyer_profiles SET priority_until = now() + make_interval(mins => $2) WHERE id=$1`,
-      [profile.id, Math.round(PRIORITY_HOURS * 60)]);
-  }
 
   logEvent('buyer_profile_created', { userId: req.session.user.id, meta: { readiness: badge, published, in_utah: f.in_utah, price_range: f.price_range } });
   if (f.lender_status === "No — I'd like a recommendation") {
     logEvent('lender_recommendation_requested', { userId: req.session.user.id }); // the Phase-2 demand counter
   }
   if (published) {
-    logEvent('buyer_profile_published', { userId: req.session.user.id, meta: { readiness: badge } });
-    mailer.agentsNewBuyerProfile(profile, H.READINESS_LABELS[badge]); // fire and forget
+    logEvent('buyer_profile_published', { userId: req.session.user.id, meta: { readiness: badge, scheduled_for: liveAt ? liveAt.toISOString() : null } });
+    // Professionals are notified by the go-live sweep — immediately for a
+    // daytime request, at 7:00 AM for an overnight one (§5: never overnight).
+    golive.activateSoon();
     mailer.buyerProfileLive(req.session.user.email, req.session.user.name, profile); // instant confirmation
   }
 
   // Published buyers land back on the dashboard, where their new buying
   // request is immediately visible (Paul, Aug 10). Exploring buyers still get
   // the Get Ready guidance page.
-  if (published) return res.redirect('/dashboard?buyerlive=1');
+  if (published) return res.redirect('/dashboard?buyerlive=' + (liveAt ? 'scheduled' : '1'));
   const crossSell = f.need_to_sell.startsWith('Yes');
   res.render('buyer/created', { title: "Let's get you ready", H, profile, published, badge, crossSell });
 });
@@ -250,18 +258,22 @@ router.post('/buyer/upgrade', consumer, async (req, res) => {
   const updated = { ...profile, lender_status: 'Yes — preapproved' };
   const badge = H.readiness(updated);
   const published = badge !== 'exploring';
-  // Publishing starts the proposal window — and the 5-hour paid-credit
-  // priority window — fresh from this moment.
-  await pool.query(`UPDATE buyer_profiles SET lender_status='Yes — preapproved', readiness=$1, published=$2,
-      closes_at = CASE WHEN $2 AND NOT published THEN now() + make_interval(hours => window_hours) ELSE closes_at END,
-      priority_until = CASE WHEN $2 AND NOT published THEN now() + make_interval(mins => $4) ELSE priority_until END
-    WHERE id=$3`,
-    [badge, published, profile.id, Math.round(PRIORITY_HOURS * 60)]);
+  // Publishing starts the proposal window — and the purchased-credit
+  // priority window — fresh from the go-live moment (now, or 7:00 AM
+  // Mountain if this happens overnight).
+  const liveAt = (published && !profile.published) ? schedule.goLiveAt(schedule.now(req)) : null;
+  const { rows: upd } = await pool.query(`UPDATE buyer_profiles SET lender_status='Yes — preapproved', readiness=$1, published=$2,
+      live_at = CASE WHEN $2 AND NOT published THEN COALESCE($5::timestamptz, now()) ELSE live_at END,
+      live_notified = CASE WHEN $2 AND NOT published THEN false ELSE live_notified END,
+      closes_at = CASE WHEN $2 AND NOT published THEN COALESCE($5::timestamptz, now()) + make_interval(hours => window_hours) ELSE closes_at END,
+      priority_until = CASE WHEN $2 AND NOT published THEN COALESCE($5::timestamptz, now()) + make_interval(mins => $4) ELSE priority_until END
+    WHERE id=$3 RETURNING *`,
+    [badge, published, profile.id, Math.round(PRIORITY_HOURS * 60), liveAt]);
   logEvent('buyer_upgraded_ready', { userId: req.session.user.id, meta: { readiness: badge } });
   if (published && !profile.published) {
-    mailer.agentsNewBuyerProfile({ ...profile, lender_status: 'Yes — preapproved' }, H.READINESS_LABELS[badge]);
-    mailer.buyerProfileLive(req.session.user.email, req.session.user.name, profile); // instant confirmation
-    logEvent('buyer_profile_published', { userId: req.session.user.id, meta: { readiness: badge, via: 'upgrade' } });
+    golive.activateSoon(); // notifies now, or at 7:00 AM for an overnight publish
+    mailer.buyerProfileLive(req.session.user.email, req.session.user.name, upd[0] || profile); // instant confirmation
+    logEvent('buyer_profile_published', { userId: req.session.user.id, meta: { readiness: badge, via: 'upgrade', scheduled_for: liveAt ? liveAt.toISOString() : null } });
   }
   res.redirect('/buyer');
 });
@@ -282,18 +294,22 @@ router.post('/buyer/rebid', consumer, async (req, res) => {
   if (cnt[0].n < profile.proposal_cap) return res.redirect('/buyer');
 
   // A fresh round becomes newly available to professionals who haven't
-  // proposed, so the 5-hour paid-credit priority window restarts with it.
+  // proposed, so the purchased-credit priority window restarts with it —
+  // and a round opened overnight goes live at 7:00 AM Mountain, exactly
+  // like a new request (Paul, Sep 2 §11).
+  const liveAt = schedule.goLiveAt(schedule.now(req));
   const { rows } = await pool.query(
     `UPDATE buyer_profiles SET round = round + 1, proposal_cap = $2 + 10, window_notified = false,
-       closes_at = now() + make_interval(hours => window_hours), expires_at = now() + interval '30 days',
-       priority_until = now() + make_interval(mins => $3)
-     WHERE id=$1 AND status='active' RETURNING *`, [profile.id, cnt[0].n, Math.round(PRIORITY_HOURS * 60)]);
+       live_at = COALESCE($4::timestamptz, now()), live_notified = false,
+       closes_at = COALESCE($4::timestamptz, now()) + make_interval(hours => window_hours),
+       expires_at = COALESCE($4::timestamptz, now()) + interval '30 days',
+       priority_until = COALESCE($4::timestamptz, now()) + make_interval(mins => $3)
+     WHERE id=$1 AND status='active' RETURNING *`, [profile.id, cnt[0].n, Math.round(PRIORITY_HOURS * 60), liveAt]);
   if (!rows[0]) return res.redirect('/buyer');
 
-  const { rows: prior } = await pool.query(`SELECT agent_id FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
-  mailer.agentsNewBuyerProfile(rows[0], H.READINESS_LABELS[rows[0].readiness], prior.map(p => p.agent_id)); // fire and forget
+  golive.activateSoon(); // prior bidders are excluded by the sweep
   logEvent('buyer_new_round', { userId: req.session.user.id,
-    meta: { profile_id: profile.id, round: rows[0].round, prior_proposals: prior.length } });
+    meta: { profile_id: profile.id, round: rows[0].round, prior_proposals: cnt[0].n, scheduled_for: liveAt ? liveAt.toISOString() : null } });
   res.redirect('/buyer');
 });
 

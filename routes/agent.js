@@ -5,8 +5,11 @@ const { requireRole } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
 const reld = require('../reld');
+const payments = require('../payments');
+const creditsRoutes = require('./credits');
 
-// 5-hour paid-credit priority window (Paul, Aug 31 §3/§9). Enforced HERE on
+// Purchased-credit priority window (Paul, Aug 31 §3/§9; 3 hours since Sep 2),
+// starting at the opportunity's go-live moment. Enforced HERE on
 // the server — the browser countdown is a courtesy display, never the gate.
 // NULL/past priority_until (all pre-existing rows) means no restriction.
 const priorityActive = (row) => !!(row.priority_until && new Date(row.priority_until).getTime() > Date.now());
@@ -27,6 +30,38 @@ function chooseFunding(body, credits, priority) {
 // needs_review / unable_to_verify / needs_verification do NOT block.
 function licenseBlocked(profile) {
   return reld.BLOCKING_STATUSES.includes(profile.verification_status);
+}
+
+// Wording for "no credit available" messages: mentions buying only when
+// purchasing is actually switched on (Paul, Sep 2 §8).
+const BUY_HINT = () => payments.enabled()
+  ? ' You can buy a proposal credit right from the opportunity page.'
+  : ' Additional proposal credits will be available for purchase soon.';
+
+// A saved draft (Paul, Sep 2 §10) restored into the shape the proposal form
+// expects, so the professional finds every field exactly as they left it.
+function draftAsProposal(type, d) {
+  if (!d) return null;
+  const join = (v) => Array.isArray(v) ? v.join(', ') : (v || '');
+  if (type === 'buyer') {
+    return { isDraft: true, comp_structure: d.comp_structure, comp_amount: d.comp_amount, min_fee: d.min_fee,
+      shortfall_policy: d.shortfall_policy, video_tours: d.video_tours === 'yes', response_time: d.response_time,
+      specialties: join(d.specialties), seller_contribution: d.seller_contribution, plan: d.plan };
+  }
+  return { isDraft: true, fee_type: d.fee_type, fee_amount: d.fee_amount, services: join(d.services),
+    marketing_plan: d.marketing_plan, cancellation_terms: d.cancellation_terms, listing_ack: d.listing_ack };
+}
+
+// Everything the opportunity pages need for the credit section: balances,
+// priority state, whether purchasing is on, the single-credit package, and
+// any "you just came back from checkout" notice.
+async function creditContext(req, row) {
+  const credits = await creditSummary(req.session.user.id);
+  return {
+    credits, priority: priorityActive(row), priorityUntil: row.priority_until, PRIORITY_HOURS,
+    purchasing: payments.enabled(), singlePkg: payments.singlePackage(),
+    notice: creditsRoutes.purchaseNotice(req.query, credits),
+  };
 }
 const LICENSE_BLOCKED_MSG = 'Your real estate license could not be verified as active, so proposal submissions are paused. Your account and any proposal credits are unaffected. Please contact us to resolve your license status.';
 
@@ -62,7 +97,7 @@ router.get('/agent', agent, async (req, res) => {
        (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id AND p.agent_id=$1)::int AS mine
      FROM buyer_profiles b
      WHERE b.published AND b.status='active'
-       AND b.closes_at > now()
+       AND b.live_at <= now() AND b.closes_at > now()
        AND (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id) < b.proposal_cap
        AND NOT EXISTS (SELECT 1 FROM buyer_proposals p WHERE p.profile_id=b.id AND p.agent_id=$1 AND p.round < b.round)
      ORDER BY b.closes_at ASC`, [uid]);
@@ -71,7 +106,7 @@ router.get('/agent', agent, async (req, res) => {
       `SELECT r.*,
          (SELECT COUNT(*) FROM proposals p WHERE p.request_id=r.id)::int AS proposal_count,
          (SELECT COUNT(*) FROM proposals p WHERE p.request_id=r.id AND p.agent_id=$1)::int AS mine
-       FROM requests r WHERE r.status='open'
+       FROM requests r WHERE r.status='open' AND r.live_at <= now()
          AND NOT EXISTS (SELECT 1 FROM proposals p WHERE p.request_id=r.id AND p.agent_id=$1 AND p.round < r.round)
        ORDER BY r.closes_at ASC`, [uid]),
     pool.query(
@@ -160,7 +195,8 @@ router.get('/agent', agent, async (req, res) => {
     title: 'Opportunities', profile, H,
     opportunities, myProposals: mine.rows, stats: stats.rows[0], wins,
     buyerOpps: buyerOppsNear, buyerWins, myBuyerProposals, feedbackDone,
-    credits, licenseBlocked: licenseBlocked(profile), CREDIT_BUNDLES,
+    credits, licenseBlocked: licenseBlocked(profile), CREDIT_BUNDLES, PRIORITY_HOURS,
+    purchasing: payments.enabled(), notice: creditsRoutes.purchaseNotice(req.query, credits),
   });
 });
 
@@ -200,9 +236,11 @@ router.get('/agent/buyers/:id(\\d+)', agent, async (req, res) => {
   const profile = await profileOf(req.session.user.id);
   if (!profile || profile.status !== 'approved') return res.redirect('/agent');
 
+  // live_at guard (Paul, Sep 2 §2): an overnight profile scheduled for 7:00
+  // AM is invisible to professionals until then — even by direct link.
   const { rows } = await pool.query(
     `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
-     FROM buyer_profiles b WHERE b.id=$1 AND b.published AND b.status='active'`, [req.params.id]);
+     FROM buyer_profiles b WHERE b.id=$1 AND b.published AND b.status='active' AND b.live_at <= now()`, [req.params.id]);
   const buyer = rows[0];
   if (!buyer) return res.status(404).render('error', { title: 'Not found', message: 'That buyer profile is no longer available.' });
 
@@ -215,11 +253,11 @@ router.get('/agent/buyers/:id(\\d+)', agent, async (req, res) => {
   }
 
   logEvent('buyer_opportunity_viewed', { userId: req.session.user.id, meta: { profile_id: buyer.id } });
-  const credits = await creditSummary(req.session.user.id);
+  // No proposal yet? Restore any draft saved when they went to buy a credit (§10).
+  const draft = mine[0] ? null : draftAsProposal('buyer', await creditsRoutes.loadDraft(req.session.user.id, 'buyer', buyer.id));
   res.render('agent/buyer-opportunity', {
-    title: 'Buyer opportunity', buyer, proposal: mine[0] || null, H, error: null,
-    credits, blockedLicense: licenseBlocked(profile),
-    priority: priorityActive(buyer), priorityUntil: buyer.priority_until, PRIORITY_HOURS,
+    title: 'Buyer opportunity', buyer, proposal: mine[0] || draft, H, error: null,
+    blockedLicense: licenseBlocked(profile), ...(await creditContext(req, buyer)),
   });
 });
 
@@ -234,9 +272,9 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
 
   const { rows } = await pool.query(
     `SELECT b.*, (SELECT COUNT(*) FROM buyer_proposals p WHERE p.profile_id=b.id)::int AS proposal_count
-     FROM buyer_profiles b WHERE b.id=$1 AND b.published AND b.status='active'`, [req.params.id]);
+     FROM buyer_profiles b WHERE b.id=$1 AND b.published AND b.status='active' AND b.live_at <= now()`, [req.params.id]);
   const buyer = rows[0];
-  if (!buyer) return res.status(400).render('error', { title: 'Not available', message: 'That buyer profile is no longer accepting proposals.' });
+  if (!buyer) return res.status(400).render('error', { title: 'Not available', message: 'That buyer profile is not accepting proposals right now.' });
 
   const { rows: mineBefore } = await pool.query(
     `SELECT round FROM buyer_proposals WHERE profile_id=$1 AND agent_id=$2`, [buyer.id, req.session.user.id]);
@@ -256,13 +294,13 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     const priority = priorityActive(buyer);
     funding = chooseFunding(req.body, credits, priority);
     if (funding === 'complimentary' && priority) {
-      return res.status(403).render('error', { title: "Complimentary access hasn't opened yet", message: `Purchased proposal credits receive ${PRIORITY_HOURS}-hour priority access to new opportunities. Your complimentary access to this opportunity opens at ${new Date(buyer.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain). Additional proposal credits will be available for purchase soon.` });
+      return res.status(403).render('error', { title: "Complimentary access hasn't opened yet", message: `Purchased proposal credits receive ${PRIORITY_HOURS}-hour priority access to new opportunities. Your complimentary access to this opportunity opens at ${new Date(buyer.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).${BUY_HINT()}` });
     }
     if (funding === 'complimentary' && credits.freeRemaining <= 0) {
-      return res.status(403).render('error', { title: 'Complimentary credits used', message: `You've used your ${credits.freeTotal} complimentary proposal credits for this month. Your complimentary credits reset ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+      return res.status(403).render('error', { title: 'Complimentary credits used', message: `You've used your ${credits.freeTotal} complimentary proposal credits for this month. Your complimentary credits reset ${credits.nextReset}.${BUY_HINT()}` });
     }
     if (funding === 'purchased' && credits.purchased <= 0) {
-      return res.status(403).render('error', { title: 'No purchased credits', message: `You have no purchased proposal credits available.${priority ? ` Purchased credits receive ${PRIORITY_HOURS}-hour priority access; your complimentary access to this opportunity opens at ${new Date(buyer.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).` : ' Choose a complimentary credit instead, or check back when credit purchases open.'}` });
+      return res.status(403).render('error', { title: 'No purchased credits', message: `You have no purchased proposal credits available.${priority ? ` Purchased credits receive ${PRIORITY_HOURS}-hour priority access; your complimentary access to this opportunity opens at ${new Date(buyer.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).` : ' Choose a complimentary credit instead.'}${BUY_HINT()}` });
     }
   }
 
@@ -308,8 +346,7 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     return res.status(400).render('agent/buyer-opportunity', {
       title: 'Buyer opportunity', buyer, H,
       proposal: { comp_structure, comp_amount: req.body.comp_amount, min_fee: req.body.min_fee, specialties: specialties.join(', '), shortfall_policy, gap_responsibility, ...fields },
-      credits: await creditSummary(req.session.user.id), blockedLicense: false,
-      priority: priorityActive(buyer), priorityUntil: buyer.priority_until, PRIORITY_HOURS,
+      blockedLicense: false, ...(await creditContext(req, buyer)),
       error: badFee
         ? 'Please enter a valid amount for the fee structure you chose (percentages up to 10, or a flat dollar amount in a reasonable range).'
         : 'You chose "subject to a minimum fee" — please enter the minimum compensation you will accept (a dollar amount in a reasonable range).',
@@ -324,7 +361,7 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows: locked } = await client.query(
-      `SELECT * FROM buyer_profiles WHERE id=$1 AND published AND status='active' FOR UPDATE`, [buyer.id]);
+      `SELECT * FROM buyer_profiles WHERE id=$1 AND published AND status='active' AND live_at <= now() FOR UPDATE`, [buyer.id]);
     if (!locked[0]) { await client.query('ROLLBACK'); client.release(); return res.status(400).render('error', { title: 'Not available', message: 'That buyer profile is no longer accepting proposals.' }); }
     const live = locked[0];
     const { rows: cnt } = await client.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [buyer.id]);
@@ -372,6 +409,8 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     return res.status(400).render('error', { title: 'Proposal cap reached', message: `This buyer already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. No credit was used. Keep an eye out for the next opportunity.` });
   }
 
+  // Submitted for real — the safety-net draft (§10) is no longer needed.
+  await creditsRoutes.clearDraft(req.session.user.id, 'buyer', buyer.id);
   const roundFull = newCount >= buyer.proposal_cap;
   logEvent(wasUpdate ? 'buyer_proposal_updated' : 'buyer_proposal_submitted', {
     userId: req.session.user.id, proposalId: savedId,
@@ -485,9 +524,11 @@ router.get('/agent/opportunities/:id(\\d+)', agent, async (req, res) => {
   const profile = await profileOf(req.session.user.id);
   if (!profile || profile.status !== 'approved') return res.redirect('/agent');
 
+  // live_at guard (Paul, Sep 2 §2): a request scheduled for 7:00 AM is
+  // invisible to professionals until then — even by direct link.
   const { rows } = await pool.query(
     `SELECT r.*, (SELECT COUNT(*) FROM proposals p WHERE p.request_id=r.id)::int AS proposal_count
-     FROM requests r WHERE r.id=$1`, [req.params.id]);
+     FROM requests r WHERE r.id=$1 AND r.live_at <= now()`, [req.params.id]);
   const request = rows[0];
   if (!request) return res.status(404).render('error', { title: 'Not found', message: 'That opportunity does not exist.' });
 
@@ -500,11 +541,11 @@ router.get('/agent/opportunities/:id(\\d+)', agent, async (req, res) => {
   }
 
   logEvent('opportunity_viewed', { userId: req.session.user.id, requestId: request.id });
-  const credits = await creditSummary(req.session.user.id);
+  // No proposal yet? Restore any draft saved when they went to buy a credit (§10).
+  const draft = mine[0] ? null : draftAsProposal('seller', await creditsRoutes.loadDraft(req.session.user.id, 'seller', request.id));
   res.render('agent/opportunity', {
-    title: 'Opportunity', request, proposal: mine[0] || null, H, error: null,
-    credits, blockedLicense: licenseBlocked(profile),
-    priority: priorityActive(request), priorityUntil: request.priority_until, PRIORITY_HOURS,
+    title: 'Opportunity', request, proposal: mine[0] || draft, H, error: null,
+    blockedLicense: licenseBlocked(profile), ...(await creditContext(req, request)),
   });
 });
 
@@ -532,9 +573,9 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     return res.status(403).render('error', { title: 'License verification required', message: LICENSE_BLOCKED_MSG });
   }
 
-  const { rows } = await pool.query(`SELECT * FROM requests WHERE id=$1 AND status='open'`, [req.params.id]);
+  const { rows } = await pool.query(`SELECT * FROM requests WHERE id=$1 AND status='open' AND live_at <= now()`, [req.params.id]);
   const request = rows[0];
-  if (!request) return res.status(400).render('error', { title: 'Window closed', message: 'This proposal window has already closed.' });
+  if (!request) return res.status(400).render('error', { title: 'Window closed', message: 'This proposal window is not open.' });
 
   const fee_type = req.body.fee_type === 'flat' ? 'flat' : 'pct';
   const fee_amount = parseFloat(String(req.body.fee_amount).replace(/[^0-9.]/g, ''));
@@ -563,13 +604,13 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     const priority = priorityActive(request);
     funding = chooseFunding(req.body, credits, priority);
     if (funding === 'complimentary' && priority) {
-      return res.status(403).render('error', { title: "Complimentary access hasn't opened yet", message: `Purchased proposal credits receive ${PRIORITY_HOURS}-hour priority access to new opportunities. Your complimentary access to this opportunity opens at ${new Date(request.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain). Additional proposal credits will be available for purchase soon.` });
+      return res.status(403).render('error', { title: "Complimentary access hasn't opened yet", message: `Purchased proposal credits receive ${PRIORITY_HOURS}-hour priority access to new opportunities. Your complimentary access to this opportunity opens at ${new Date(request.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).${BUY_HINT()}` });
     }
     if (funding === 'complimentary' && credits.freeRemaining <= 0) {
-      return res.status(403).render('error', { title: 'Complimentary credits used', message: `You've used your ${credits.freeTotal} complimentary proposal credits for this month. Your complimentary credits reset ${credits.nextReset}. Additional proposal credits will also be available for purchase soon.` });
+      return res.status(403).render('error', { title: 'Complimentary credits used', message: `You've used your ${credits.freeTotal} complimentary proposal credits for this month. Your complimentary credits reset ${credits.nextReset}.${BUY_HINT()}` });
     }
     if (funding === 'purchased' && credits.purchased <= 0) {
-      return res.status(403).render('error', { title: 'No purchased credits', message: `You have no purchased proposal credits available.${priority ? ` Purchased credits receive ${PRIORITY_HOURS}-hour priority access; your complimentary access to this opportunity opens at ${new Date(request.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).` : ' Choose a complimentary credit instead, or check back when credit purchases open.'}` });
+      return res.status(403).render('error', { title: 'No purchased credits', message: `You have no purchased proposal credits available.${priority ? ` Purchased credits receive ${PRIORITY_HOURS}-hour priority access; your complimentary access to this opportunity opens at ${new Date(request.priority_until).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain).` : ' Choose a complimentary credit instead.'}${BUY_HINT()}` });
     }
   }
 
@@ -584,8 +625,7 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     return res.status(400).render('agent/opportunity', {
       title: 'Opportunity', request, H,
       proposal: { fee_type, fee_amount: req.body.fee_amount, services: services.join(', '), marketing_plan, cancellation_terms },
-      credits: await creditSummary(req.session.user.id), blockedLicense: false,
-      priority: priorityActive(request), priorityUntil: request.priority_until, PRIORITY_HOURS,
+      blockedLicense: false, ...(await creditContext(req, request)),
       error: bad
         ? (fee_type === 'pct'
           ? 'Please enter a percentage fee between 0.1 and 10.'
@@ -603,7 +643,7 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
   let capClosed = false, savedId = null, capReached = false;
   try {
     await client.query('BEGIN');
-    const { rows: locked } = await client.query(`SELECT * FROM requests WHERE id=$1 AND status='open' FOR UPDATE`, [request.id]);
+    const { rows: locked } = await client.query(`SELECT * FROM requests WHERE id=$1 AND status='open' AND live_at <= now() FOR UPDATE`, [request.id]);
     if (!locked[0]) { await client.query('ROLLBACK'); return res.status(400).render('error', { title: 'Window closed', message: 'This proposal window has already closed.' }); }
     const live = locked[0];
     const { rows: cnt } = await client.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
@@ -645,6 +685,8 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     // so no credit was consumed (Paul, Aug 31 §10).
     return res.status(400).render('error', { title: 'Proposal cap reached', message: `This homeowner already has ${H.ROUND_CAP} sealed proposals this round — the cap that keeps every proposal worth writing. No credit was used. Keep an eye out for the next opportunity.` });
   }
+  // Submitted for real — the safety-net draft (§10) is no longer needed.
+  await creditsRoutes.clearDraft(req.session.user.id, 'seller', request.id);
   logEvent(wasUpdate ? 'proposal_updated' : 'proposal_submitted', {
     userId: req.session.user.id, requestId: request.id, proposalId: savedId,
     meta: { fee_type, fee_amount, price_range: request.price_range, round: request.round },

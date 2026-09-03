@@ -4,6 +4,8 @@ const { pool, logEvent, PRIORITY_HOURS } = require('../db');
 const { requireRole, assertEmailVerified } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
+const schedule = require('../schedule');
+const golive = require('../golive');
 
 const router = require('../middleware').safeRouter(express.Router());
 const seller = requireRole('seller');
@@ -28,7 +30,7 @@ router.get('/dashboard', seller, async (req, res) => {
   const feedbackDone = new Set(fbRows.map(f => f.opportunity_type + ':' + f.opportunity_id));
   res.render('seller/dashboard', {
     title: 'My requests', requests, buyerRequests, H, feedbackDone,
-    buyerLive: req.query.buyerlive === '1', // success banner right after publishing
+    buyerLive: req.query.buyerlive === 'scheduled' ? 'scheduled' : req.query.buyerlive === '1', // success banner right after publishing
   });
 });
 
@@ -121,21 +123,31 @@ router.post('/requests/new', seller, async (req, res) => {
     });
   }
 
+  // Go-live timing (Paul, Sep 2 §2–§4): overnight submissions (7 PM –
+  // 6:59:59 AM Mountain) are saved now but open at the next 7:00 AM; daytime
+  // submissions open immediately. The proposal window AND the purchased-
+  // credit priority window both start from the go-live moment, so an
+  // overnight wait never eats into the window the seller chose.
+  const liveAt = schedule.goLiveAt(schedule.now(req)); // null = right now
   const { rows } = await pool.query(
     `INSERT INTO requests (seller_id, property_type, zip, city, neighborhood, beds, baths, sqft_range,
-       year_built, hoa, condition, price_range, priorities, window_hours, closes_at, priority_until)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now() + make_interval(hours => $14),
-       now() + make_interval(mins => $15))
+       year_built, hoa, condition, price_range, priorities, window_hours, live_at, live_notified, closes_at, priority_until)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+       COALESCE($16::timestamptz, now()), false,
+       COALESCE($16::timestamptz, now()) + make_interval(hours => $14),
+       COALESCE($16::timestamptz, now()) + make_interval(mins => $15))
      RETURNING id`,
     [req.session.user.id, f.property_type, f.zip, f.city, f.neighborhood, f.beds, f.baths, f.sqft_range,
      f.year_built, f.hoa, f.condition, f.price_range, priorities.join(' + '), f.window_hours,
-     Math.round(PRIORITY_HOURS * 60)] // 5-hour paid-credit priority window (Paul, Aug 31 §3)
+     Math.round(PRIORITY_HOURS * 60), liveAt]
   );
   const { rows: fullRows } = await pool.query(`SELECT * FROM requests WHERE id=$1`, [rows[0].id]);
-  mailer.agentsNewRequest(fullRows[0]); // fire and forget: notify nearby approved professionals
+  // Professionals are notified by the go-live sweep — immediately for a
+  // daytime request, at 7:00 AM for an overnight one (§5: never overnight).
+  golive.activateSoon();
   mailer.sellerRequestReceived(req.session.user.email, req.session.user.name, fullRows[0]); // instant confirmation
   logEvent('request_posted', { userId: req.session.user.id, requestId: rows[0].id,
-    meta: { zip: f.zip, city: f.city, price_range: f.price_range, window_hours: f.window_hours } });
+    meta: { zip: f.zip, city: f.city, price_range: f.price_range, window_hours: f.window_hours, scheduled_for: liveAt ? liveAt.toISOString() : null } });
   res.redirect('/requests/' + rows[0].id);
 });
 
@@ -153,9 +165,12 @@ router.get('/requests/:id(\\d+)', seller, async (req, res) => {
 
   if (request.status === 'open') {
     const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
+    // Scheduled = saved overnight, opens at 7:00 AM Mountain (Paul, Sep 2 §6).
+    const scheduled = new Date(request.live_at).getTime() > Date.now();
     return res.render('seller/request-open', {
-      title: 'Your request is live', request, proposalCount: rows[0].n, H,
+      title: scheduled ? 'Your request is ready' : 'Your request is live', request, proposalCount: rows[0].n, H,
       roundCap: request.proposal_cap, // window auto-closes at this count
+      scheduled, liveAtText: schedule.describe(request.live_at),
     });
   }
 
@@ -214,19 +229,25 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   if (cnt[0].n < request.proposal_cap) return res.redirect('/requests/' + request.id);
 
   // A fresh round becomes newly available to professionals who haven't
-  // proposed, so the 5-hour paid-credit priority window restarts with it.
+  // proposed, so the purchased-credit priority window restarts with it —
+  // and, like a brand-new request, a round opened overnight goes live at
+  // 7:00 AM Mountain (Paul, Sep 2 §11: buyer and seller work the same).
+  const liveAt = schedule.goLiveAt(schedule.now(req));
   const { rows } = await pool.query(
-    `UPDATE requests SET round = round + 1, status='open', closes_at = now() + make_interval(hours => window_hours),
+    `UPDATE requests SET round = round + 1, status='open',
+       live_at = COALESCE($3::timestamptz, now()), live_notified = false,
+       closes_at = COALESCE($3::timestamptz, now()) + make_interval(hours => window_hours),
        proposal_cap = (SELECT COUNT(*) FROM proposals WHERE request_id=$1) + 10,
-       priority_until = now() + make_interval(mins => $2)
-     WHERE id=$1 AND status='closed' RETURNING *`, [request.id, Math.round(PRIORITY_HOURS * 60)]);
+       priority_until = COALESCE($3::timestamptz, now()) + make_interval(mins => $2)
+     WHERE id=$1 AND status='closed' RETURNING *`, [request.id, Math.round(PRIORITY_HOURS * 60), liveAt]);
   if (!rows[0]) return res.redirect('/requests/' + request.id);
 
-  // Professionals who already proposed are excluded from the new-round emails.
-  const { rows: prior } = await pool.query(`SELECT agent_id FROM proposals WHERE request_id=$1`, [request.id]);
-  mailer.agentsNewRequest(rows[0], prior.map(p => p.agent_id)); // fire and forget
+  // Professionals who already proposed are excluded from the new-round
+  // emails — the go-live sweep handles that (now, or at 7:00 AM).
+  const { rows: prior } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
+  golive.activateSoon();
   logEvent('request_new_round', { userId: req.session.user.id, requestId: request.id,
-    meta: { round: rows[0].round, prior_proposals: prior.length } });
+    meta: { round: rows[0].round, prior_proposals: prior[0].n, scheduled_for: liveAt ? liveAt.toISOString() : null } });
   res.redirect('/requests/' + request.id);
 });
 

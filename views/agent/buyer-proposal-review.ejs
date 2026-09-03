@@ -36,7 +36,7 @@
     <% if (sfp === 'buyer_pays') { %><div class="sumrow"><span>Shortfall approach</span><span>Buyer pays the difference (seller-paid amounts credited toward the fee)</span></div>
     <% } else if (sfp === 'min_fee') { %><div class="sumrow"><span>Shortfall approach</span><span>Accept seller-paid amount, subject to the <%= p.min_fee ? H.money(p.min_fee) : '' %> minimum</span></div>
     <% } else if (sfp === 'no_gap') { %><div class="sumrow"><span>Shortfall approach</span><span>Won't ask the buyer to cover a shortfall</span></div><% } %>
-    <div class="sumrow"><span>Service</span><span><% if (p.included_tours) { %><%= p.included_tours %> · <% } %>responds <%= (p.response_time || '').toLowerCase() %><% if (p.video_tours) { %> · video tours<% } %></span></div>
+    <div class="sumrow"><span>Service</span><span>Responds <%= (p.response_time || '').toLowerCase() %><% if (p.video_tours) { %> · video tours<% } %></span></div>
     <% if (p.specialties) { %><div class="sumrow"><span>Specialties</span><span><%= p.specialties %></span></div><% } %>
     <% if (p.seller_contribution) { %><div class="sumrow"><span>Seller contributions</span><span><%= p.seller_contribution %></span></div><% } %>
     <% if (p.plan) { %><div class="sumrow"><span>Your plan</span><span><%= p.plan %></span></div><% } %>

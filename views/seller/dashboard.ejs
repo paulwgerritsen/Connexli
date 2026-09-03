@@ -2,7 +2,9 @@
 <h1>My dashboard</h1>
 <p class="sub">Selling, buying, or both — verified professionals compete for your business either way.</p>
 
-<% if (buyerLive) { %>
+<% if (buyerLive === 'scheduled') { %>
+  <div class="success" style="margin-bottom:14px;">✓ <b>Your buyer request is ready.</b> To give professionals a fair opportunity to respond, requests submitted overnight begin accepting proposals at 7:00 AM Mountain Time. Eligible professionals will be notified then — you'll get an email as each sealed proposal arrives. Want stronger proposals in the meantime? <a href="/buyer/boost" style="font-weight:600;">Boost your profile</a> — it takes one minute.</div>
+<% } else if (buyerLive) { %>
   <div class="success" style="margin-bottom:14px;">🎉 <b>Your buyer request is live!</b> Verified buyer's agents near your search areas are being notified now, and you'll get an email as each sealed proposal arrives (up to 10 this round). Want stronger proposals? <a href="/buyer/boost" style="font-weight:600;">Boost your profile</a> — it takes one minute.</div>
 <% } %>
 
@@ -20,6 +22,7 @@
             <% if (feedbackDone.has('buyer:' + b.id)) { %><span class="pill">✓ Feedback sent</span>
             <% } else { %><a class="btn sm ghost" href="/feedback/buyer/<%= b.id %>">Give feedback</a><% } %>
           <% } else if (!b.published) { %><span class="badge pending">Not published — finish Get Ready</span>
+          <% } else if (new Date(b.live_at).getTime() > Date.now()) { %><span class="badge pending">Opens 7:00 AM Mountain</span>
           <% } else { %><span class="badge open">Live — agents proposing</span><% } %>
           <span class="pill"><%= b.proposal_count %> proposal<%= b.proposal_count === 1 ? '' : 's' %></span>
           <a class="btn sm" href="/buyer/requests/<%= b.id %>">View</a>
@@ -31,7 +34,7 @@
 <% } else { %>
   <div class="card" style="border-left:4px solid var(--blue);">
     <h2 style="font-size:16px;">Buying a home? <span class="badge open" style="vertical-align:2px;">New</span></h2>
-    <p class="sub" style="margin-bottom:10px;">Find Your Buyer's Agent: verified buyer's agents send you sealed proposals — fees, tours, and services side by side. Anonymous until you choose.</p>
+    <p class="sub" style="margin-bottom:10px;">Find Your Buyer's Agent: verified buyer's agents send you sealed proposals — fees, experience, and their plan for you side by side. Anonymous until you choose.</p>
     <a class="btn ghost sm" href="/buyer">Find my buyer's agent</a>
   </div>
 <% } %>
@@ -53,7 +56,8 @@
           <div class="meta"><%= r.price_range %> · created <%= new Date(r.created_at).toLocaleDateString('en-US') %></div>
         </div>
         <div class="actions">
-          <span class="badge <%= r.status %>"><%= r.status === 'open' ? 'Window open' : r.status === 'closed' ? 'Proposals ready' : r.status %></span>
+          <% if (r.status === 'open' && new Date(r.live_at).getTime() > Date.now()) { %><span class="badge pending">Opens 7:00 AM Mountain</span>
+          <% } else { %><span class="badge <%= r.status %>"><%= r.status === 'open' ? 'Window open' : r.status === 'closed' ? 'Proposals ready' : r.status %></span><% } %>
           <% if (r.status === 'connected') { %>
             <% if (feedbackDone.has('seller:' + r.id)) { %><span class="pill">✓ Feedback sent</span>
             <% } else { %><a class="btn sm ghost" href="/feedback/seller/<%= r.id %>">Give feedback</a><% } %>
