@@ -170,12 +170,41 @@
     <button class="btn sm" type="submit" <%= reldConfigured ? '' : 'disabled' %>>Test RELD connection</button>
   </form>
 
-  <h3 style="font-size:15px; margin:20px 0 4px;">One-time license audit</h3>
-  <p class="note" style="margin-top:2px;">Verifies every professional with a license on file in <b>one</b> batch call (up to 100 licenses = one batch request). Failures are flagged and blocked from submitting proposals — accounts are never deleted and history is preserved. Run this once after the API key is in place.</p>
-  <form method="POST" action="/admin/reld-audit" onsubmit="return confirm('Run the RELD audit now? This makes ONE batch API call covering every professional with a license on file and updates their verification status.');">
+  <h3 style="font-size:15px; margin:20px 0 4px;">License audit (batch)</h3>
+  <p class="note" style="margin-top:2px;">Verifies every professional with a license on file through RELD's batch endpoint — up to 100 licenses per call, split automatically when there are more. Each professional's status is updated individually; an outage or API error never downgrades anyone. You'll get a summary: Verified | Failed verification | API errors | Skipped.</p>
+  <form method="POST" action="/admin/reld-audit" onsubmit="return confirm('Run the RELD audit now? This calls RELD in batches of up to 100 licenses and updates each professional\'s verification status.');">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <button class="btn sm" type="submit" <%= reldConfigured ? '' : 'disabled' %>>Run RELD audit</button>
   </form>
+
+  <h3 style="font-size:15px; margin:20px 0 4px;">Remove never-verified (test) accounts</h3>
+  <p class="note" style="margin-top:2px;">Lists professional accounts that have never passed RELD verification and lets you delete them after two confirmations. Anyone who was ever verified — even if a later check failed or RELD was down — is protected and never listed.</p>
+  <a class="btn sm ghost" href="/admin/reld-cleanup">Review never-verified accounts</a>
+</div>
+</details>
+
+<%# Payments & revenue summary (Paul, Sep 25 §7/§10). Same numbers as the
+    full report page — both come from paymentReport(). %>
+<details class="sect" id="payments" <%= pay.flagged.length ? 'open' : '' %>><summary><h2>Payments &amp; revenue<% if (pay.flagged.length) { %> · <span style="color:#B42318;"><%= pay.flagged.length %> needs review</span><% } %></h2></summary>
+<div class="card">
+  <% const usd = (c) => '$' + ((Number(c) || 0) / 100).toFixed(2); %>
+  <% if (!paymentsEnabled) { %>
+    <p class="sub"><b>Payments are not enabled.</b> Professionals see the credit packages with a "Coming soon" badge and cannot buy anything. To turn purchasing on, add the Stripe environment variables in Render (see README → Payments) and set <code>PAYMENTS_PROVIDER=stripe</code>, then redeploy. Start with Stripe <b>test</b> keys.</p>
+  <% } else { %>
+    <p class="sub"><b style="color:var(--good);">✓ Purchasing is on.</b> Credits are granted only after the processor confirms payment (webhook first, server-verified return as backup) — never on a page load.</p>
+  <% } %>
+  <div class="stats" style="margin-top:12px;">
+    <div class="stat"><b><%= pay.totals.purchases %></b><span>Purchases</span></div>
+    <div class="stat"><b><%= pay.totals.credits %></b><span>Credits sold</span></div>
+    <div class="stat"><b><%= usd(pay.totals.gross) %></b><span>Gross revenue</span></div>
+    <div class="stat"><b><%= usd(pay.totals.gross_this_month) %></b><span>Gross this month</span></div>
+    <div class="stat"><b><%= usd(pay.totals.refunds) %></b><span>Refunded</span></div>
+    <div class="stat"><b><%= usd(pay.totals.net) %></b><span>Net after fees &amp; refunds</span></div>
+  </div>
+  <% if (pay.flagged.length) { %>
+    <p class="note" style="color:#B42318; margin-top:10px;"><b>⚠ <%= pay.flagged.length %> refund<%= pay.flagged.length === 1 ? '' : 's' %> need<%= pay.flagged.length === 1 ? 's' : '' %> review</b> — a refund arrived for credits that were already used, so the credits could not all be reversed. Open the report to see who and decide.</p>
+  <% } %>
+  <p style="margin:12px 0 0;"><a class="btn sm" href="/admin/payments">Open full payments report</a> <a class="btn sm ghost" href="/admin/payments.csv">Download CSV</a></p>
 </div>
 </details>
 <%- include('../partials/foot') %>

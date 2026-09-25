@@ -8,28 +8,25 @@
 <% } %>
 
 <% if (mode === 'audit' && !error) { %>
-  <% const failed = rows.filter(r => ['failed','expired'].includes(r.after)); %>
-  <% const review = rows.filter(r => r.after === 'needs_review'); %>
-  <div class="stats">
-    <div class="stat"><b><%= rows.length %></b><span>Licenses checked (1 batch call)</span></div>
-    <div class="stat"><b><%= rows.filter(r => r.after === 'verified').length %></b><span>Verified active</span></div>
-    <div class="stat"><b><%= failed.length %></b><span>Failed / expired (proposals blocked)</span></div>
-    <div class="stat"><b><%= review.length %></b><span>Needs review</span></div>
-  </div>
+  <% const CAT = { verified: ['connected', 'Verified'], failed: ['closed', 'Failed verification'], api_error: ['pending', 'API / service error'], skipped: ['pending', 'Skipped'], needs_review: ['pending', 'Needs review'] }; %>
+  <div class="success" style="font-size:16px;"><b>Verified: <%= summary.verified %> &nbsp;|&nbsp; Failed verification: <%= summary.failed %> &nbsp;|&nbsp; API errors: <%= summary.api_error %> &nbsp;|&nbsp; Skipped: <%= summary.skipped %></b><% if (summary.needs_review) { %> &nbsp;|&nbsp; Needs review: <%= summary.needs_review %><% } %></div>
+  <p class="note"><%= summary.total %> professional<%= summary.total === 1 ? '' : 's' %> with a license on file · <%= summary.calls %> batch call<%= summary.calls === 1 ? '' : 's' %> to RELD (up to <%= summary.batchSize %> licenses each). <b>Failed verification</b> = RELD answered definitively (no such license, or not active) — proposals are paused for these accounts. <b>API / service error</b> = RELD could not answer for that record; the previous status was kept and nothing was downgraded. <b>Skipped</b> = the stored state or license number was not in a form RELD accepts, so it was not sent — fix it on the professional's page and recheck.</p>
   <div class="tblwrap">
     <table class="dt">
-      <tr><th>Professional</th><th>License</th><th>Before</th><th>After</th></tr>
+      <tr><th>Professional</th><th>License</th><th>Before</th><th>Outcome</th><th>Status now</th><th>Detail</th></tr>
       <% rows.forEach(r => { %>
         <tr>
-          <td><a href="/admin/agents/<%= r.user_id %>"><%= r.name %></a> · <span style="color:var(--muted);"><%= r.email %></span></td>
+          <td><a href="/admin/agents/<%= r.user_id %>"><%= r.name %></a><br><span class="meta"><%= r.email %></span></td>
           <td><%= r.license %></td>
           <td><span class="badge <%= VB[r.before] || 'pending' %>"><%= VL[r.before] || r.before %></span></td>
+          <td><span class="badge <%= CAT[r.category][0] %>"><%= CAT[r.category][1] %></span></td>
           <td><span class="badge <%= VB[r.after] || 'pending' %>"><%= VL[r.after] || r.after %></span></td>
+          <td class="meta"><%= r.note %></td>
         </tr>
       <% }) %>
     </table>
   </div>
-  <p class="note">Professionals whose check failed keep their accounts and history — they simply can't submit proposals until the license issue is resolved, and they're flagged above and on their detail pages.</p>
+  <p class="note">Professionals whose check failed keep their accounts and history — they simply can't submit proposals until the license issue is resolved. Accounts are never deleted by the audit; use <a href="/admin/reld-cleanup">Remove never-verified professionals</a> for test accounts.</p>
 <% } %>
 
 <% if (mode === 'test') { %>

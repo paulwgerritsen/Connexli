@@ -1,0 +1,107 @@
+<%- include('../partials/head') %>
+<%# Payments & revenue report (Paul, Sep 25 §7, §8, §10). Every figure here
+    comes from credit_orders, which is written only by webhook / server-verified
+    fulfilment — never from the browser. Amounts are stored in cents. %>
+<% const usd = (c) => '$' + ((Number(c) || 0) / 100).toFixed(2); %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;">Payments &amp; revenue</h1>
+<p class="sub">
+  <% if (!paymentsEnabled) { %><b>Purchasing is off</b> — no Stripe keys are configured, so nothing can be bought. Historical orders (if any) still show below.
+  <% } else { %>Provider: <b><%= providerName %></b><% if (providerName === 'stripe') { %> · <b style="color:<%= testMode ? '#B45309' : 'var(--good)' %>;"><%= testMode ? 'TEST mode (test keys — no real money moves)' : 'LIVE mode' %></b><% } %>. Credits are granted only after the processor confirms payment.<% } %>
+  Reports run in Mountain time. <a href="/admin/payments.csv">Download the full CSV</a> (one row per transaction, including billing state and Stripe references) for accounting or tax filing.
+</p>
+<% if (cleared) { %><div class="success">Review flag cleared.</div><% } %>
+
+<div class="stats">
+  <div class="stat"><b><%= totals.purchases %></b><span>Purchases</span></div>
+  <div class="stat"><b><%= totals.credits %></b><span>Credits sold</span></div>
+  <div class="stat"><b><%= usd(totals.gross) %></b><span>Gross revenue</span></div>
+  <div class="stat"><b><%= usd(totals.gross_this_month) %></b><span>Gross this month</span></div>
+  <div class="stat"><b><%= usd(totals.refunds) %></b><span>Refunded</span></div>
+  <div class="stat"><b><%= usd(totals.fees) %></b><span>Processor fees</span></div>
+  <div class="stat"><b><%= usd(totals.net) %></b><span>Net revenue</span></div>
+</div>
+<p class="note">Net = gross − refunds − processor fees. Fees appear once Stripe reports them for each charge (usually seconds after payment); an order whose fee hasn't arrived yet shows "—" and is counted at $0 fee until it does.</p>
+
+<% if (flagged.length) { %>
+<div class="card" style="border-color:#F0B429;">
+  <h2 style="font-size:16px; color:#B45309;">⚠ Refunds needing review · <%= flagged.length %></h2>
+  <p class="note" style="margin-top:2px;">A refund came in but the professional had already used some (or all) of the credits it paid for, so the platform reversed what it could and stopped — it never takes a balance below zero. Decide whether to leave it, record an admin debit on the professional's page, or contact them; then clear the flag.</p>
+  <div class="tblwrap">
+    <table class="dt">
+      <tr><th>Order</th><th>Professional</th><th>Flag</th><th>Note</th><th></th></tr>
+      <% flagged.forEach(f => { %>
+        <tr data-flagged-order="<%= f.id %>">
+          <td>#<%= f.id %></td>
+          <td><%= f.name %><br><span class="meta"><%= f.email %></span></td>
+          <td><%= f.review_flag %></td>
+          <td class="meta"><%= f.review_note || '' %></td>
+          <td><form method="POST" action="/admin/payments/<%= f.id %>/clear-flag" onsubmit="return confirm('Clear the review flag on order #<%= f.id %>? This only removes the warning; it does not change any balance.');">
+            <input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn sm ghost" type="submit">Mark reviewed</button></form></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+</div>
+<% } %>
+
+<div class="card">
+  <h2 style="font-size:16px;">Revenue by billing state</h2>
+  <p class="note" style="margin-top:2px;">Billing state is the address the professional entered at checkout (what a sales-tax filing would use). The CSV also carries each professional's service state and license state at the time of purchase.</p>
+  <% if (!byState.length) { %><p class="note">No purchases yet.</p><% } else { %>
+  <div class="tblwrap">
+    <table class="dt" id="by-state">
+      <tr><th>State</th><th>Purchases</th><th>Credits</th><th>Gross</th><th>Refunds</th><th>Net</th></tr>
+      <% byState.forEach(r => { %>
+        <tr><td><%= r.state %></td><td><%= r.purchases %></td><td><%= r.credits %></td><td><%= usd(r.gross) %></td><td><%= usd(r.refunds) %></td><td><%= usd(r.net) %></td></tr>
+      <% }) %>
+    </table>
+  </div>
+  <% } %>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Revenue by month</h2>
+  <% if (!byMonth.length) { %><p class="note">No purchases yet.</p><% } else { %>
+  <div class="tblwrap">
+    <table class="dt" id="by-month">
+      <tr><th>Month</th><th>Purchases</th><th>Credits</th><th>Gross</th><th>Refunds</th><th>Net</th></tr>
+      <% byMonth.forEach(r => { %>
+        <tr><td><%= r.month || '—' %></td><td><%= r.purchases %></td><td><%= r.credits %></td><td><%= usd(r.gross) %></td><td><%= usd(r.refunds) %></td><td><%= usd(r.net) %></td></tr>
+      <% }) %>
+    </table>
+  </div>
+  <% } %>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Transactions<%= orders.length === 200 ? ' (latest 200 — the CSV has everything)' : ' · ' + orders.length %></h2>
+  <% if (!orders.length) { %><p class="note">No purchases yet.</p><% } else { %>
+  <div class="tblwrap">
+    <table class="dt" id="transactions">
+      <tr><th>Date (Mountain)</th><th>Professional</th><th>State</th><th>Package</th><th>Credits</th><th>Gross</th><th>Fee</th><th>Refund</th><th>Net</th><th>Status</th><th>Stripe ref</th></tr>
+      <% orders.forEach(o => { %>
+        <tr data-order-id="<%= o.id %>">
+          <td><%= o.paid_at ? new Date(o.paid_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) : new Date(o.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
+          <td><a href="/admin/agents/<%= o.agent_id %>#payment-history"><%= o.name %></a><br><span class="meta"><%= o.email %></span></td>
+          <td><%= o.billing_state || '—' %><br><span class="meta">serves <%= o.service_state || o.current_license_state || '—' %></span></td>
+          <td><%= pkgLabel(o.package_key) %></td>
+          <td><%= o.credits %></td>
+          <td><%= usd(o.amount_cents) %></td>
+          <td><%= o.fee_cents == null ? '—' : usd(o.fee_cents) %></td>
+          <td><%= o.refunded_cents > 0 ? usd(o.refunded_cents) : '—' %></td>
+          <td><%= usd(o.net_after_fee_cents) %></td>
+          <td><%= o.status.replace(/_/g, ' ') %><%= o.review_flag ? ' ⚠' : '' %></td>
+          <td class="meta" style="font-size:12px;"><%= o.stripe_payment_intent || o.provider_session_id || '—' %><% if (o.receipt_url) { %> · <a href="<%= o.receipt_url %>" target="_blank" rel="noopener">receipt</a><% } %></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <% } %>
+</div>
+
+<div class="card">
+  <h2 style="font-size:16px;">Sales tax readiness</h2>
+  <p class="note" style="margin-top:2px;">Every order records the billing state, ZIP, and country plus the professional's service state, so tax can be computed later per state. Stripe Tax is <b>not</b> switched on automatically: when Connexli decides to collect tax, enable Stripe Tax in the Stripe dashboard, then set <code>STRIPE_TAX_ENABLED=true</code> in Render — Checkout will start calculating tax and the "tax" column in the CSV will fill in. No code change is needed.</p>
+</div>
+<%- include('../partials/foot') %>

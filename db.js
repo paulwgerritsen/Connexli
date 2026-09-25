@@ -419,6 +419,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_orders_session ON credit_orders(pro
 -- professional typed into a proposal form is saved here the moment they
 -- click Buy a credit, and restored when they return — success or cancel.
 -- Deleted when the proposal is actually submitted.
+-- v23 (Paul, Sep 25 — RELD cleanup): the FIRST moment a professional ever
+-- passed RELD verification (or an admin confirmed their identity). Never
+-- cleared afterwards. The test-account cleanup may only delete accounts where
+-- this is NULL — a later outage or failed recheck can never make a real,
+-- once-verified professional eligible for deletion.
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_first_verified_at TIMESTAMPTZ;
+UPDATE agent_profiles SET reld_first_verified_at = COALESCE(reld_checked_at, review_resolved_at, reviewed_at, created_at)
+  WHERE reld_first_verified_at IS NULL
+    AND (reld_verified OR verification_status = 'verified' OR confirmed_reld_name IS NOT NULL);
+
+-- v23 (Paul, Sep 25 — Stripe): the ledger records the balance AFTER each
+-- entry (so any balance can be reconstructed line by line), the order it
+-- belongs to, and the Stripe session id. Orders carry everything an
+-- accountant needs: Stripe references, fee/net, refunds, billing geography,
+-- and the professional's service/license state AT THE TIME of purchase.
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS balance_after INTEGER;
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS order_id INTEGER;
+ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS payment_session_id TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS stripe_payment_intent TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS stripe_charge_id TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS receipt_url TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS fee_cents INTEGER;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS net_cents INTEGER;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS tax_cents INTEGER;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS refunded_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS refund_status TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS billing_state TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS billing_postal_code TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS billing_country TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS billing_city TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS service_state TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS license_state TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS customer_email TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS review_flag TEXT;
+ALTER TABLE credit_orders ADD COLUMN IF NOT EXISTS review_note TEXT;
+ALTER TABLE credit_orders DROP CONSTRAINT IF EXISTS credit_orders_status_check;
+ALTER TABLE credit_orders ADD CONSTRAINT credit_orders_status_check
+  CHECK (status IN ('pending','paid','cancelled','failed','refunded','partially_refunded'));
+CREATE INDEX IF NOT EXISTS idx_credit_orders_paid ON credit_orders(paid_at) WHERE status IN ('paid','refunded','partially_refunded');
+
+-- v23: every Stripe webhook event id is recorded before it is acted on, so a
+-- redelivered event can never award credits (or reverse them) twice.
+CREATE TABLE IF NOT EXISTS stripe_events (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  order_id INTEGER,
+  outcome TEXT,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS proposal_drafts (
   agent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   opportunity_type TEXT NOT NULL CHECK (opportunity_type IN ('seller','buyer')),
@@ -502,6 +553,16 @@ async function init() {
   } catch (e) {
     console.error('Follow-up backfill failed (app still running):', e.message);
   }
+
+  // v23: backfill balance_after for ledger rows written before the column
+  // existed (running sum per professional, in insertion order). Idempotent —
+  // only rows still NULL are touched.
+  try {
+    await pool.query(`
+      UPDATE credit_ledger l SET balance_after = s.bal
+      FROM (SELECT id, SUM(amount) OVER (PARTITION BY agent_id ORDER BY created_at, id) AS bal FROM credit_ledger) s
+      WHERE l.id = s.id AND l.balance_after IS NULL`);
+  } catch (e) { console.error('balance_after backfill failed (app still running):', e.message); }
 
   // Seed the first admin account from environment variables.
   const { rows } = await pool.query(`SELECT 1 FROM users WHERE role='admin' LIMIT 1`);
@@ -610,11 +671,28 @@ async function creditSummary(agentId) {
 // human-readable error string; on error the caller must ROLLBACK, which also
 // undoes the proposal insert — so a failed submission never costs a credit
 // and a race can never drive the purchased balance negative.
+// The ONE way a ledger row is written (Paul, Sep 25 §6): balance_after is
+// computed inside the caller's transaction so the ledger alone can rebuild
+// any professional's purchased balance line by line. Returns the new row.
+async function insertLedger(client, agentId, entry) {
+  const { rows: b } = await client.query(`SELECT COALESCE(SUM(amount),0)::int AS bal FROM credit_ledger WHERE agent_id=$1`, [agentId]);
+  const amount = entry.amount || 0;
+  const cols = { agent_id: agentId, entry_type: entry.entry_type, funding_source: entry.funding_source || null, amount,
+    balance_after: b[0].bal + amount, proposal_table: entry.proposal_table || null, proposal_id: entry.proposal_id || null,
+    reason: entry.reason || '', payment_provider: entry.payment_provider || null, payment_transaction_id: entry.payment_transaction_id || null,
+    payment_session_id: entry.payment_session_id || null, package_key: entry.package_key || null,
+    amount_paid_cents: entry.amount_paid_cents == null ? null : entry.amount_paid_cents, payment_status: entry.payment_status || null,
+    order_id: entry.order_id || null };
+  const keys = Object.keys(cols);
+  const { rows } = await client.query(
+    `INSERT INTO credit_ledger (${keys.join(', ')}) VALUES (${keys.map((_, i) => '$' + (i + 1)).join(', ')}) RETURNING *`,
+    keys.map(k => cols[k]));
+  return rows[0];
+}
+
 async function recordProposalCredit(client, agentId, funding, proposalTable, proposalId) {
-  await client.query(
-    `INSERT INTO credit_ledger (agent_id, entry_type, funding_source, amount, proposal_table, proposal_id)
-     VALUES ($1, 'proposal_submitted', $2, $3, $4, $5)`,
-    [agentId, funding, funding === 'purchased' ? -1 : 0, proposalTable, proposalId]);
+  await insertLedger(client, agentId, { entry_type: 'proposal_submitted', funding_source: funding,
+    amount: funding === 'purchased' ? -1 : 0, proposal_table: proposalTable, proposal_id: proposalId });
   if (funding === 'purchased') {
     const { rows } = await client.query(
       `SELECT COALESCE(SUM(amount),0)::int AS bal FROM credit_ledger WHERE agent_id=$1`, [agentId]);
@@ -642,6 +720,6 @@ function logEvent(eventType, { userId = null, requestId = null, proposalId = nul
 
 module.exports = {
   pool, init, closeExpired, expireBuyerProfiles, logEvent, scheduleFollowups,
-  creditSummary, recordProposalCredit, FREE_PROPOSALS_PER_MONTH, CREDIT_TZ,
+  creditSummary, recordProposalCredit, insertLedger, FREE_PROPOSALS_PER_MONTH, CREDIT_TZ,
   PRIORITY_HOURS, CREDIT_BUNDLES,
 };

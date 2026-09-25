@@ -69,8 +69,8 @@
 <div class="card">
   <h2 style="font-size:16px;">Proposal credits</h2>
   <% if (creditMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:4px;"><%= creditMsg %></p><% } %>
-  <div class="sumrow"><span>Free this month</span><span><b><%= credits.freeRemaining %></b> of <%= credits.freeTotal %> remaining · renews <%= credits.nextReset %> (Mountain time month; complimentary never carries over)</span></div>
-  <div class="sumrow"><span>Purchased balance</span><span><b><%= credits.purchased %></b> credit<%= credits.purchased === 1 ? '' : 's' %> (never expire, roll over)</span></div>
+  <div class="sumrow"><span>Free proposals remaining</span><span><b><%= credits.freeRemaining %></b> of <%= credits.freeTotal %> · renews <%= credits.nextReset %> (Mountain time month; free proposals never carry over)</span></div>
+  <div class="sumrow"><span>Paid proposal credits</span><span><b><%= credits.purchased %></b> (kept separately from free proposals; never expire, roll over)</span></div>
   <div class="sumrow"><span>Lifetime proposals submitted</span><span><%= stats.submitted + stats.buyerSubmitted %> (<%= stats.submitted %> seller · <%= stats.buyerSubmitted %> buyer) — historical stats are never reduced by credit changes</span></div>
 
   <h3 style="font-size:14px; margin:16px 0 4px;">Adjust purchased credits</h3>
@@ -81,25 +81,59 @@
     <button class="btn sm" type="submit">Record adjustment</button>
   </form>
 
-  <h3 style="font-size:14px; margin:18px 0 4px;">Credit ledger<%= ledger.length === 25 ? ' (latest 25)' : '' %></h3>
-  <% if (ledger.length === 0) { %>
-    <p class="note">No ledger entries yet. The first appears when this professional submits a proposal (or receives an adjustment).</p>
+  <%# Payment history (Paul, Sep 25 §7): every order that reached the
+      processor, with the Stripe reference for support work. Amounts in
+      dollars; fee/net only once Stripe has reported them. %>
+  <h3 style="font-size:14px; margin:18px 0 4px;" id="payment-history">Payment history<%= orders.length === 200 ? ' (latest 200)' : '' %></h3>
+  <% const usd = (c) => c == null ? '—' : '$' + (c / 100).toFixed(2); %>
+  <% if (orders.length === 0) { %>
+    <p class="note">No purchases yet.</p>
   <% } else { %>
   <div class="tblwrap">
     <table class="dt">
-      <tr><th>When (Mountain)</th><th>Entry</th><th>Source</th><th>Δ purchased</th><th>Detail</th></tr>
-      <% ledger.forEach(l => { %>
-        <tr>
-          <td><%= new Date(l.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
-          <td><%= l.entry_type.replace(/_/g, ' ') %></td>
-          <td><%= l.funding_source %></td>
-          <td><%= l.amount > 0 ? '+' + l.amount : (l.amount === 0 ? '—' : l.amount) %></td>
-          <td class="meta"><%= l.reason || (l.proposal_table ? (l.proposal_table === 'proposals' ? 'seller proposal #' : 'buyer proposal #') + l.proposal_id : '') %></td>
+      <tr><th>Date (Mountain)</th><th>Package</th><th>Credits</th><th>Gross</th><th>Fee</th><th>Refunded</th><th>Net</th><th>Status</th><th>Billing</th><th>Reference</th></tr>
+      <% orders.forEach(o => { %>
+        <tr data-order-id="<%= o.id %>">
+          <td><%= new Date(o.paid_at || o.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
+          <td><%= pkgLabel(o.package_key) %></td>
+          <td><%= o.credits %></td>
+          <td><%= usd(o.amount_cents) %></td>
+          <td><%= usd(o.fee_cents) %></td>
+          <td><%= o.refunded_cents > 0 ? usd(o.refunded_cents) : '—' %></td>
+          <td><%= o.status === 'paid' || o.refunded_cents > 0 ? usd(o.amount_cents - o.refunded_cents - (o.fee_cents || 0)) : '—' %></td>
+          <td><%= o.status.replace(/_/g, ' ') %><%= o.review_flag ? ' ⚠' : '' %></td>
+          <td class="meta"><%= [o.billing_state, o.billing_postal_code, o.billing_country].filter(Boolean).join(' ') || '—' %></td>
+          <td class="meta" style="font-size:12px;"><%= o.stripe_payment_intent || o.provider_session_id || '—' %><% if (o.receipt_url) { %> · <a href="<%= o.receipt_url %>" target="_blank" rel="noopener">receipt</a><% } %></td>
         </tr>
       <% }) %>
     </table>
   </div>
-  <p class="note">"complimentary / —" rows are free-allowance submissions (they don't touch the purchased balance); the free count is derived from these rows per calendar month. Each submission row records which proposal it funded, so a future refund can restore the right credit type.</p>
+  <% } %>
+
+  <h3 style="font-size:14px; margin:18px 0 4px;" id="credit-history">Credit history<%= ledger.length === 200 ? ' (latest 200)' : '' %></h3>
+  <% if (ledger.length === 0) { %>
+    <p class="note">No ledger entries yet. The first appears when this professional submits a proposal, buys credits, or receives an adjustment.</p>
+  <% } else { %>
+  <div class="tblwrap">
+    <table class="dt">
+      <tr><th>When (Mountain)</th><th>Type</th><th>Δ paid credits</th><th>Paid balance after</th><th>Detail</th></tr>
+      <% ledger.forEach(l => { %>
+        <tr data-ledger-type="<%= ledgerType(l) %>">
+          <td><%= new Date(l.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
+          <td><%= ledgerType(l) %></td>
+          <td><%= l.amount > 0 ? '+' + l.amount : (l.amount === 0 ? '—' : l.amount) %></td>
+          <td><%= l.balance_after == null ? '—' : l.balance_after %></td>
+          <td class="meta"><%= [
+                l.reason,
+                l.proposal_table ? (l.proposal_table === 'proposals' ? 'seller proposal #' : 'buyer proposal #') + l.proposal_id : null,
+                l.order_id ? 'order #' + l.order_id : null,
+                l.payment_session_id ? 'ref ' + l.payment_session_id : null,
+              ].filter(Boolean).join(' · ') %></td>
+        </tr>
+      <% }) %>
+    </table>
+  </div>
+  <p class="note">FREE_PROPOSAL_USED rows are free-allowance submissions — they never touch the paid balance, and the free count is derived from them per Mountain-time calendar month. PROPOSAL_USED rows show exactly which proposal consumed a paid credit, so a refund or dispute can be traced to it.</p>
   <% } %>
 </div>
 

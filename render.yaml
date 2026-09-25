@@ -25,12 +25,26 @@ services:
         sync: false   # Cloudflare Turnstile Site Key (public — shown in page source by design)
       - key: TURNSTILE_SECRET_KEY
         sync: false   # Cloudflare Turnstile Secret Key (server-side ONLY — never in code or GitHub)
+      - key: RELD_BATCH_SIZE
+        value: "100"  # licenses per RELD batch call (RELD max 100); lower it only if RELD asks
       - key: PAYMENTS_PROVIDER
-        sync: false   # leave EMPTY until a processor is chosen; then "stripe"
+        sync: false   # leave EMPTY until Stripe is set up; then "stripe" (test keys first!)
       - key: STRIPE_SECRET_KEY
-        sync: false   # Stripe secret key (server-side ONLY — never in code or GitHub)
+        sync: false   # Stripe SECRET key sk_test_… / sk_live_… (server-side ONLY — never in code, GitHub, or a chat)
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false   # Stripe publishable key pk_… (public by design; not needed for hosted Checkout, kept for future use)
       - key: STRIPE_WEBHOOK_SECRET
-        sync: false   # Stripe webhook signing secret for /webhooks/stripe
+        sync: false   # Signing secret whsec_… for the webhook endpoint https://app.connexli.com/webhooks/stripe
+      - key: STRIPE_PRICE_SINGLE
+        sync: false   # Stripe Price ID (price_…) for 1 credit / $10
+      - key: STRIPE_PRICE_BUNDLE5
+        sync: false   # Stripe Price ID for 5 credits / $50
+      - key: STRIPE_PRICE_BUNDLE11
+        sync: false   # Stripe Price ID for 11 credits / $100
+      - key: STRIPE_PRICE_BUNDLE25
+        sync: false   # Stripe Price ID for 25 credits / $200
+      - key: STRIPE_TAX_ENABLED
+        value: "false" # set "true" only after enabling Stripe Tax in the Stripe dashboard
       - key: DATABASE_URL
         fromDatabase:
           name: connexli-db

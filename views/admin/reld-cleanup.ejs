@@ -1,0 +1,50 @@
+<%- include('../partials/head') %>
+<a href="/admin" style="font-size:14px;">‹ Back to control room</a>
+<h1 style="margin-top:8px;">Remove never-verified professional accounts</h1>
+<p class="sub">Test and abandoned professional accounts that have <b>never</b> successfully passed RELD verification. Verified professionals — including anyone verified in the past whose later check failed or hit an outage, and anyone an administrator confirmed — are never listed here and cannot be deleted by this tool.</p>
+
+<% if (typeof done === 'number' && done !== null) { %>
+  <div class="success">Deleted <%= done %> professional account<%= done === 1 ? '' : 's' %>. Verified professionals were not touched.</div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %><div class="error"><%= error %></div><% } %>
+
+<% if (!rows.length) { %>
+  <div class="card"><p class="sub">No professional accounts are eligible — every professional on file has passed RELD verification at least once (or been confirmed by an administrator).</p></div>
+<% } else { %>
+  <form method="POST" action="/admin/reld-cleanup" id="cleanupForm">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="card" style="border-left:4px solid #B42318;">
+      <p style="margin:0; font-weight:700; color:#B42318;">This will permanently delete <span id="selCount"><%= rows.length %></span> professional account<%= rows.length === 1 ? "" : "s" %> that <%= rows.length === 1 ? "has" : "have" %> never successfully passed RELD verification. Verified professionals will not be deleted.</p>
+      <p class="note" style="margin-top:6px;">Untick any account you want to keep. Deleting an account also removes its proposals and drafts; historical events stay in the log.</p>
+    </div>
+    <div class="tblwrap">
+      <table class="dt">
+        <tr><th></th><th>Professional</th><th>License</th><th>Account</th><th>License check</th><th>Proposals</th><th>Purchases</th><th>Registered</th></tr>
+        <% rows.forEach(r => { %>
+          <tr>
+            <td><input type="checkbox" name="ids" value="<%= r.user_id %>" checked onchange="recount()"></td>
+            <td><a href="/admin/agents/<%= r.user_id %>"><%= r.name %></a><br><span class="meta"><%= r.email %></span></td>
+            <td><%= r.license_state || 'UT' %> <%= r.license_number %><br><span class="meta"><%= r.brokerage %></span></td>
+            <td><span class="badge <%= r.status %>"><%= r.status %></span></td>
+            <td><span class="badge <%= VB[r.verification_status] || 'pending' %>"><%= VL[r.verification_status] || r.verification_status %></span><% if (r.reld_error) { %><br><span class="meta"><%= r.reld_error %></span><% } %></td>
+            <td><%= r.proposals %></td>
+            <td><%= r.purchases %><% if (r.purchases) { %> <b style="color:#B45309;">— has paid purchases, consider keeping</b><% } %></td>
+            <td><%= new Date(r.registered_at).toLocaleDateString('en-US') %></td>
+          </tr>
+        <% }) %>
+      </table>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <h2 style="font-size:16px;">Second confirmation</h2>
+      <p class="sub">Type <b>DELETE</b> to confirm. There is no undo.</p>
+      <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+        <div><input type="text" name="confirm" autocomplete="off" placeholder="DELETE" style="width:160px;"></div>
+        <button class="btn danger" type="submit" onclick="return confirm('Permanently delete the selected accounts? This cannot be undone.');">Permanently delete selected accounts</button>
+      </div>
+    </div>
+  </form>
+  <script>
+  function recount(){ document.getElementById('selCount').textContent = document.querySelectorAll('input[name="ids"]:checked').length; }
+  </script>
+<% } %>
+<%- include('../partials/foot') %>

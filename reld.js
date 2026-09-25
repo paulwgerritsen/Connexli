@@ -52,36 +52,90 @@ function isActive(status) {
   return ACTIVE_WORDS.some(w => String(status || '').toLowerCase().includes(w));
 }
 
+// Diagnostic logging (Paul, Sep 25 §1): every RELD call logs the endpoint,
+// HTTP status, elapsed time, a SUMMARY of what was sent (counts and states —
+// never the API key, never full license lists), and, on an error, RELD's own
+// message (truncated) so the cause of a 4xx is visible in the Render logs.
+function reldLog(level, msg, details) {
+  const line = `[reld] ${msg}` + (details ? ' ' + JSON.stringify(details) : '');
+  (level === 'error' ? console.error : console.log)(line);
+}
+// RELD's error explanation, if any, without echoing anything sensitive back.
+function errorMessage(body, text) {
+  const m = body && (body.message || body.error || body.detail || body.errors);
+  const str = m ? (typeof m === 'string' ? m : JSON.stringify(m)) : (text || '');
+  return String(str).replace(/Bearer\s+\S+/gi, 'Bearer ***').slice(0, 500);
+}
+
 // Fetch with timeout. Never throws — returns a normalized outcome.
-async function reldFetch(path, options = {}) {
+//  unavailable    → outage / auth / 5xx / timeout: statuses must not change
+//  invalidRequest → 400/422: RELD rejected WHAT WE SENT (not an outage) —
+//                   the batch code retries smaller pieces to isolate it
+async function reldFetch(path, options = {}, summary = {}) {
   if (!configured()) return { unavailable: true, error: 'RELD not configured (no RELD_API_KEY)' };
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 12000);
+  const timer = setTimeout(() => ctl.abort(), 20000);
+  const t0 = Date.now();
+  const endpoint = (options.method || 'GET') + ' ' + path.replace(/\?.*$/, '');
   try {
     const res = await fetch(RELD_API_BASE_URL + path, {
       ...options,
-      headers: { Authorization: 'Bearer ' + RELD_API_KEY, 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers: { Authorization: 'Bearer ' + RELD_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json', ...(options.headers || {}) },
       signal: ctl.signal,
     });
     const text = await res.text();
     let body = null;
     try { body = JSON.parse(text); } catch (e) { /* non-JSON */ }
-    if (res.status === 404) return { notFound: true, body };
-    if (res.status === 401 || res.status === 403) return { unavailable: true, error: `RELD rejected our API key (HTTP ${res.status})`, body };
-    if (!res.ok) return { unavailable: true, error: `RELD returned HTTP ${res.status}`, body };
+    const ms = Date.now() - t0;
+    if (res.status === 404) { reldLog('log', 'not found', { endpoint, status: 404, ms, ...summary }); return { notFound: true, body }; }
+    if (res.status === 401 || res.status === 403) {
+      reldLog('error', 'API key rejected', { endpoint, status: res.status, ms, ...summary, message: errorMessage(body, text) });
+      return { unavailable: true, error: `RELD rejected our API key (HTTP ${res.status})`, body };
+    }
+    if (res.status === 400 || res.status === 422) {
+      const message = errorMessage(body, text);
+      reldLog('error', 'request rejected by RELD (our payload, not an outage)', { endpoint, status: res.status, ms, ...summary, message });
+      return { invalidRequest: true, status: res.status, error: `RELD rejected the request (HTTP ${res.status}${message ? ': ' + message : ''})`, body };
+    }
+    if (res.status === 429) {
+      reldLog('error', 'rate limited', { endpoint, status: 429, ms, ...summary });
+      return { unavailable: true, error: 'RELD rate limit reached (HTTP 429) — try again in a few minutes', body };
+    }
+    if (!res.ok) {
+      reldLog('error', 'service error', { endpoint, status: res.status, ms, ...summary, message: errorMessage(body, text) });
+      return { unavailable: true, error: `RELD returned HTTP ${res.status}`, body };
+    }
+    reldLog('log', 'ok', { endpoint, status: res.status, ms, ...summary });
     return { ok: true, body };
   } catch (e) {
-    return { unavailable: true, error: e.name === 'AbortError' ? 'RELD request timed out' : ('RELD unreachable: ' + e.message) };
+    const error = e.name === 'AbortError' ? 'RELD request timed out' : ('RELD unreachable: ' + e.message);
+    reldLog('error', 'network failure', { endpoint, ms: Date.now() - t0, ...summary, error });
+    return { unavailable: true, error };
   } finally {
     clearTimeout(timer);
   }
 }
 
+// RELD wants a two-letter state code and a trimmed license number. Records
+// that can't be expressed that way are SKIPPED (reported, never sent) so one
+// malformed entry can't sink a whole batch.
+// No truncation: "Nevada" must not silently become "NE" (Nebraska). A value
+// that is not a two-letter code is reported as skipped by batchProblem.
+const cleanState = (s) => String(s || 'UT').trim().toUpperCase();
+const cleanNumber = (n) => String(n || '').trim().replace(/\s+/g, ' ');
+const LICENSE_OK = /^[A-Za-z0-9][A-Za-z0-9 .\-\/]{1,39}$/;
+function batchProblem(item) {
+  if (!/^[A-Z]{2}$/.test(cleanState(item.state))) return 'state is not a two-letter code';
+  if (!LICENSE_OK.test(cleanNumber(item.license_number))) return 'license number is blank or malformed';
+  return null;
+}
+
 // Individual verification: GET /api/v1/licensees/verify?state=&license_number=
 async function verifyLicense(state, licenseNumber) {
-  const q = `?state=${encodeURIComponent(state)}&license_number=${encodeURIComponent(licenseNumber)}`;
-  const r = await reldFetch('/api/v1/licensees/verify' + q);
+  const q = `?state=${encodeURIComponent(cleanState(state))}&license_number=${encodeURIComponent(cleanNumber(licenseNumber))}`;
+  const r = await reldFetch('/api/v1/licensees/verify' + q, {}, { state: cleanState(state) });
   if (r.unavailable) return { unavailable: true, error: r.error };
+  if (r.invalidRequest) return { unavailable: true, invalidRequest: true, error: r.error };
   if (r.notFound) return { found: false, raw: r.body };
   // Some APIs answer 200 with a verified:false payload for unknown licenses.
   const verifiedFlag = pick(r.body || {}, 'verified', 'is_verified', 'found', 'exists', 'match');
@@ -89,24 +143,84 @@ async function verifyLicense(state, licenseNumber) {
   return normalizeRecord(r.body);
 }
 
-// Batch: POST /api/v1/licensees/batch — up to 100, results in input order.
-async function batchVerify(items) {
-  const r = await reldFetch('/api/v1/licensees/batch', {
-    method: 'POST',
-    body: JSON.stringify({ licensees: items.map(i => ({ state: i.state, license_number: i.license_number })) }),
+// ---------- batch verification (Paul, Sep 25 §1/§3) ----------
+// RELD's documented batch endpoint: POST /api/v1/licensees/batch with
+//   { "licenses": [ { "state": "UT", "license_number": "…" }, … ] }   (≤ 100)
+// answering { "data": [ { state, license_number, verified, licensee|null } ] }.
+// ROOT CAUSE of the HTTP 422 Paul saw: the payload used the key "licensees"
+// (the endpoint's noun) instead of "licenses" (the documented field), so
+// RELD's validator saw a request with no licenses in it and rejected the
+// whole thing. Individual lookups never touched that field, which is why they
+// kept working. Fixed here, plus the safeguards below:
+//  • chunking to RELD_BATCH_SIZE (default 100, the documented maximum);
+//  • results matched by state + license number, not by position;
+//  • a chunk RELD still rejects (400/422) is split in halves and retried, so
+//    a single bad record isolates itself instead of failing everyone;
+//  • malformed records are skipped up front and reported, never sent.
+const BATCH_SIZE = Math.max(1, Math.min(100, parseInt(process.env.RELD_BATCH_SIZE, 10) || 100));
+
+function parseBatchBody(body) {
+  const list = Array.isArray(body) ? body : (body && (body.data || body.results || body.licenses || body.licensees)) || [];
+  const byKey = new Map();
+  list.forEach((raw, i) => {
+    const st = cleanState(pick(raw, 'state', 'license_state') || (raw && raw.licensee && raw.licensee.state));
+    const num = cleanNumber(pick(raw, 'license_number', 'licenseNumber') || (raw && raw.licensee && pick(raw.licensee, 'license_number', 'licenseNumber')));
+    const verifiedFlag = pick(raw || {}, 'verified', 'is_verified', 'found', 'exists', 'match');
+    const licensee = raw && (raw.licensee || raw.license || raw.result);
+    const result = (verifiedFlag === false || (verifiedFlag !== true && !licensee)) ? { found: false, raw } : normalizeRecord(licensee || raw);
+    byKey.set(`${st}|${num.toUpperCase()}`, result);
+    byKey.set(`#${i}`, result);
   });
+  return byKey;
+}
+
+// One HTTP call for one chunk. Returns per-item results (same order as items).
+let httpCalls = 0; // HTTP requests made by the current batchVerify run
+async function batchCall(items) {
+  httpCalls++;
+  const payload = { licenses: items.map(i => ({ state: cleanState(i.state), license_number: cleanNumber(i.license_number) })) };
+  const states = [...new Set(payload.licenses.map(l => l.state))].sort();
+  const r = await reldFetch('/api/v1/licensees/batch', { method: 'POST', body: JSON.stringify(payload) }, { count: items.length, states });
   if (r.unavailable) return { unavailable: true, error: r.error };
-  const list = Array.isArray(r.body) ? r.body
-    : (r.body && (r.body.results || r.body.licensees || r.body.data)) || [];
-  return {
-    results: items.map((item, i) => {
-      const raw = list[i];
-      if (!raw) return { found: false };
-      const verifiedFlag = pick(raw, 'verified', 'is_verified', 'found', 'exists', 'match');
-      if (verifiedFlag === false) return { found: false, raw };
-      return normalizeRecord(raw);
-    }),
-  };
+  if (r.invalidRequest) return { invalidRequest: true, error: r.error };
+  const byKey = parseBatchBody(r.body);
+  const results = payload.licenses.map((l, i) => byKey.get(`${l.state}|${l.license_number.toUpperCase()}`) || byKey.get(`#${i}`) || { found: false, raw: null });
+  return { results };
+}
+
+// Recursive isolate-on-422: a rejected chunk is split until the culprit is a
+// single record, which is then reported as an API error for that record only.
+async function batchChunk(items, depth = 0) {
+  const r = await batchCall(items);
+  if (r.results) return r.results;
+  if (r.unavailable) return items.map(() => ({ unavailable: true, error: r.error }));
+  // invalidRequest
+  if (items.length === 1) return [{ unavailable: true, invalidRequest: true, error: r.error }];
+  const mid = Math.ceil(items.length / 2);
+  reldLog('log', 'splitting rejected batch to isolate the bad record', { size: items.length, depth });
+  const a = await batchChunk(items.slice(0, mid), depth + 1);
+  const b = await batchChunk(items.slice(mid), depth + 1);
+  return a.concat(b);
+}
+
+// Verify many licenses. Input items: { state, license_number, ...anything }.
+// Output: { results: [ per item: {found,...} | {unavailable,error} |
+//           {skipped:true, reason} ], calls: n }. Never throws.
+async function batchVerify(items) {
+  const results = new Array(items.length);
+  const sendable = [];
+  items.forEach((item, i) => {
+    const problem = batchProblem(item);
+    if (problem) results[i] = { skipped: true, reason: problem };
+    else sendable.push(i);
+  });
+  httpCalls = 0;
+  for (let start = 0; start < sendable.length; start += BATCH_SIZE) {
+    const idx = sendable.slice(start, start + BATCH_SIZE);
+    const chunkResults = await batchChunk(idx.map(i => items[i]));
+    idx.forEach((i, k) => { results[i] = chunkResults[k]; });
+  }
+  return { results, calls: httpCalls, batchSize: BATCH_SIZE };
 }
 
 // Fuzzy name comparison: minor differences (middle initial, shortened first
@@ -182,7 +296,9 @@ async function applyResult(userId, connexliName, connexliBrokerage, result, prev
   const cols = { verification_status: status, reld_verified: verified, reld_checked_at: new Date(), ...fields };
   const keys = Object.keys(cols);
   await pool.query(
-    `UPDATE agent_profiles SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(', ')} WHERE user_id=$1`,
+    `UPDATE agent_profiles SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(', ')}
+       ${verified ? ', reld_first_verified_at = COALESCE(reld_first_verified_at, now())' : ''}
+     WHERE user_id=$1`,
     [userId, ...keys.map(k => cols[k])]);
   return status;
 }
@@ -286,7 +402,7 @@ const BLOCKING_STATUSES = ['failed', 'expired'];
 
 module.exports = {
   configured, verifyLicense, batchVerify, verifyProfessional, applyResult,
-  namesMatch, brokeragesMatch,
+  namesMatch, brokeragesMatch, batchProblem, cleanState, cleanNumber,
   VERIFICATION_LABELS, VERIFICATION_BADGE, BLOCKING_STATUSES,
-  RELD_API_BASE_URL,
+  RELD_API_BASE_URL, BATCH_SIZE,
 };
