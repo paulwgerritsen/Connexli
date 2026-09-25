@@ -72,13 +72,15 @@ router.post('/agent/credits/checkout', agent, async (req, res) => {
   }
 });
 
-// Back from the payment page — success or cancel. The payment is verified
-// with the provider here; the redirect alone never adds credits.
+// Back from the payment page — success or cancel. The redirect itself never
+// adds credits: if Stripe's webhook has already fulfilled the order we simply
+// show success; otherwise Connexli's SERVER asks Stripe whether the session
+// was paid before fulfilling (the same idempotent path the webhook uses).
 router.get('/agent/credits/return', agent, async (req, res) => {
   const order = await payments.loadOrder(parseInt(req.query.order, 10) || 0, req.session.user.id);
   if (!order) return res.redirect('/agent?purchase=failed');
   const back = payments.safeReturnPath(order.return_path);
-  if (order.status === 'paid') return res.redirect(back + '?purchase=success'); // refresh / webhook got here first
+  if (['paid', 'refunded', 'partially_refunded'].includes(order.status)) return res.redirect(back + '?purchase=success'); // refresh / webhook got here first
   if (order.status !== 'pending') return res.redirect(back + '?purchase=cancelled');
 
   let result;
@@ -91,12 +93,13 @@ router.get('/agent/credits/return', agent, async (req, res) => {
     return res.redirect(back + '?purchase=cancelled');
   }
   if (!result.paid) {
-    // Not confirmed (yet). Stripe can take a moment; the webhook will still
-    // fulfill a genuinely paid order, so the order stays pending — but the
-    // professional is told plainly that no credit has been added.
+    // Not confirmed (yet). A declined card leaves the session unpaid; a slow
+    // Stripe answer leaves it pending — the webhook still fulfils a genuinely
+    // paid order later. Nothing has been added, and the professional is told so.
     return res.redirect(back + '?purchase=pending');
   }
-  await payments.fulfillOrder(order.id, result.transactionId, result.amountCents, 'return');
+  const added = await payments.fulfillOrder(order.id, result.details, 'return');
+  if (added) payments.enrichOrder(order.id).catch(() => {}); // receipt / fee, best effort
   res.redirect(back + '?purchase=success');
 });
 
@@ -122,27 +125,66 @@ router.post('/agent/credits/mock-checkout/:id(\\d+)', agent, async (req, res) =>
 
 // ---------- Stripe webhook ----------
 // Mounted in server.js BEFORE the session/CSRF layers with a raw body, which
-// signature verification requires. Adds credits for a paid Checkout Session
-// even if the professional closed the browser before returning.
+// signature verification requires. This is the AUTHORITATIVE fulfilment path
+// (Paul, Sep 25 §3): it adds credits for a paid Checkout Session even if the
+// professional closed the browser before returning, and it records refunds.
+// Every event id is claimed in stripe_events before any action, so Stripe's
+// redeliveries are answered 200 without doing anything twice.
 async function stripeWebhook(req, res) {
   const p = payments.provider();
   if (!p || p.name !== 'stripe') return res.status(404).end();
   const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body || '');
   const event = payments.stripeProvider.verifyWebhook(raw, req.get('stripe-signature'));
-  if (!event) return res.status(400).send('invalid signature');
+  if (!event || !event.id) return res.status(400).send('invalid signature');
   try {
+    const fresh = await payments.claimStripeEvent(event.id, event.type);
+    if (!fresh) { console.log(`[payments] webhook ${event.id} (${event.type}) already processed — ignored`); return res.json({ received: true, duplicate: true }); }
+    const obj = event.data && event.data.object;
+    let orderId = null, outcome = 'ignored';
+
     if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-      const s = event.data && event.data.object;
-      if (s && s.payment_status === 'paid') {
+      if (obj && obj.payment_status === 'paid') {
         const { rows } = await pool.query(
           `SELECT * FROM credit_orders WHERE provider='stripe' AND (provider_session_id=$1 OR id=$2)`,
-          [s.id, parseInt(s.client_reference_id, 10) || 0]);
-        if (rows[0]) await payments.fulfillOrder(rows[0].id, s.payment_intent || s.id, s.amount_total, 'webhook');
-      }
+          [obj.id, parseInt(obj.client_reference_id, 10) || 0]);
+        if (rows[0]) {
+          orderId = rows[0].id;
+          const added = await payments.fulfillOrder(orderId, payments.detailsFromSession(obj), 'webhook');
+          outcome = added ? 'credits_added' : 'already_paid';
+          if (added || !rows[0].receipt_url) await payments.enrichOrder(orderId);
+        } else outcome = 'order_not_found';
+      } else outcome = 'not_paid';
+    } else if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
+      const { rows } = await pool.query(`SELECT id FROM credit_orders WHERE provider='stripe' AND provider_session_id=$1 AND status='pending'`, [obj && obj.id]);
+      if (rows[0]) { orderId = rows[0].id; await payments.markOrder(orderId, event.type === 'checkout.session.expired' ? 'cancelled' : 'failed'); outcome = 'closed'; }
+    } else if (event.type === 'charge.refunded' || event.type === 'charge.refund.updated' || event.type === 'refund.updated' || event.type === 'refund.created') {
+      // Refund events: the charge carries the cumulative amount_refunded; a
+      // refund object carries its own amount and the charge/payment_intent.
+      const isCharge = obj && obj.object === 'charge';
+      const pi = isCharge ? obj.payment_intent : (obj && obj.payment_intent);
+      const chargeId = isCharge ? obj.id : (obj && obj.charge);
+      const { rows } = await pool.query(
+        `SELECT * FROM credit_orders WHERE provider='stripe' AND (stripe_payment_intent=$1 OR stripe_charge_id=$2 OR provider_transaction_id=$1)`,
+        [pi || '', chargeId || '']);
+      if (rows[0]) {
+        orderId = rows[0].id;
+        let refundedCents = isCharge ? obj.amount_refunded : null;
+        if (refundedCents == null) { // refund object: ask Stripe for the charge's cumulative total
+          const x = await payments.stripeProvider.enrich(rows[0].stripe_payment_intent || pi);
+          refundedCents = x && x.amountRefunded != null ? x.amountRefunded : (obj.amount || 0);
+        }
+        if (obj.status === 'failed' || obj.status === 'canceled') outcome = 'refund_not_completed';
+        else { const r = await payments.applyRefund(orderId, refundedCents, isCharge ? null : obj.id); outcome = r.ignored ? 'ignored' : `refund_reversed_${r.reversed}${r.shortfall ? '_shortfall_' + r.shortfall : ''}`; }
+        if (isCharge && !rows[0].stripe_charge_id) await pool.query(`UPDATE credit_orders SET stripe_charge_id=$2 WHERE id=$1`, [orderId, obj.id]);
+      } else outcome = 'order_not_found';
     }
+    await payments.noteStripeEvent(event.id, orderId, outcome);
+    console.log(`[payments] webhook ${event.type} ${event.id} → ${outcome}${orderId ? ' (order #' + orderId + ')' : ''}`);
     res.json({ received: true });
   } catch (e) {
     console.error('stripe webhook error:', e.message);
+    // Release the claim so Stripe's retry can succeed once the problem is fixed.
+    await pool.query(`DELETE FROM stripe_events WHERE id=$1 AND outcome IS NULL`, [event.id]).catch(() => {});
     res.status(500).end();
   }
 }
@@ -153,7 +195,7 @@ function purchaseNotice(query, credits) {
   switch (query.purchase) {
     case 'success': return { kind: 'success', text: `Payment confirmed — your purchased credit${credits && credits.purchased === 1 ? ' is' : 's are'} ready to use. Your draft was restored exactly as you left it.` };
     case 'cancelled': return { kind: 'info', text: 'Checkout was cancelled. Nothing was charged and no credit was added — your draft is saved below.' };
-    case 'pending': return { kind: 'info', text: "We couldn't confirm the payment yet. If it went through, the credit will appear on your dashboard within a few minutes; nothing has been added until then." };
+    case 'pending': return { kind: 'info', text: "We couldn't confirm a completed payment for that checkout. If your card was declined, nothing was charged — you can try again. If the payment did go through, the credit will appear on your dashboard within a few minutes once Stripe confirms it; nothing has been added until then." };
     case 'failed': return { kind: 'error', text: 'The payment could not be started. Nothing was charged. Please try again in a moment, or contact us if it keeps happening.' };
     case 'unavailable': return { kind: 'info', text: 'Credit purchases are not open yet — your draft has been saved so nothing is lost. Purchasing opens once payments are enabled.' };
     default: return null;

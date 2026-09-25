@@ -1,7 +1,8 @@
 // routes/admin.js — the pilot control center: approve, inspect, and manage
 // professionals and homeowner requests.
 const express = require('express');
-const { pool, logEvent, creditSummary } = require('../db');
+const { pool, logEvent, creditSummary, insertLedger } = require('../db');
+const payments = require('../payments');
 const { requireRole } = require('../middleware');
 const H = require('../helpers');
 const mailer = require('../mailer');
@@ -61,9 +62,11 @@ router.get('/admin', admin, async (req, res) => {
      FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
      WHERE ap.status='rejected' ORDER BY ap.reviewed_at DESC NULLS LAST LIMIT 100`);
 
+  const pay = await paymentReport();
   res.render('admin/dashboard', {
     title: 'Admin', H,
     pending: pending.rows, agents: agents.rows, rejected, requests: requests.rows, m: metrics.rows[0], buyers,
+    pay, paymentsEnabled: payments.enabled(),
     reldConfigured: reld.configured(),
     VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE,
   });
@@ -297,9 +300,10 @@ router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
 
   // Proposal credits + ledger (Paul, Aug 29): the balance the professional
   // sees, plus the raw ledger entries and an adjustment form for support.
-  const [credits, ledgerQ] = await Promise.all([
+  const [credits, ledgerQ, ordersQ] = await Promise.all([
     creditSummary(req.params.id),
-    pool.query(`SELECT * FROM credit_ledger WHERE agent_id=$1 ORDER BY created_at DESC LIMIT 25`, [req.params.id]),
+    pool.query(`SELECT * FROM credit_ledger WHERE agent_id=$1 ORDER BY created_at DESC, id DESC LIMIT 200`, [req.params.id]),
+    pool.query(`SELECT * FROM credit_orders WHERE agent_id=$1 AND status <> 'pending' ORDER BY created_at DESC LIMIT 200`, [req.params.id]),
   ]);
 
   res.render('admin/agent-detail', {
@@ -311,7 +315,7 @@ router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
       buyerOpportunities, buyerSubmitted, buyerWins,
       successRate: submitted ? Math.round(100 * wins / submitted) + '%' : 'n/a',
     },
-    credits, ledger: ledgerQ.rows,
+    credits, ledger: ledgerQ.rows, orders: ordersQ.rows, ledgerType: payments.ledgerType, pkgLabel: payments.pkgLabel,
     reldConfigured: reld.configured(),
     VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE,
     // Repeat-click guard: the Recheck button disables when a check ran in the
@@ -360,6 +364,7 @@ router.post('/admin/agents/:id(\\d+)/resolve-review', admin, async (req, res) =>
   const reason = H.clean(req.body.reason, 300) || 'Confirmed preferred-name / brokerage difference — same person as the licensed individual';
   await pool.query(
     `UPDATE agent_profiles SET verification_status='verified', reld_verified=true,
+       reld_first_verified_at = COALESCE(reld_first_verified_at, now()),
        confirmed_reld_name=reld_name, confirmed_reld_brokerage=reld_brokerage,
        review_resolved_at=now(), review_resolved_by=$1, review_resolution=$2
      WHERE user_id=$3`,
@@ -368,31 +373,96 @@ router.post('/admin/agents/:id(\\d+)/resolve-review', admin, async (req, res) =>
   res.redirect('/admin/agents/' + req.params.id + '?review=resolved');
 });
 
-// One-time batch audit of every professional with a license on file.
-// ONE call to RELD's batch endpoint (up to 100 licensees), triggered only by
-// this explicit admin action — never on a schedule, never on page load.
+// Batch audit of every professional with a license on file (Paul, Sep 25 §3).
+// Triggered only by this explicit admin action — never on a schedule, never
+// on page load. reld.batchVerify() chunks to RELD's documented maximum,
+// isolates any record RELD rejects, and reports one of four outcomes per
+// professional. An outage or API error NEVER downgrades a verified status.
 router.post('/admin/reld-audit', admin, async (req, res) => {
   if (!reld.configured()) {
     return res.status(400).render('error', { title: 'RELD not configured', message: 'Set RELD_API_KEY (and RELD_API_BASE_URL if needed) in Render before running the audit.' });
   }
   const { rows: pros } = await pool.query(
-    `SELECT ap.user_id, ap.license_state, ap.license_number, ap.brokerage, ap.verification_status, u.name, u.email
+    `SELECT ap.user_id, ap.license_state, ap.license_number, ap.brokerage, ap.verification_status,
+            ap.confirmed_reld_name, ap.confirmed_reld_brokerage, u.name, u.email
      FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
-     WHERE COALESCE(ap.license_number,'') <> '' ORDER BY ap.user_id LIMIT 100`);
-  if (!pros.length) return res.render('admin/reld-results', { title: 'RELD audit', H, mode: 'audit', error: 'No professionals with a license number on file.', rows: [], raw: null, parsed: null, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE });
+     WHERE COALESCE(ap.license_number,'') <> '' ORDER BY ap.license_state, ap.user_id`);
+  const view = (extra) => res.render('admin/reld-results', { title: 'RELD audit', H, mode: 'audit', error: null, rows: [], raw: null, parsed: null, summary: null, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE, ...extra });
+  if (!pros.length) return view({ error: 'No professionals with a license number on file.' });
 
   const batch = await reld.batchVerify(pros.map(p => ({ state: p.license_state || 'UT', license_number: p.license_number })));
-  if (batch.unavailable) {
-    return res.render('admin/reld-results', { title: 'RELD audit', H, mode: 'audit', error: 'RELD was unavailable (' + batch.error + '). No professional’s status was changed — an outage never marks a license invalid.', rows: [], raw: null, parsed: null, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE });
-  }
   const outcomes = [];
+  const summary = { verified: 0, failed: 0, api_error: 0, skipped: 0, needs_review: 0, calls: batch.calls, batchSize: batch.batchSize, total: pros.length };
   for (let i = 0; i < pros.length; i++) {
-    const p = pros[i];
-    const status = await reld.applyResult(p.user_id, p.name, p.brokerage, batch.results[i], p.verification_status);
-    outcomes.push({ user_id: p.user_id, name: p.name, email: p.email, license: (p.license_state || 'UT') + ' ' + p.license_number, before: p.verification_status, after: status });
+    const p = pros[i]; const r = batch.results[i];
+    let after, category, note = '';
+    if (r.skipped) {
+      after = p.verification_status; category = 'skipped'; note = 'Not sent — ' + r.reason; summary.skipped++;
+    } else {
+      after = await reld.applyResult(p.user_id, p.name, p.brokerage, r, p.verification_status, { name: p.confirmed_reld_name, brokerage: p.confirmed_reld_brokerage });
+      if (r.unavailable) { category = 'api_error'; note = r.error; summary.api_error++; }
+      else if (after === 'verified') { category = 'verified'; summary.verified++; }
+      else if (after === 'needs_review') { category = 'needs_review'; note = 'Registry record found; name or brokerage differs'; summary.needs_review++; }
+      else { category = 'failed'; note = after === 'expired' ? 'License found but not active' : 'License not found for this state and number'; summary.failed++; }
+    }
+    outcomes.push({ user_id: p.user_id, name: p.name, email: p.email, license: (p.license_state || 'UT') + ' ' + p.license_number, before: p.verification_status, after, category, note });
   }
-  logEvent('reld_audit', { userId: req.session.user.id, meta: { checked: pros.length, failed: outcomes.filter(o => o.after === 'failed').length } });
-  res.render('admin/reld-results', { title: 'RELD audit', H, mode: 'audit', error: null, rows: outcomes, raw: null, parsed: null, VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE });
+  logEvent('reld_audit', { userId: req.session.user.id, meta: { ...summary } });
+  console.log(`[reld] audit complete — Verified: ${summary.verified} | Failed verification: ${summary.failed} | API errors: ${summary.api_error} | Skipped: ${summary.skipped} | Needs review: ${summary.needs_review} (${summary.calls} batch call${summary.calls === 1 ? '' : 's'})`);
+  view({ rows: outcomes, summary });
+});
+
+// ---------- test-account cleanup (Paul, Sep 25 §2) ----------
+// Lists professional accounts that have NEVER passed RELD verification —
+// reld_first_verified_at is NULL, they are not currently verified, and no
+// administrator has confirmed their identity. A later outage, failed recheck,
+// or expired license can never make a once-verified professional eligible.
+async function neverVerifiedProfessionals() {
+  const { rows } = await pool.query(
+    `SELECT ap.user_id, ap.license_state, ap.license_number, ap.brokerage, ap.status, ap.verification_status,
+            ap.reld_error, u.name, u.email, u.created_at AS registered_at,
+            (SELECT COUNT(*) FROM proposals p WHERE p.agent_id=ap.user_id)::int
+              + (SELECT COUNT(*) FROM buyer_proposals bp WHERE bp.agent_id=ap.user_id)::int AS proposals,
+            (SELECT COUNT(*) FROM credit_orders o WHERE o.agent_id=ap.user_id AND o.status IN ('paid','refunded','partially_refunded'))::int AS purchases
+     FROM agent_profiles ap JOIN users u ON u.id=ap.user_id
+     WHERE u.role='agent'
+       AND ap.reld_first_verified_at IS NULL
+       AND ap.reld_verified = false
+       AND ap.verification_status <> 'verified'
+       AND ap.confirmed_reld_name IS NULL
+     ORDER BY u.created_at ASC`);
+  return rows;
+}
+
+router.get('/admin/reld-cleanup', admin, async (req, res) => {
+  const rows = await neverVerifiedProfessionals();
+  res.render('admin/reld-cleanup', { title: 'Remove never-verified professionals', H, rows,
+    VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE, done: req.query.done ? parseInt(req.query.done, 10) : null });
+});
+
+// Two confirmations: the checkbox list + count on the page, then the typed
+// word DELETE. Only ids that are STILL eligible at execution time are removed
+// (a professional verified between preview and confirm is protected).
+router.post('/admin/reld-cleanup', admin, async (req, res) => {
+  const eligible = await neverVerifiedProfessionals();
+  const eligibleIds = new Set(eligible.map(r => r.user_id));
+  let ids = req.body.ids || [];
+  if (!Array.isArray(ids)) ids = [ids];
+  ids = ids.map(x => parseInt(x, 10)).filter(x => eligibleIds.has(x));
+  if (req.body.confirm !== 'DELETE' || !ids.length) {
+    return res.status(400).render('admin/reld-cleanup', { title: 'Remove never-verified professionals', H, rows: eligible,
+      VL: reld.VERIFICATION_LABELS, VB: reld.VERIFICATION_BADGE, done: null,
+      error: !ids.length ? 'No eligible accounts were selected.' : 'Type DELETE (in capitals) to confirm.' });
+  }
+  const removed = eligible.filter(r => ids.includes(r.user_id));
+  const { rowCount } = await pool.query(
+    `DELETE FROM users u USING agent_profiles ap
+     WHERE u.id = ap.user_id AND u.role='agent' AND u.id = ANY($1::int[])
+       AND ap.reld_first_verified_at IS NULL AND ap.reld_verified = false
+       AND ap.verification_status <> 'verified' AND ap.confirmed_reld_name IS NULL`, [ids]);
+  logEvent('reld_cleanup', { userId: req.session.user.id, meta: { deleted: rowCount, accounts: removed.map(r => ({ id: r.user_id, email: r.email, license: (r.license_state || 'UT') + '/' + r.license_number })) } });
+  console.log(`[admin] RELD cleanup by ${req.session.user.email}: deleted ${rowCount} never-verified professional account(s)`);
+  res.redirect('/admin/reld-cleanup?done=' + rowCount);
 });
 
 // Connection test: one lookup, raw response shown, nothing stored. Lets Paul
@@ -421,10 +491,13 @@ router.post('/admin/agents/:id(\\d+)/credits', admin, async (req, res) => {
   }
   const { rows } = await pool.query(`SELECT user_id FROM agent_profiles WHERE user_id=$1`, [req.params.id]);
   if (!rows[0]) return res.status(404).render('error', { title: 'Not found', message: 'That professional does not exist.' });
-  await pool.query(
-    `INSERT INTO credit_ledger (agent_id, entry_type, funding_source, amount, reason)
-     VALUES ($1, 'admin_adjustment', 'purchased', $2, $3)`,
-    [req.params.id, amount, reason + ' (by ' + req.session.user.email + ')']);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await insertLedger(client, parseInt(req.params.id, 10), { entry_type: 'admin_adjustment', funding_source: 'purchased', amount,
+      reason: reason + ' (by ' + req.session.user.email + ')' });
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   logEvent('credit_adjustment', { userId: parseInt(req.params.id, 10), meta: { amount, reason } });
   res.redirect('/admin/agents/' + req.params.id + '?credit=saved');
 });
@@ -503,6 +576,69 @@ router.post('/admin/agents/:id(\\d+)/remove', admin, async (req, res) => {
   const { rowCount } = await pool.query(`DELETE FROM users WHERE id=$1 AND role='agent'`, [req.params.id]);
   if (rowCount) logEvent('agent_removed', { userId: parseInt(req.params.id) });
   res.redirect('/admin');
+});
+
+// ---------- payments & revenue (Paul, Sep 25 §7/§10) ----------
+// One query feeds the dashboard section, the report page, and the CSV so the
+// numbers can never disagree. Gross = amount paid; refunds = amount refunded;
+// net = gross − refunds − Stripe fee (fee only when Stripe reported it).
+const PAYMENT_ROWS_SQL = `
+  SELECT o.*, u.name, u.email, ap.service_state, ap.service_zip, ap.license_state AS current_license_state,
+         (o.amount_cents - o.refunded_cents - COALESCE(o.fee_cents, 0)) AS net_after_fee_cents
+  FROM credit_orders o JOIN users u ON u.id=o.agent_id LEFT JOIN agent_profiles ap ON ap.user_id=o.agent_id
+  WHERE o.status IN ('paid','refunded','partially_refunded')`;
+
+async function paymentReport() {
+  const [rows, totals, byState, byMonth, flagged] = await Promise.all([
+    pool.query(PAYMENT_ROWS_SQL + ` ORDER BY o.paid_at DESC NULLS LAST, o.id DESC LIMIT 200`),
+    pool.query(`SELECT COUNT(*)::int AS purchases, COALESCE(SUM(amount_cents),0)::bigint AS gross, COALESCE(SUM(refunded_cents),0)::bigint AS refunds,
+                       COALESCE(SUM(fee_cents),0)::bigint AS fees, COALESCE(SUM(credits),0)::int AS credits,
+                       COALESCE(SUM(amount_cents - refunded_cents - COALESCE(fee_cents,0)),0)::bigint AS net,
+                       COALESCE(SUM(amount_cents) FILTER (WHERE paid_at >= date_trunc('month', now() AT TIME ZONE 'America/Denver') AT TIME ZONE 'America/Denver'),0)::bigint AS gross_this_month
+                FROM credit_orders WHERE status IN ('paid','refunded','partially_refunded')`),
+    pool.query(`SELECT COALESCE(billing_state, '(no billing state)') AS state, COUNT(*)::int AS purchases, SUM(credits)::int AS credits,
+                       SUM(amount_cents)::bigint AS gross, SUM(refunded_cents)::bigint AS refunds, SUM(amount_cents - refunded_cents - COALESCE(fee_cents,0))::bigint AS net
+                FROM credit_orders WHERE status IN ('paid','refunded','partially_refunded') GROUP BY 1 ORDER BY gross DESC`),
+    pool.query(`SELECT to_char(paid_at AT TIME ZONE 'America/Denver', 'YYYY-MM') AS month, COUNT(*)::int AS purchases, SUM(credits)::int AS credits,
+                       SUM(amount_cents)::bigint AS gross, SUM(refunded_cents)::bigint AS refunds, SUM(amount_cents - refunded_cents - COALESCE(fee_cents,0))::bigint AS net
+                FROM credit_orders WHERE status IN ('paid','refunded','partially_refunded') GROUP BY 1 ORDER BY 1 DESC`),
+    pool.query(`SELECT o.id, o.review_flag, o.review_note, u.name, u.email FROM credit_orders o JOIN users u ON u.id=o.agent_id WHERE o.review_flag IS NOT NULL ORDER BY o.id DESC`),
+  ]);
+  return { orders: rows.rows, totals: totals.rows[0], byState: byState.rows, byMonth: byMonth.rows, flagged: flagged.rows };
+}
+
+router.get('/admin/payments', admin, async (req, res) => {
+  const report = await paymentReport();
+  res.render('admin/payments', { title: 'Payments & revenue', H, ...report, paymentsEnabled: payments.enabled(), pkgLabel: payments.pkgLabel,
+    providerName: payments.enabled() ? payments.provider().name : null, testMode: /^sk_test_/.test(process.env.STRIPE_SECRET_KEY || ''),
+    cleared: req.query.cleared === '1' });
+});
+
+// Full transaction export for accounting and tax work (§10) — every paid,
+// refunded, or partially refunded order, one row each, with both the billing
+// geography and the professional's service/license state at purchase time.
+router.get('/admin/payments.csv', admin, async (req, res) => {
+  const { rows } = await pool.query(PAYMENT_ROWS_SQL + ` ORDER BY o.paid_at ASC NULLS LAST, o.id ASC`);
+  const cols = ['order_id', 'paid_at_mountain', 'professional', 'email', 'service_state', 'service_zip', 'license_state_at_purchase', 'billing_state', 'billing_postal_code', 'billing_country', 'billing_city',
+    'package', 'credits', 'gross_usd', 'tax_usd', 'stripe_fee_usd', 'refunded_usd', 'net_usd', 'status', 'refund_status', 'review_flag', 'provider', 'stripe_payment_intent', 'stripe_charge', 'stripe_session'];
+  const q = (v) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const usd = (c) => c == null ? '' : (c / 100).toFixed(2);
+  const lines = [cols.join(',')];
+  for (const o of rows) {
+    lines.push([o.id, o.paid_at ? new Date(o.paid_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) : '', o.name, o.email, o.service_state, o.service_zip, o.license_state,
+      o.billing_state, o.billing_postal_code, o.billing_country, o.billing_city, o.package_key, o.credits, usd(o.amount_cents), usd(o.tax_cents), usd(o.fee_cents), usd(o.refunded_cents),
+      usd(o.net_after_fee_cents), o.status, o.refund_status, o.review_flag, o.provider, o.stripe_payment_intent, o.stripe_charge_id, o.provider_session_id].map(q).join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="connexli-payments-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(lines.join('\n'));
+});
+
+// Clear a refund review flag once an administrator has dealt with it.
+router.post('/admin/payments/:id(\\d+)/clear-flag', admin, async (req, res) => {
+  await pool.query(`UPDATE credit_orders SET review_flag=NULL, review_note=COALESCE(review_note,'') || ' [reviewed by ' || $2 || ']' WHERE id=$1`, [req.params.id, req.session.user.email]);
+  logEvent('payment_flag_cleared', { userId: req.session.user.id, meta: { order_id: parseInt(req.params.id, 10) } });
+  res.redirect('/admin/payments?cleared=1');
 });
 
 // ---------- request detail ----------

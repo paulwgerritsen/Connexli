@@ -190,12 +190,16 @@ router.get('/agent', agent, async (req, res) => {
   // Proposal balance (Paul, Aug 29): derived from the credit ledger — no
   // page-load RELD calls, no external API involved here.
   const credits = await creditSummary(uid);
+  // Purchase history (Paul, Sep 25 §5): plain-language rows, no Stripe ids.
+  const { rows: purchases } = await pool.query(
+    `SELECT id, created_at, paid_at, package_key, credits, amount_cents, refunded_cents, status, refund_status, receipt_url
+     FROM credit_orders WHERE agent_id=$1 AND status IN ('paid','refunded','partially_refunded','failed') ORDER BY created_at DESC LIMIT 50`, [uid]);
 
   res.render('agent/dashboard', {
     title: 'Opportunities', profile, H,
     opportunities, myProposals: mine.rows, stats: stats.rows[0], wins,
     buyerOpps: buyerOppsNear, buyerWins, myBuyerProposals, feedbackDone,
-    credits, licenseBlocked: licenseBlocked(profile), CREDIT_BUNDLES, PRIORITY_HOURS,
+    credits, licenseBlocked: licenseBlocked(profile), CREDIT_BUNDLES, PRIORITY_HOURS, purchases,
     purchasing: payments.enabled(), notice: creditsRoutes.purchaseNotice(req.query, credits),
   });
 });
