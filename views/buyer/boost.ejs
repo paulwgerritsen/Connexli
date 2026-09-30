@@ -1,12 +1,25 @@
 <%- include('../partials/head') %>
+<%# sample = practice mode (Sep 30): step 2 of what a buyer fills out, shown
+    read-only to a professional with the fictional practice answers. %>
+<% const S = typeof sample !== 'undefined' && sample; %>
 <div class="narrow" style="max-width:640px;">
+  <% if (S) { %>
+    <a href="/agent/practice/buyer/request" style="font-size:14px;">‹ Back to step 1 of what the buyer submitted</a>
+    <%- include('../partials/practice-banner', { practiceKind: 'buyer' }) %>
+    <div class="card" style="border-left:4px solid var(--blue); padding:14px 18px;" data-sample-request="buyer-boost">
+      <b style="color:var(--navy);">See what the buyer submitted — step 2 (optional)</b>
+      <span class="sub" style="display:inline;">After publishing, buyers can add these optional details. This practice buyer did — the answers appear in the Buyer Snapshot you evaluate.</span>
+    </div>
+  <% } else { %>
   <a href="/buyer" style="font-size:14px;">‹ Back to my profile</a>
+  <% } %>
   <h1 style="margin-top:8px;">Boost your profile</h1>
   <p class="sub">All optional — but every answer makes the proposals you receive more specific. Vague profiles get generic pitches; detailed profiles get real plans.</p>
   <% if (error) { %><div class="error"><%= error %></div><% } %>
 
-  <form method="POST" action="/buyer/boost">
+  <form <% if (S) { %>onsubmit="return false;" aria-label="Sample buyer details (read-only)"<% } else { %>method="POST" action="/buyer/boost"<% } %>>
     <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <fieldset <%= S ? 'disabled' : '' %> style="border:0; padding:0; margin:0; min-width:0;">
     <div class="card">
       <label for="property_prefs">What are you looking for in a home?</label>
       <textarea id="property_prefs" name="property_prefs" rows="3" maxlength="400" placeholder="e.g. Rambler with a finished basement, 3+ beds, 2,500–4,000 sq ft, 2-car garage, newer than 2000"><%= profile.property_prefs %></textarea>
@@ -27,8 +40,12 @@
       <label for="notes">Anything else agents should know? (optional)</label>
       <textarea id="notes" name="notes" rows="3" maxlength="500"><%= profile.notes %></textarea>
     </div>
-    <button class="btn full" type="submit">Save my answers</button>
+    <% if (!S) { %><button class="btn full" type="submit">Save my answers</button><% } %>
+    </fieldset>
   </form>
+  <% if (S) { %>
+    <a class="btn full" href="/agent/practice/buyer">Back to the practice opportunity</a>
+  <% } %>
 </div>
 <script>
 // Limit priorities to three; a fourth click bounces with a brief note.

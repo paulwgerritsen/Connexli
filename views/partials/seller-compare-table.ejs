@@ -1,0 +1,31 @@
+<%# The homeowner's side-by-side comparison table. Shared by the live compare
+    page and the professional's practice preview (Sep 30). Locals: proposals,
+    request, preview (true = practice: Choose buttons inert). %>
+<% const has = (p, kw) => (p.services || '').toLowerCase().includes(kw); %>
+<div class="tblwrap">
+  <table class="cmp">
+    <tr><th></th><% proposals.forEach(p => { %><th><%= p.agent_name %></th><% }) %></tr>
+    <tr><td>Brokerage</td><% proposals.forEach(p => { %><td><%= p.brokerage %></td><% }) %></tr>
+    <tr><td>12-mo transactions*</td><% proposals.forEach(p => { %><td><%= (p.transactions_seller_12mo === null && p.transactions_buyer_12mo === null) ? '—' : ((p.transactions_seller_12mo ?? 0) + ' seller · ' + (p.transactions_buyer_12mo ?? 0) + ' buyer') %></td><% }) %></tr>
+    <tr><td>Listing-side compensation</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.feeLabel(p) %></b></td><% }) %></tr>
+    <tr><td>Est. listing-side fee</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.money(H.estFee(p, request.price_range)) %></b></td><% }) %></tr>
+    <tr><td>Photos</td><% proposals.forEach(p => { %><td><%- has(p,'photo') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Drone</td><% proposals.forEach(p => { %><td><%- has(p,'drone') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Open house</td><% proposals.forEach(p => { %><td><%- has(p,'open house') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>3D tour</td><% proposals.forEach(p => { %><td><%- has(p,'3d') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Staging</td><% proposals.forEach(p => { %><td><%- has(p,'staging') ? '<span class="inc">✓ Included</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Cancellation</td><% proposals.forEach(p => { %><td><%= p.cancellation_terms %></td><% }) %></tr>
+    <tr><td></td><% proposals.forEach(p => { %>
+      <td>
+        <% if (preview) { %>
+          <button class="btn sm" type="button" disabled title="Preview only" style="cursor:not-allowed;">Choose</button>
+        <% } else { %>
+        <form method="POST" action="/requests/<%= request.id %>/connect/<%= p.id %>" onsubmit="return confirm('Release your contact info to <%= p.agent_name %>?');">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn sm" type="submit">Choose</button>
+        </form>
+        <% } %>
+      </td>
+    <% }) %></tr>
+  </table>
+</div>

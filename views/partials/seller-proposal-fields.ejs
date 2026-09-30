@@ -1,0 +1,57 @@
+<%# The listing (seller-side) proposal fields a professional fills in.
+    Shared by the live opportunity form and the practice proposal (Sep 30):
+    change a field here and both update together. Validation for both lives
+    in proposal-input.js. Locals: proposal (existing/draft values or null),
+    mid (midpoint of the seller's price range, for the fee preview). %>
+<p class="note" style="margin-top:2px;">The amount below is your <b>proposed listing-side compensation</b> — what you propose to charge for representing the seller. Connexli presents it to the homeowner as separate from any compensation that may involve a buyer's agent.</p>
+<label>Compensation type</label>
+<div class="optgrid cols keep2">
+  <label class="opt"><input type="radio" name="fee_type" value="pct" <%= (!proposal || proposal.fee_type === 'pct') ? 'checked' : '' %> onchange="feeLbl()"><span class="tile"><b>% of sale price</b></span></label>
+  <label class="opt"><input type="radio" name="fee_type" value="flat" <%= (proposal && proposal.fee_type === 'flat') ? 'checked' : '' %> onchange="feeLbl()"><span class="tile"><b>Flat fee ($)</b></span></label>
+</div>
+<label for="fee_amount" id="feeAmtLbl">Listing fee</label>
+<input type="text" id="fee_amount" name="fee_amount" inputmode="decimal" value="<%= proposal ? parseFloat(proposal.fee_amount) : '' %>" placeholder="e.g. 1.25" required>
+<p class="note" id="feePrev"></p>
+
+<label>Included services</label>
+<div class="optgrid cols">
+  <% H.SERVICES.forEach(s => { %>
+    <label class="opt"><input type="checkbox" name="services" value="<%= s %>" <%= (proposal && (proposal.services || '').includes(s)) ? 'checked' : '' %>><span class="tile"><b style="font-weight:500;"><%= s %></b></span></label>
+  <% }) %>
+</div>
+
+<label for="marketing_plan">Marketing plan <span class="hint">(the homeowner sees this)</span></label>
+<textarea id="marketing_plan" name="marketing_plan" rows="4" maxlength="2000"><%= proposal ? proposal.marketing_plan : '' %></textarea>
+<p class="note" style="text-align:right; margin-top:2px;"><span id="mpCount">0</span> / 2000 characters</p>
+<script>
+(function(){
+  var t = document.getElementById('marketing_plan'), c = document.getElementById('mpCount');
+  function upd(){ c.textContent = t.value.length; c.parentNode.style.color = t.value.length >= 2000 ? '#B42318' : ''; }
+  t.addEventListener('input', upd); upd();
+})();
+</script>
+
+<label for="cancellation_terms">Cancellation terms</label>
+<select id="cancellation_terms" name="cancellation_terms">
+  <% H.CANCELLATION.forEach(c => { %><option <%= (proposal && proposal.cancellation_terms === c) ? 'selected' : '' %>><%= c %></option><% }) %>
+</select>
+<script>
+var MID = <%= mid %>;
+function feeLbl(){
+  var pct = document.querySelector('input[name="fee_type"][value="pct"]').checked;
+  document.getElementById('feeAmtLbl').textContent = pct ? 'Your proposed listing-side compensation (%)' : 'Your proposed listing-side compensation (flat $)';
+  prev();
+}
+function prev(){
+  var pct = document.querySelector('input[name="fee_type"][value="pct"]').checked;
+  var v = parseFloat(String(document.getElementById('fee_amount').value).replace(/[^0-9.]/g,'')) || 0;
+  var est = pct ? Math.round(MID * v / 100) : Math.round(v);
+  document.getElementById('feePrev').textContent = v > 0
+    ? 'The homeowner sees: ' + (pct ? v + '%' : '$' + est.toLocaleString() + ' flat') + ' · estimated $' + est.toLocaleString() + ' on a $' + MID.toLocaleString() + ' sale'
+    : 'Estimated fee preview appears as you type.';
+}
+if (document.getElementById('fee_amount')) {
+  document.getElementById('fee_amount').addEventListener('input', prev);
+  feeLbl();
+}
+</script>

@@ -4,7 +4,11 @@ Sealed-proposal marketplace for real estate representation. Utah pilot.
 
 ## What this is
 
-- Homeowners create private listing requests (24-hour, 48-hour, or 7-day proposal windows)
+- Homeowners create private listing requests. One standard rule (Sep 30): each request is open up to 48 hours
+  or until 10 proposals arrive, whichever comes first. Sellers also say when they're hoping to list.
+- Professionals can practice both a seller and a buyer proposal from their dashboard (`/agent/practice`) —
+  fictional requests, previews of what the consumer sees, and zero production effects (no records, credits,
+  emails or events)
 - License-verified professionals submit sealed proposals (fee + services + marketing plan)
 - Proposals stay hidden until the window closes, then the homeowner compares, shortlists, and connects
 - Contact info is released only to the chosen professional

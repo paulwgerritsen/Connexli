@@ -1,0 +1,33 @@
+<%- include('../partials/head') %>
+<a href="/agent" style="font-size:14px;">‹ Back to my dashboard</a>
+<%- include('../partials/practice-banner', { practiceKind: 'seller' }) %>
+<h1 style="margin-top:8px;">Preview: what the seller sees</h1>
+<p class="sub">When the window closes, the homeowner sees every proposal together. This is how yours would appear to them — first on their results page, then as a column in the side-by-side comparison. Other professionals' proposals would sit right next to yours. Estimated fees assume a sale near the middle of their range (<b><%= H.money(H.midPrice(request.price_range)) %></b>).</p>
+
+<h2 style="margin-top:22px;">On the homeowner's results page</h2>
+<p class="note">ⓘ Each fee shown is that professional's proposed <b>listing-side</b> compensation — for representing you as the seller. Compensation involving a buyer's agent, if any, is separate: discuss your options with the professional you select. Connexli does not set or recommend commissions.</p>
+<div class="cards" data-preview="seller-card">
+  <%- include('../partials/seller-proposal-card', { p, request, preview: true }) %>
+</div>
+
+<h2 style="margin-top:22px;">In the side-by-side comparison</h2>
+<div data-preview="seller-compare">
+  <%- include('../partials/seller-compare-table', { proposals: [p], request, preview: true }) %>
+</div>
+<p class="note">Buttons are shown for realism only — in practice they do nothing.</p>
+
+<div class="actions" style="margin-top:18px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+  <form method="POST" action="/agent/practice/seller/edit" style="margin:0;">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="fee_type" value="<%= form.fee_type %>">
+    <input type="hidden" name="fee_amount" value="<%= form.fee_amount %>">
+    <% form.services.forEach(s => { %><input type="hidden" name="services" value="<%= s %>"><% }) %>
+    <input type="hidden" name="marketing_plan" value="<%= form.marketing_plan %>">
+    <input type="hidden" name="cancellation_terms" value="<%= form.cancellation_terms %>">
+    <input type="hidden" name="listing_ack" value="<%= form.listing_ack %>">
+    <button class="btn ghost" type="submit" id="editPractice">‹ Edit my practice proposal</button>
+  </form>
+  <a class="btn" href="/agent" id="exitPractice">Exit to my dashboard</a>
+  <a href="/agent/practice/buyer" style="font-weight:600;">Try the buyer practice ›</a>
+</div>
+<%- include('../partials/foot') %>

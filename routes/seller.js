@@ -92,16 +92,19 @@ router.post('/requests/new', seller, async (req, res) => {
     hoa: req.body.hoa === 'Yes' ? 'Yes' : 'No',
     condition: H.oneOf(req.body.condition, H.CONDITIONS, 'Updated'),
     price_range: Object.keys(H.PRICE_RANGES).includes(req.body.price_range) ? req.body.price_range : null,
-    window_hours: [24, 48, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 48,
+    // "When are you hoping to list your home?" (Paul, Sep 30) — required.
+    listing_timeline: H.oneOf(req.body.listing_timeline, H.SELLER_TIMELINE, null),
   };
-  let priorities = req.body.priorities || [];
-  if (!Array.isArray(priorities)) priorities = [priorities];
-  priorities = priorities.filter(p => H.PRIORITIES.includes(p)).slice(0, 2);
+  // One standard proposal window for every seller request (Paul, Sep 30):
+  // up to 48 hours, closing early the moment 10 proposals arrive. The seller
+  // no longer chooses a window, and "What matters most?" is no longer asked —
+  // anything a stale browser tab still posts for either is ignored.
+  const windowHours = H.SELLER_WINDOW_HOURS;
 
-  if (!f.property_type || !f.zip.match(/^\d{5}$/) || !f.city || !f.price_range) {
+  if (!f.property_type || !f.zip.match(/^\d{5}$/) || !f.city || !f.price_range || !f.listing_timeline) {
     return res.status(400).render('seller/new-request', {
-      title: 'Tell us about your home', H, form: { ...f, priorities, comp_ack: req.body.comp_ack },
-      error: 'Please choose a property type, enter a 5-digit ZIP code and city, and pick a price range.',
+      title: 'Tell us about your home', H, form: { ...f, comp_ack: req.body.comp_ack },
+      error: 'Please choose a property type, enter a 5-digit ZIP code and city, pick a price range, and tell us when you\'re hoping to list.',
     });
   }
   // The ZIP must exist in the geographic database (Paul, Aug 21 — the Lehi
@@ -111,14 +114,14 @@ router.post('/requests/new', seller, async (req, res) => {
   // agent registration/settings and the buyer city picker.
   if (!mailer.zipInfo(f.zip)) {
     return res.status(400).render('seller/new-request', {
-      title: 'Tell us about your home', H, form: { ...f, priorities, comp_ack: req.body.comp_ack },
+      title: 'Tell us about your home', H, form: { ...f, comp_ack: req.body.comp_ack },
       error: `We couldn't find ZIP code ${f.zip}. Please double-check it — this is how we match your home with nearby professionals. (Lehi, for example, is 84043.)`,
     });
   }
   // Compensation-transparency acknowledgement (required; see selling.html education).
   if (req.body.comp_ack !== 'yes') {
     return res.status(400).render('seller/new-request', {
-      title: 'Tell us about your home', H, form: { ...f, priorities },
+      title: 'Tell us about your home', H, form: { ...f },
       error: 'Please confirm the acknowledgement about listing-side compensation before launching your request.',
     });
   }
@@ -127,19 +130,19 @@ router.post('/requests/new', seller, async (req, res) => {
   // 6:59:59 AM Mountain) are saved now but open at the next 7:00 AM; daytime
   // submissions open immediately. The proposal window AND the purchased-
   // credit priority window both start from the go-live moment, so an
-  // overnight wait never eats into the window the seller chose.
+  // overnight wait never eats into the 48-hour window.
   const liveAt = schedule.goLiveAt(schedule.now(req)); // null = right now
   const { rows } = await pool.query(
     `INSERT INTO requests (seller_id, property_type, zip, city, neighborhood, beds, baths, sqft_range,
-       year_built, hoa, condition, price_range, priorities, window_hours, live_at, live_notified, closes_at, priority_until)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+       year_built, hoa, condition, price_range, listing_timeline, window_hours, proposal_cap, live_at, live_notified, closes_at, priority_until)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$17,
        COALESCE($16::timestamptz, now()), false,
        COALESCE($16::timestamptz, now()) + make_interval(hours => $14),
        COALESCE($16::timestamptz, now()) + make_interval(mins => $15))
      RETURNING id`,
     [req.session.user.id, f.property_type, f.zip, f.city, f.neighborhood, f.beds, f.baths, f.sqft_range,
-     f.year_built, f.hoa, f.condition, f.price_range, priorities.join(' + '), f.window_hours,
-     Math.round(PRIORITY_HOURS * 60), liveAt]
+     f.year_built, f.hoa, f.condition, f.price_range, f.listing_timeline, windowHours,
+     Math.round(PRIORITY_HOURS * 60), liveAt, H.ROUND_CAP]
   );
   // Attribution only (Paul, Sep 28 /fsbo): credit the marketing source this
   // session arrived with, else the account's signup source. Separate update
@@ -153,7 +156,7 @@ router.post('/requests/new', seller, async (req, res) => {
   golive.activateSoon();
   mailer.sellerRequestReceived(req.session.user.email, req.session.user.name, fullRows[0]); // instant confirmation
   logEvent('request_posted', { userId: req.session.user.id, requestId: rows[0].id,
-    meta: { zip: f.zip, city: f.city, price_range: f.price_range, window_hours: f.window_hours, scheduled_for: liveAt ? liveAt.toISOString() : null, source: fullRows[0].source || null } });
+    meta: { zip: f.zip, city: f.city, price_range: f.price_range, listing_timeline: f.listing_timeline, window_hours: windowHours, scheduled_for: liveAt ? liveAt.toISOString() : null, source: fullRows[0].source || null } });
   res.redirect('/requests/' + rows[0].id);
 });
 
@@ -224,9 +227,12 @@ router.get('/requests/:id(\\d+)/compare', seller, async (req, res) => {
 // the seller originally chose, invites up to 10 MORE professionals, and hides
 // the request from everyone who already proposed in an earlier round (their
 // sealed proposals stay in the stack).
+// OFF since Sep 30 (H.SELLER_EXTRA_ROUNDS): a seller request now receives at
+// most 10 proposals. Kept in place so it can be switched back on in one line.
 router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
+  if (!H.SELLER_EXTRA_ROUNDS) return res.redirect('/requests/' + request.id);
   if (request.status !== 'closed') return res.redirect('/requests/' + request.id);
   // Another round only unlocks once the current round actually FILLED
   // (Paul, Aug 23). A round that closed with fewer than the cap uses the
@@ -260,9 +266,11 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
 // One-time 24-hour extension (Paul, Aug 12): if the window expired with fewer
 // than the cap, the seller can keep the SAME request open 24 more hours.
 // Round and cap are unchanged; agents who already proposed can still edit.
+// OFF since Sep 30 (H.SELLER_EXTENSION): the standard window is 48 hours.
 router.post('/requests/:id(\\d+)/extend', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
+  if (!H.SELLER_EXTENSION) return res.redirect('/requests/' + request.id);
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
   if (request.status !== 'closed' || request.extended || cnt[0].n >= request.proposal_cap) {
     return res.redirect('/requests/' + request.id);
@@ -276,6 +284,7 @@ router.post('/requests/:id(\\d+)/extend', seller, async (req, res) => {
 
 // Close the window early
 router.post('/requests/:id(\\d+)/close', seller, async (req, res) => {
+  if (!H.SELLER_END_EARLY) return res.redirect('/requests/' + req.params.id);
   const { rows } = await pool.query(
     `UPDATE requests SET status='closed', closes_at=now() WHERE id=$1 AND seller_id=$2 AND status='open' RETURNING *`,
     [req.params.id, req.session.user.id]);

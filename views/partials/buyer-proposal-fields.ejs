@@ -1,0 +1,83 @@
+<%# The buyer-agent proposal fields a professional fills in. Shared by the
+    live buyer opportunity form and the practice buyer proposal (Sep 30):
+    change a field here and both update together. Validation for both lives
+    in proposal-input.js. Locals: proposal (existing/draft values or null),
+    mid (midpoint of the buyer's price range, for the estimate preview). %>
+<div class="card">
+  <p class="note" style="margin-top:2px;">The amount below is your <b>proposed buyer-agent compensation</b> — presented to the buyer with a reminder that the source of payment can vary by transaction and that their own agreement governs what they owe.</p>
+  <label>Fee structure</label>
+  <div class="optgrid cols keep2">
+    <label class="opt"><input type="radio" name="comp_structure" value="pct" <%= (!proposal || proposal.comp_structure === 'pct' || !['pct','flat'].includes(proposal.comp_structure)) ? 'checked' : '' %> onchange="bFee()"><span class="tile"><b>% of purchase price</b><span class="desc">at closing</span></span></label>
+    <label class="opt"><input type="radio" name="comp_structure" value="flat" <%= (proposal && proposal.comp_structure === 'flat') ? 'checked' : '' %> onchange="bFee()"><span class="tile"><b>Flat fee ($)</b><span class="desc">at closing</span></span></label>
+  </div>
+  <label for="comp_amount" id="bFeeLbl">Your proposed buyer-agent compensation</label>
+  <input type="text" id="comp_amount" name="comp_amount" inputmode="decimal" placeholder="e.g. 2.5 or 6000" value="<%= proposal ? parseFloat(proposal.comp_amount) || '' : '' %>" required>
+  <p class="note" id="bFeePrev"></p>
+  <%# Shortfall policy (Paul, Sep 1 UX #2): replaces the old yes/no
+      question. Option B requires the minimum-compensation amount.
+      Legacy proposals map: gap 'No' → minimum-fee policy. %>
+  <% const sfp = proposal ? (proposal.shortfall_policy || (proposal.gap_responsibility === 'No' ? 'min_fee' : 'buyer_pays')) : 'buyer_pays'; %>
+  <label>If seller-paid compensation is less than your proposed fee, how will you handle the difference?</label>
+  <div class="optgrid stack-sm">
+    <label class="opt"><input type="radio" name="shortfall_policy" value="buyer_pays" <%= sfp !== 'min_fee' ? 'checked' : '' %> onchange="sfTog()"><span class="tile"><span><b>Buyer pays the difference</b><span class="desc">Any seller-paid compensation is credited toward my proposed fee. The buyer is responsible for any remaining amount.</span></span></span></label>
+    <label class="opt"><input type="radio" name="shortfall_policy" value="min_fee" <%= sfp === 'min_fee' ? 'checked' : '' %> onchange="sfTog()"><span class="tile"><span><b>I'll accept the seller-paid amount, subject to a minimum fee</b><span class="desc">The buyer will not pay the full difference as long as my minimum compensation is met.</span></span></span></label>
+  </div>
+  <div id="minFeeWrap" style="display:<%= sfp === 'min_fee' ? 'block' : 'none' %>;">
+    <label for="min_fee">Minimum compensation I will accept ($)</label>
+    <input type="text" id="min_fee" name="min_fee" inputmode="decimal" placeholder="e.g. 5000" value="<%= proposal && proposal.min_fee ? parseFloat(proposal.min_fee) : '' %>" <%= sfp === 'min_fee' ? 'required' : '' %>>
+  </div>
+  <script>
+  function sfTog(){
+    var isMin = document.querySelector('input[name="shortfall_policy"][value="min_fee"]').checked;
+    var wrap = document.getElementById('minFeeWrap');
+    wrap.style.display = isMin ? 'block' : 'none';
+    document.getElementById('min_fee').required = isMin;
+  }
+  </script>
+</div>
+<div class="card">
+  <div class="optgrid" style="margin-top:8px;">
+    <label class="opt"><input type="checkbox" name="video_tours" value="yes" <%= proposal && proposal.video_tours ? 'checked' : '' %>><span class="tile"><b style="font-weight:600;">I offer video / virtual tours</b><span class="desc">important for relocating buyers</span></span></label>
+  </div>
+  <label for="response_time">Response-time commitment</label>
+  <select id="response_time" name="response_time">
+    <% H.BP_RESPONSE.forEach(r => { %><option <%= proposal && proposal.response_time === r ? 'selected' : '' %>><%= r %></option><% }) %>
+  </select>
+  <label>Your specialties</label>
+  <div class="optgrid cols chips">
+    <% H.BP_SPECIALTIES.forEach(s => { %>
+      <label class="opt"><input type="checkbox" name="specialties" value="<%= s %>" <%= proposal && (proposal.specialties || '').includes(s) ? 'checked' : '' %>><span class="tile"><b style="font-weight:500;"><%= s %></b></span></label>
+    <% }) %>
+  </div>
+  <label for="plan">Your plan for this buyer</label>
+  <textarea id="plan" name="plan" rows="4" maxlength="2000" placeholder="What you'd do for this buyer specifically — their areas, their timeline, their situation."><%= proposal ? proposal.plan : '' %></textarea>
+  <p class="note" style="text-align:right; margin-top:2px;"><span id="planCount">0</span> / 2000 characters</p>
+  <script>
+  (function(){
+    var t = document.getElementById('plan'), c = document.getElementById('planCount');
+    function upd(){ c.textContent = t.value.length; c.parentNode.style.color = t.value.length >= 2000 ? '#B42318' : ''; }
+    t.addEventListener('input', upd); upd();
+  })();
+  </script>
+</div>
+<script>
+// Live estimated-compensation preview at the midpoint of the buyer's range.
+var B_MID = <%= mid %>;
+function bFee(){
+  var pct = document.querySelector('input[name="comp_structure"][value="pct"]').checked;
+  document.getElementById('bFeeLbl').textContent = pct ? 'Your proposed buyer-agent compensation (%)' : 'Your proposed buyer-agent compensation (flat $)';
+  bPrev();
+}
+function bPrev(){
+  var pct = document.querySelector('input[name="comp_structure"][value="pct"]').checked;
+  var v = parseFloat(String(document.getElementById('comp_amount').value).replace(/[^0-9.]/g,'')) || 0;
+  var est = pct ? Math.round(B_MID * v / 100) : Math.round(v);
+  document.getElementById('bFeePrev').textContent = v > 0
+    ? 'The buyer sees: ' + (pct ? v + '% at closing' : '$' + est.toLocaleString() + ' flat') + ' · estimated compensation ≈ $' + est.toLocaleString() + (pct ? ' at their range midpoint ($' + B_MID.toLocaleString() + ')' : '')
+    : 'Estimated compensation preview appears as you type.';
+}
+if (document.getElementById('comp_amount')) {
+  document.getElementById('comp_amount').addEventListener('input', bPrev);
+  bFee();
+}
+</script>

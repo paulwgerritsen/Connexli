@@ -1,0 +1,11 @@
+<%# The seller's request as a professional sees it when evaluating a seller
+    opportunity. Shared by the live opportunity page and the practice
+    opportunity (Sep 30). The listing timeline replaced "What matters most?"
+    — older requests without a timeline simply skip that row. %>
+<div class="card" data-seller-summary>
+  <div class="sumrow"><span>Size</span><span><%= request.sqft_range %> sq ft · <%= request.beds %> bd · <%= request.baths %> ba</span></div>
+  <div class="sumrow"><span>Built</span><span><%= request.year_built %> · <%= request.condition %> · HOA: <%= request.hoa %></span></div>
+  <div class="sumrow"><span>Price range</span><span><%= request.price_range %></span></div>
+  <% if (request.listing_timeline) { %><div class="sumrow"><span>Hoping to list</span><span><b style="color:var(--navy);"><%= request.listing_timeline %></b></span></div><% } %>
+  <% if (request.neighborhood) { %><div class="sumrow"><span>Area</span><span><%= request.neighborhood %></span></div><% } %>
+</div>

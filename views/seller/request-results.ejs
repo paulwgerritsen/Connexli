@@ -34,7 +34,7 @@
   <% if (proposals.length === 0) { %>
     <div class="card" style="text-align:center; padding:34px 20px;">
       <h2>No proposals this time</h2>
-      <p class="sub">This can happen in a brand-new market. Our team has been notified and will personally reach out to professionals in your area. You can also create a new request with a longer window.</p>
+      <p class="sub">This can happen in a brand-new market. Our team has been notified and will personally reach out to professionals in your area. You're welcome to create a new request whenever you're ready.</p>
       <p style="margin-top:14px;"><a class="btn" href="/requests/new">Create a new request</a></p>
     </div>
   <% } else { %>
@@ -51,38 +51,15 @@
 
     <div class="cards">
       <% proposals.forEach(p => { %>
-        <div class="card pcard">
-          <div class="grow">
-            <div class="agent-top">
-              <div class="avatar"><%= p.agent_name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() %></div>
-              <div><b><%= p.agent_name %></b><span class="brok"><%= p.brokerage %> · <span style="color:var(--good); font-weight:600;">✓ Verified</span></span></div>
-            </div>
-            <% if (p.transactions_seller_12mo !== null || p.transactions_buyer_12mo !== null) { %>
-              <p class="note" style="margin-top:6px;"><b>Last 12 months:</b> <%= p.transactions_seller_12mo ?? 0 %> seller-side · <%= p.transactions_buyer_12mo ?? 0 %> buyer-side transactions <span style="color:var(--muted);">(reported by the professional)</span></p>
-            <% } %>
-            <div class="complbl">Proposed listing-side compensation ⓘ</div>
-            <div><span class="fee"><%= H.feeLabel(p) %></span> <span class="est">Est. fee: <%= H.money(H.estFee(p, request.price_range)) %></span></div>
-            <% if (p.services) { %><div class="pillrow"><% p.services.split(', ').forEach(s => { %><span class="pill"><%= s %></span><% }) %></div><% } %>
-            <% if (p.marketing_plan) { %><p class="note" style="margin-top:9px;"><b>Marketing plan:</b> <%= p.marketing_plan %></p><% } %>
-            <p class="note"><b>Cancellation:</b> <%= p.cancellation_terms %></p>
-          </div>
-          <div class="cardbtns">
-            <form method="POST" action="/requests/<%= request.id %>/shortlist/<%= p.id %>">
-              <input type="hidden" name="_csrf" value="<%= csrf %>">
-              <button class="btn ghost <%= p.shortlisted ? 'on' : '' %>" type="submit"><%= p.shortlisted ? '✓ Shortlisted' : '☆ Shortlist' %></button>
-            </form>
-            <form method="POST" action="/requests/<%= request.id %>/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.\n\nNote: choosing an agent may lead to a separate written listing agreement — review the compensation terms, including any buyer-agent compensation you authorize, before signing.');">
-              <input type="hidden" name="_csrf" value="<%= csrf %>">
-              <button class="btn" type="submit">Connect</button>
-            </form>
-          </div>
-        </div>
+        <%- include('../partials/seller-proposal-card', { p, request, preview: false }) %>
       <% }) %>
     </div>
     <p class="note">Connecting releases your contact info to that one professional only. The listing agreement is signed with their brokerage, outside Connexli. No obligation.</p>
   <% } %>
 
-  <% if (request.status === 'closed' && !request.extended && proposals.length < request.proposal_cap) { %>
+  <%# Seller extension and extra rounds are switched off since Sep 30 (one
+      standard rule: up to 48 hours or 10 proposals). See helpers.js. %>
+  <% if (H.SELLER_EXTENSION && request.status === 'closed' && !request.extended && proposals.length < request.proposal_cap) { %>
     <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
       <h2 style="font-size:16px;">Your window ended with <%= proposals.length %> proposal<%= proposals.length === 1 ? '' : 's' %> — want to keep it open?</h2>
       <p class="sub" style="margin-bottom:10px;">Keep this same request open for an additional <b>24 hours</b> — professionals who already proposed stay in, and new ones can still join until the extension ends or all <%= request.proposal_cap %> spots fill. Available once per request.</p>
@@ -93,7 +70,7 @@
     </div>
   <% } %>
 
-  <% if (request.status === 'closed') { %>
+  <% if (H.SELLER_EXTRA_ROUNDS && request.status === 'closed') { %>
     <% const roundFull = proposals.length >= request.proposal_cap; %>
     <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
       <h2 style="font-size:16px;">Want more options?</h2>

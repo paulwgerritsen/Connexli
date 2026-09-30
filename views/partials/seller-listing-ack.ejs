@@ -1,0 +1,5 @@
+<%# Listing-side compensation acknowledgement (live and practice forms). %>
+<label style="display:flex; gap:10px; align-items:flex-start; margin-top:16px; cursor:pointer;">
+  <input type="checkbox" name="listing_ack" value="yes" required <%= (proposal && proposal.listing_ack === 'yes') ? 'checked' : '' %> style="margin-top:4px; width:16px; height:16px; flex:none; accent-color:var(--blue);">
+  <span style="font-size:13px; color:var(--muted); line-height:1.5; font-weight:400;">I understand that the compensation entered above represents my proposed listing-side compensation. Connexli will present it to the homeowner as separate from any compensation that may involve a buyer's agent.</span>
+</label>

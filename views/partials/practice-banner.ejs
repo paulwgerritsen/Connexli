@@ -1,0 +1,7 @@
+<%# Persistent practice notice (Sep 30) — shown at the top of every practice
+    page so a practice proposal can never be mistaken for a real one.
+    Local: practiceKind ('seller' | 'buyer'). %>
+<div data-practice-banner="<%= practiceKind %>" style="background:#FFF8E6; border:1.5px dashed #D9A21B; border-radius:12px; padding:12px 16px; margin:10px 0 14px; color:#5C4300; font-size:14px; line-height:1.5;">
+  <span style="display:inline-block; background:#D9A21B; color:#fff; font-weight:700; font-size:12px; letter-spacing:.4px; border-radius:6px; padding:2px 8px; margin-right:6px; text-transform:uppercase;"><%= practiceKind === 'buyer' ? 'Practice – Buyer Opportunity' : 'Practice – Seller Opportunity' %></span>
+  <b>This is a practice opportunity.</b> Nothing you enter here will be submitted to a consumer or use a proposal credit.
+</div>

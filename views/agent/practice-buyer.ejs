@@ -1,0 +1,24 @@
+<%- include('../partials/head') %>
+<a href="/agent" style="font-size:14px;">‹ Back to my dashboard</a>
+<div class="narrow" style="max-width:720px; margin:0;">
+  <%- include('../partials/practice-banner', { practiceKind: 'buyer' }) %>
+  <h1 style="margin-top:8px;">Buyer Snapshot <span class="badge <%= buyer.readiness === 'ready_now' ? 'connected' : 'open' %>" style="vertical-align:4px;"><%= H.READINESS_LABELS[buyer.readiness] %></span></h1>
+  <%# No countdown here on purpose — a practice page must never show a
+      deadline that could be mistaken for a real one. %>
+  <p class="sub" data-no-countdown>Practice opportunity · no deadline. In a live buyer opportunity, this line shows how many proposals are in, the spots remaining, and the time left — the window closes at its deadline or the moment <%= H.ROUND_CAP %> proposals are in. Buyers stay anonymous until they choose.</p>
+  <p style="margin:6px 0 14px;"><a class="btn ghost sm" href="/agent/practice/buyer/request" id="viewBuyerRequest">See what the buyer submitted ›</a></p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+  <%- include('../partials/buyer-snapshot', { buyer }) %>
+
+  <h2 style="margin-top:22px;">Your practice proposal</h2>
+  <p class="sub">Buyer representation takes real time — structure your fee to protect it. Buyers see every structure explained plainly, side by side.</p>
+  <form method="POST" action="/agent/practice/buyer/preview">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <%- include('../partials/buyer-proposal-fields', { proposal, mid: H.midPrice(buyer.price_range) }) %>
+    <div class="sealed" style="margin:4px 0 14px;">🎟️ <span>In a live opportunity, this is where you'd choose which proposal credit to use. Practice never uses a credit.</span></div>
+    <button class="btn full" type="submit" id="previewProposal">Preview What the Buyer Sees</button>
+    <p class="note">Practice only — this shows you a preview. Nothing is sent to a buyer, and no credit is used.</p>
+  </form>
+</div>
+<%- include('../partials/foot') %>

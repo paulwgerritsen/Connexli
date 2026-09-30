@@ -1,14 +1,15 @@
 <%- include('../partials/head') %>
 <div class="narrow" style="max-width:720px;">
   <a href="/dashboard" style="font-size:14px;">‹ Back to my requests</a>
+  <% const winHrs = request.window_hours === 168 ? '7-day' : request.window_hours + '-hour'; %>
   <% if (scheduled) { %>
     <%# Overnight submission (Paul, Sep 2 §6): saved, opens at 7:00 AM Mountain. %>
     <h1 style="margin-top:8px;">Your request is ready<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
     <div class="success" style="margin-bottom:12px;">✓ <b>Your request was created successfully.</b> To give professionals a fair opportunity to respond, requests submitted overnight begin accepting proposals at 7:00 AM Mountain Time. Eligible professionals will be notified then.</div>
-    <p class="sub">Opens for sealed proposals <b><%= liveAtText %></b>. Your <%= request.window_hours >= 24 ? (request.window_hours / 24) + '-day' : request.window_hours + '-hour' %> proposal window starts at that moment — none of the overnight wait counts against it.</p>
+    <p class="sub">Opens for proposals <b><%= liveAtText %></b>. Your <%= winHrs %> proposal window starts at that moment — none of the overnight wait counts against it.</p>
   <% } else { %>
     <h1 style="margin-top:8px;">Your request is live<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
-    <p class="sub">Verified professionals in Utah can now submit sealed proposals.<% if (request.round > 1) { %> This round is shown only to professionals who haven't proposed yet — your earlier proposals are saved.<% } %></p>
+    <p class="sub">Verified professionals near your home can now send you proposals.<% if (request.round > 1) { %> This round is shown only to professionals who haven't proposed yet — your earlier proposals are saved.<% } %></p>
   <% } %>
   <div class="checkrow"><span class="c">✓</span><span>Your address and contact info are hidden until you choose to share them.</span></div>
 
@@ -16,7 +17,7 @@
     <div class="sumrow"><span>Property</span><span><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %></span></div>
     <div class="sumrow"><span>Size</span><span><%= request.sqft_range %> sq ft · <%= request.beds %> bd · <%= request.baths %> ba</span></div>
     <div class="sumrow"><span>Price range</span><span><%= request.price_range %></span></div>
-    <div class="sumrow"><span>Your priorities</span><span><%= request.priorities || 'Balanced' %></span></div>
+    <% if (request.listing_timeline) { %><div class="sumrow"><span>Hoping to list</span><span><%= request.listing_timeline %></span></div><% } %>
   </div>
 
   <div class="card" style="text-align:center;">
@@ -25,15 +26,15 @@
     <div class="bar"><i id="clockbar" style="width:0%"></i></div>
     <% if (scheduled) { %>
       <p style="margin-top:12px; font-size:15px;">Proposal window: <b><%= liveAtText %></b> until <b><%= new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %> Mountain Time</b></p>
-      <p class="note" style="margin-top:4px;">Nothing to do until then — this page updates itself when your request opens. If all 10 spots for this round fill before the window ends, it closes early and your proposals are ready sooner.</p>
+      <p class="note" style="margin-top:4px;">Nothing to do until then — this page updates itself when your request opens. Professionals then have up to <%= request.window_hours === 168 ? '7 days' : request.window_hours + ' hours' %> to respond, and if all <%= H.ROUND_CAP %> spots fill sooner, your proposals will be ready right away.</p>
     <% } else { %>
-    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= proposalCount %></b> of <b><%= roundCap %></b> sealed proposal<%= roundCap === 1 ? '' : 's' %> received</p>
-    <p class="note" style="margin-top:4px;">If all 10 spots for this round fill before the countdown ends, the window closes early and your proposals are ready sooner.</p>
+    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= proposalCount %></b> of <b><%= roundCap %></b> proposal<%= roundCap === 1 ? '' : 's' %> received</p>
+    <p class="note" style="margin-top:4px;">If all <%= H.ROUND_CAP %> spots fill before the countdown ends, your proposals will be ready right away.</p>
     <% } %>
-    <div class="sealed">🔒 <span><b>Why sealed?</b> Professionals can't see each other's offers, so each one gives you their best proposal, not the minimum needed to beat a rival. You'll see everything the moment the window closes.</span></div>
+    <div class="sealed">🔒 <span><b>Why wait?</b> Professionals can't see each other's proposals, so each one gives you their best offer, not the minimum needed to beat a rival. You'll see every proposal together, side by side, the moment the window closes.</span></div>
   </div>
 
-  <% if (!scheduled) { %>
+  <% if (!scheduled && H.SELLER_END_EARLY) { %>
   <form method="POST" action="/requests/<%= request.id %>/close" onsubmit="return confirm('End the window now? Professionals will no longer be able to submit, and your proposals will be revealed.');">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
     <button class="btn ghost full" type="submit">End the window early &amp; reveal proposals</button>
@@ -43,7 +44,7 @@
 
   <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
     <h2 style="font-size:16px;">Buying your next home too?</h2>
-    <p class="sub" style="margin-bottom:10px;">Let verified buyer's agents compete for that side as well — sealed proposals, anonymous until you choose. Same account, one tap.</p>
+    <p class="sub" style="margin-bottom:10px;">Let verified buyer's agents compete for that side as well — private proposals, anonymous until you choose. Same account, one tap.</p>
     <a class="btn ghost sm" href="/buyer">Find my buyer's agent</a>
   </div>
 </div>

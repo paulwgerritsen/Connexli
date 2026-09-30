@@ -26,6 +26,10 @@
   <div class="stat"><b><%= stats.connected %></b><span>Clients won</span></div>
 </div>
 
+<%# Practice Proposal Center (Paul, Sep 30) — always available, even with no
+    live opportunities. Nothing done there reaches a consumer or uses a credit. %>
+<div style="margin-top:22px;"><%- include('../partials/practice-callout') %></div>
+
 <h2 style="margin-top:26px;">Proposal credits</h2>
 <div class="card">
   <div class="rowline">
@@ -136,7 +140,7 @@
 
 <h2 style="margin-top:26px;">Seller opportunities</h2>
 <% if (opportunities.length === 0) { %>
-  <div class="card"><p class="sub">No open opportunities right now. New homeowner requests appear here the moment they launch.</p></div>
+  <div class="card"><p class="sub">No open opportunities right now. New homeowner requests appear here the moment they launch. In the meantime, try the <a href="/agent/practice/seller">seller practice proposal</a>.</p></div>
 <% } else { %>
   <div class="tblwrap">
     <table class="dt">
@@ -145,7 +149,7 @@
         <tr>
           <td><b style="color:var(--navy);"><%= o.property_type %></b>
             <% if (o.mine > 0) { %><span class="badge approved">In 🔒</span><% } else if (o.round > 1) { %><span class="badge open">Fresh round</span><% } %>
-            <br><span class="meta"><%= o.sqft_range %> sq ft · <%= o.beds %> bd/<%= o.baths %> ba</span></td>
+            <br><span class="meta"><%= o.sqft_range %> sq ft · <%= o.beds %> bd/<%= o.baths %> ba<% if (o.listing_timeline) { %> · list <%= o.listing_timeline === 'ASAP' || o.listing_timeline === 'Just researching' ? o.listing_timeline.toLowerCase() : 'in ' + o.listing_timeline %><% } %></span></td>
           <td><%= o.city %> <%= o.zip %></td>
           <td><%= o.price_range %></td>
           <td data-sort="<%= new Date(o.closes_at).toISOString() %>"><span data-closes="<%= new Date(o.closes_at).toISOString() %>">⏱</span><br><span class="meta"><%= H.spotsLeft(o) %> spot<%= H.spotsLeft(o) === 1 ? '' : 's' %> left</span></td>
@@ -154,7 +158,7 @@
       <% }) %>
     </table>
   </div>
-  <div class="sealed">🔒 <span>Sealed process: you never see other professionals' proposals, and they never see yours. The homeowner's identity stays hidden until they choose to connect with you. Each round accepts at most <%= H.ROUND_CAP %> proposals and closes the moment it fills — don't wait until the last hour.</span></div>
+  <div class="sealed">🔒 <span>Sealed process: you never see other professionals' proposals, and they never see yours. The homeowner's identity stays hidden until they choose to connect with you. Seller requests stay open up to <%= H.SELLER_WINDOW_HOURS %> hours and accept at most <%= H.ROUND_CAP %> proposals — the window closes the moment they fill, so don't wait until the last hour.</span></div>
 <% } %>
 
 <h2 style="margin-top:26px;">Buyer opportunities <span class="badge open" style="vertical-align:2px;">New</span></h2>

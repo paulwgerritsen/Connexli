@@ -1,12 +1,26 @@
 <%- include('../partials/head') %>
+<%# sample = practice mode (Sep 30): the SAME form a homeowner fills out,
+    shown read-only to a professional with the fictional practice answers.
+    Nothing here can be submitted in that mode. %>
+<% const S = typeof sample !== 'undefined' && sample; %>
 <div class="narrow" style="max-width:640px;">
+  <% if (S) { %>
+    <a href="/agent/practice/seller" style="font-size:14px;">‹ Back to the practice opportunity</a>
+    <%- include('../partials/practice-banner', { practiceKind: 'seller' }) %>
+    <div class="card" style="border-left:4px solid var(--blue); padding:14px 18px;" data-sample-request="seller">
+      <b style="color:var(--navy);">See what the seller submitted</b>
+      <span class="sub" style="display:inline;">Below is the exact form a homeowner completes on Connexli, filled in with this practice request's fictional answers (read-only). This is everything Connexli collects about the home before an opportunity reaches you — no address, name, or contact details.</span>
+    </div>
+  <% } else { %>
   <a href="/dashboard" style="font-size:14px;">‹ Back to my requests</a>
+  <% } %>
   <h1 style="margin-top:8px;">Tell us about the home you may sell</h1>
   <p class="sub">Professionals see only a general opportunity. Your address and contact info are hidden until you choose to share them.</p>
   <% if (error) { %><div class="error"><%= error %></div><% } %>
 
-  <form method="POST" action="/requests/new">
+  <form <% if (S) { %>onsubmit="return false;" aria-label="Sample seller request (read-only)"<% } else { %>method="POST" action="/requests/new"<% } %>>
     <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <fieldset <%= S ? 'disabled' : '' %> style="border:0; padding:0; margin:0; min-width:0;">
 
     <div class="card">
       <h2>The property</h2>
@@ -36,34 +50,21 @@
         <option value="" disabled <%= form.price_range ? '' : 'selected' %>>Choose a range</option>
         <% Object.keys(H.PRICE_RANGES).forEach(v => { %><option <%= form.price_range === v ? 'selected' : '' %>><%= v %></option><% }) %>
       </select>
+      <%# Listing timeline (Paul, Sep 30): same wording style and time buckets
+          as the buyer's "When do you want to buy?" question. %>
+      <label for="listing_timeline">When are you hoping to list your home?</label>
+      <select id="listing_timeline" name="listing_timeline" required>
+        <option value="" disabled <%= form.listing_timeline ? '' : 'selected' %>>Choose one…</option>
+        <% H.SELLER_TIMELINE.forEach(v => { %><option <%= form.listing_timeline === v ? 'selected' : '' %>><%= v %></option><% }) %>
+      </select>
     </div>
 
-    <div class="card">
-      <h2>What matters most?</h2>
-      <p class="sub">Pick up to two. Professionals tailor their proposals to your priorities.</p>
-      <div class="optgrid cols">
-        <% H.PRIORITIES.forEach(p => { %>
-          <label class="opt"><input type="checkbox" name="priorities" value="<%= p %>" <%= (form.priorities || []).includes(p) ? 'checked' : '' %>>
-          <span class="tile"><b><%= p %></b></span></label>
-        <% }) %>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Choose your proposal window</h2>
-      <p class="sub">Proposals stay sealed until the window closes. Then you see everything at once. And if all 10 proposal spots fill early, the window closes right then — so your options are ready sooner, never more than 10 at a time.</p>
-      <div class="optgrid">
-        <% H.WINDOWS.forEach(w => { %>
-          <label class="opt">
-            <input type="radio" name="window_hours" value="<%= w.hours %>" <%= w.hours === 48 ? 'checked' : '' %>>
-            <span class="tile"><span>
-              <% if (w.hours === 48) { %><span class="rec">RECOMMENDED</span><% } %>
-              <b><%= w.label %><%= w.hours === 48 ? '' : ' · ' + w.tag %></b>
-              <span class="desc"><%= w.desc %></span>
-            </span></span>
-          </label>
-        <% }) %>
-      </div>
+    <%# One standard rule replaces the old window choice (Paul, Sep 30): up to
+        48 hours OR 10 proposals, whichever comes first. Nothing to choose. %>
+    <div class="card" id="get-proposals">
+      <h2>Get your proposals</h2>
+      <p class="sub" style="margin-bottom:0;">Professionals have up to 48 hours to respond. You'll receive up to 10 proposals to compare. If all 10 spots fill sooner, your proposals will be ready right away.</p>
+      <p class="note" style="margin-top:8px;">Proposals stay private until then — you'll see them all together, side by side.</p>
       <div class="card" style="border-left:4px solid var(--blue); margin-top:18px; padding:16px 18px;">
         <h2 style="font-size:15.5px;">Before you request proposals</h2>
         <p class="note" style="margin-top:6px;">Agents will compete on their <b>listing-side fee and services</b> — the compensation for representing <i>you</i>. Any compensation involving a <b>buyer's agent</b> is separate, and is something to discuss with the listing professional you ultimately select. <a href="https://connexli.com/selling.html" target="_blank" rel="noopener">Learn more ›</a></p>
@@ -72,17 +73,17 @@
           <span style="font-size:13.5px; color:var(--muted); line-height:1.5; font-weight:400;">I understand that Connexli listing proposals show the listing professional's proposed compensation and do not necessarily represent every cost associated with a future sale.</span>
         </label>
       </div>
+      <% if (S) { %>
+        <p class="note" style="margin-top:18px;">(The homeowner taps <b>Launch my request</b> here. Verified professionals nearby are then notified — that's when the opportunity reaches you.)</p>
+      <% } else { %>
       <button class="btn full" type="submit" style="margin-top:18px;">Launch my request</button>
+      <% } %>
       <p class="note">Free for homeowners. No obligation at any point. Connexli does not set or recommend commissions.</p>
     </div>
+    </fieldset>
   </form>
+  <% if (S) { %>
+    <a class="btn full" href="/agent/practice/seller" style="margin-top:6px;">Back to the practice opportunity</a>
+  <% } %>
 </div>
-<script>
-// Limit priorities to two
-var boxes = document.querySelectorAll('input[name="priorities"]');
-boxes.forEach(function(b){ b.addEventListener('change', function(){
-  var checked = document.querySelectorAll('input[name="priorities"]:checked');
-  if (checked.length > 2) b.checked = false;
-});});
-</script>
 <%- include('../partials/foot') %>

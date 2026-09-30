@@ -1,14 +1,28 @@
 <%- include('../partials/head') %>
+<%# sample = practice mode (Sep 30): the SAME form a buyer fills out, shown
+    read-only to a professional with the fictional practice answers. Nothing
+    here can be submitted in that mode. %>
+<% const S = typeof sample !== 'undefined' && sample; %>
 <div class="narrow" style="max-width:640px;">
+  <% if (S) { %>
+    <a href="/agent/practice/buyer" style="font-size:14px;">‹ Back to the practice opportunity</a>
+    <%- include('../partials/practice-banner', { practiceKind: 'buyer' }) %>
+    <div class="card" style="border-left:4px solid var(--blue); padding:14px 18px;" data-sample-request="buyer">
+      <b style="color:var(--navy);">See what the buyer submitted</b>
+      <span class="sub" style="display:inline;">Below is the exact form a buyer completes on Connexli, filled in with this practice request's fictional answers (read-only). Step 2 shows the optional extra details. Buyers stay anonymous — no name or contact details are shared until they choose you.</span>
+    </div>
+  <% } else { %>
   <%# Straight back to the dashboard (Paul, Aug 16) — never via the previous
       request's connected/success page. %>
   <a href="/dashboard" style="font-size:14px;">‹ Back to my dashboard</a>
+  <% } %>
   <h1 style="margin-top:8px;">Your buyer profile</h1>
   <p class="sub">About 2 minutes. Agents see an anonymous snapshot — your name and contact info stay hidden until you choose to connect.</p>
   <% if (error) { %><div class="error"><%= error %></div><% } %>
 
-  <form method="POST" action="/buyer/new">
+  <form <% if (S) { %>onsubmit="return false;" aria-label="Sample buyer request (read-only)"<% } else { %>method="POST" action="/buyer/new"<% } %>>
     <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <fieldset <%= S ? 'disabled' : '' %> style="border:0; padding:0; margin:0; min-width:0;">
 
     <div class="card">
       <h2 style="font-size:16px;">Your financing</h2>
@@ -232,8 +246,17 @@
       <p class="note">An active exclusive agreement means that agent already represents you — we'll explain what that means on the next screen if it applies.</p>
     </div>
 
+    <% if (S) { %>
+      <p class="note" style="text-align:center;">(The buyer taps <b>Publish my buyer profile</b> here. Verified buyer's agents near their search areas are then notified.)</p>
+    <% } else { %>
     <button class="btn full" type="submit" style="margin-top:6px;">Publish my buyer profile</button>
+    <% } %>
     <p class="note" style="text-align:center;">Free · anonymous until you connect · no obligation</p>
+    </fieldset>
   </form>
+  <% if (S) { %>
+    <a class="btn full" href="/agent/practice/buyer/request/boost" id="sampleBoostNext">Next: the optional details this buyer added ›</a>
+    <a class="btn ghost full" href="/agent/practice/buyer" style="margin-top:10px;">Back to the practice opportunity</a>
+  <% } %>
 </div>
 <%- include('../partials/foot') %>

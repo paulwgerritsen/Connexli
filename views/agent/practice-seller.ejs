@@ -1,0 +1,26 @@
+<%- include('../partials/head') %>
+<a href="/agent" style="font-size:14px;">‹ Back to my dashboard</a>
+<div class="narrow" style="max-width:720px; margin:0;">
+  <%- include('../partials/practice-banner', { practiceKind: 'seller' }) %>
+  <h1 style="margin-top:8px;"><%= request.property_type %> · <%= request.city %>, UT <%= request.zip %></h1>
+  <%# No countdown here on purpose — a practice page must never show a
+      deadline that could be mistaken for a real one. %>
+  <p class="sub" data-no-countdown>Practice opportunity · no deadline. In a live seller opportunity, this line shows the time remaining and open spots: professionals have up to <%= H.SELLER_WINDOW_HOURS %> hours, and the window closes early the moment <%= H.ROUND_CAP %> proposals are in.</p>
+  <p style="margin:6px 0 14px;"><a class="btn ghost sm" href="/agent/practice/seller/request" id="viewSellerRequest">See what the seller submitted ›</a></p>
+  <% if (error) { %><div class="error"><%= error %></div><% } %>
+
+  <%- include('../partials/seller-request-summary', { request }) %>
+
+  <div class="card">
+    <h2>Your practice proposal</h2>
+    <form method="POST" action="/agent/practice/seller/preview">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <%- include('../partials/seller-proposal-fields', { proposal, mid: H.midPrice(request.price_range) }) %>
+      <div class="sealed" style="margin-top:16px;">🎟️ <span>In a live opportunity, this is where you'd choose which proposal credit to use. Practice never uses a credit.</span></div>
+      <%- include('../partials/seller-listing-ack', { proposal }) %>
+      <button class="btn full" type="submit" id="previewProposal" style="margin-top:18px;">Preview What the Seller Sees</button>
+      <p class="note">Practice only — this shows you a preview. Nothing is sent to a homeowner, and no credit is used.</p>
+    </form>
+  </div>
+</div>
+<%- include('../partials/foot') %>

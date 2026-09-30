@@ -118,6 +118,7 @@ function agentApproved(email, name) {
       `${name.split(' ')[0]}, your license checked out and your Connexli account is now active.`,
       "You'll receive an email whenever a homeowner near your service area invites proposals. You can also browse every open opportunity anytime.",
       'Sealed means sealed: competing professionals never see your pricing.',
+      'New to Connexli? Your dashboard has a <b>practice proposal</b> for both a seller and a buyer opportunity — see exactly what consumers submit and how your proposal appears to them. Practice never uses a credit and is never sent to anyone.',
     ], 'See open opportunities', APP_URL + '/agent'), true);
 }
 
@@ -164,7 +165,7 @@ async function agentsNewRequest(request, excludeAgentIds = []) {
           newRound
             ? `A homeowner in <b>${request.city}, ${request.zip}</b> opened a new round of sealed proposals — reserved for professionals who haven't proposed yet, like you.`
             : `A homeowner in <b>${request.city}, ${request.zip}</b> is inviting sealed proposals from professionals like you.`,
-          `Property: <b>${request.property_type}</b><br>Price range: <b>${request.price_range}</b><br>Proposal window closes: <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b>`,
+          `Property: <b>${request.property_type}</b><br>Price range: <b>${request.price_range}</b>${request.listing_timeline ? '<br>Hoping to list: <b>' + request.listing_timeline + '</b>' : ''}<br>Proposal window closes: <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b>`,
           'Submit your sealed proposal before the window closes — it ends early once 10 proposals arrive. Competing professionals never see your pricing.',
         ], 'View Opportunity', APP_URL + '/login'), true);
     }
@@ -300,14 +301,14 @@ function sellerRequestReceived(email, name, request) {
         `${name.split(' ')[0]}, thanks for inviting proposals — your request was created successfully.`,
         `To give professionals a fair opportunity to respond, requests submitted overnight begin accepting proposals at 7:00 AM Mountain Time. Yours opens <b>${schedule.describe(request.live_at)}</b>, and eligible professionals near ${request.city} will be notified then.`,
         `Your full proposal window starts at that moment and closes <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b> — or the moment all 10 proposal spots fill, whichever comes first.`,
-        "You don't need to do anything. We'll email you the instant your sealed proposals are ready to compare. Your address and contact info stay hidden until you choose to share them.",
+        "You don't need to do anything. We'll email you the instant your proposals are ready to compare. Your address and contact info stay hidden until you choose to share them.",
       ], 'Watch my request', APP_URL + '/requests/' + request.id));
   }
   return send(email, 'Your Connexli request is live',
     template('Your request is live 🏡', [
       `${name.split(' ')[0]}, thanks for inviting proposals — verified professionals near ${request.city} are being notified right now.`,
-      `Your proposal window closes <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b> — or the moment all 10 proposal spots fill, whichever comes first.`,
-      "You don't need to do anything. We'll email you the instant your sealed proposals are ready to compare. Your address and contact info stay hidden until you choose to share them.",
+      `Professionals have until <b>${new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' })} (Mountain)</b> to respond — or until all 10 proposal spots fill, whichever comes first.`,
+      "You don't need to do anything. We'll email you the instant your proposals are ready to compare. Your address and contact info stay hidden until you choose to share them.",
     ], 'Watch my request', APP_URL + '/requests/' + request.id));
 }
 
@@ -335,9 +336,9 @@ function sellerProposalsReady(email, name, request, filledEarly = false) {
         ? `${name.split(' ')[0]}, your ${request.property_type.toLowerCase()} in ${request.city} filled all 10 proposal spots before the window even ended — so we closed it and your proposals are ready now, sooner than expected.`
         : `${name.split(' ')[0]}, the proposal window for your ${request.property_type.toLowerCase()} in ${request.city} has closed.`,
       'Log in to compare every proposal side by side: fees, services, marketing plans, and cancellation terms.',
-      filledEarly
-        ? 'If you want even more options after reviewing, you can open another round — shown only to professionals who haven\'t proposed yet. Your contact info stays hidden until you choose to share it.'
-        : 'Your address and contact info are still hidden until you choose to share them.',
+      // No "open another round" offer since Sep 30: a seller request
+      // receives at most 10 proposals (see H.SELLER_EXTRA_ROUNDS).
+      'Your address and contact info are still hidden until you choose to share them.',
     ], 'Compare my proposals', APP_URL + '/requests/' + request.id));
 }
 
@@ -382,7 +383,10 @@ function followupBody(f) {
     return [`How did your connection with ${f.counterpart} go?`, [
       `${first}, three days ago you chose to connect with <b>${f.counterpart}</b> about your ${side}. How is it going?`,
       'Did they reach out quickly? Did the conversation match their proposal? Five quick questions tell us everything we need — good or bad, your answers directly shape how Connexli works.',
-      'If they never reached out, tell us that too. You can always open another round of proposals from your dashboard.',
+      // Sellers no longer have extra rounds (Sep 30); buyers still do.
+      f.opportunity_type === 'seller'
+        ? 'If they never reached out, tell us that too. You can always start a new request from your dashboard.'
+        : 'If they never reached out, tell us that too. You can always open another round of proposals from your dashboard.',
     ]];
   }
   return [`Checking in on your ${side}`, [

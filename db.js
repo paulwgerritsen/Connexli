@@ -193,6 +193,10 @@ ALTER TABLE buyer_proposals ADD COLUMN IF NOT EXISTS gap_responsibility TEXT NOT
 -- One-time 24-hour window extension (Paul, Aug 12): if a window expires with
 -- fewer than the cap, the owner may keep it open 24 more hours — once.
 ALTER TABLE requests ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
+-- Seller listing timeline (Paul, Sep 30): "When are you hoping to list your
+-- home?" — replaces the old "What matters most?" question for new requests.
+-- Older requests keep whatever they stored in "priorities"; nothing is deleted.
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS listing_timeline TEXT;
 ALTER TABLE buyer_profiles ADD COLUMN IF NOT EXISTS extended BOOLEAN NOT NULL DEFAULT false;
 
 -- Standardized buyer geography (Paul, Aug 14): each selected city stored with

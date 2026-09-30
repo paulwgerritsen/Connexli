@@ -7,6 +7,7 @@ const mailer = require('../mailer');
 const reld = require('../reld');
 const payments = require('../payments');
 const creditsRoutes = require('./credits');
+const PI = require('../proposal-input'); // shared with the practice proposals
 
 // Purchased-credit priority window (Paul, Aug 31 §3/§9; 3 hours since Sep 2),
 // starting at the opportunity's go-live moment. Enforced HERE on
@@ -210,7 +211,7 @@ router.get('/agent', agent, async (req, res) => {
 router.get('/agent/proposals/:id(\\d+)', agent, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT p.*, r.property_type, r.zip, r.city, r.neighborhood, r.beds, r.baths, r.sqft_range,
-       r.year_built, r.hoa, r.condition, r.price_range, r.priorities, r.window_hours, r.closes_at,
+       r.year_built, r.hoa, r.condition, r.price_range, r.priorities, r.listing_timeline, r.window_hours, r.closes_at,
        r.status AS request_status, r.round AS request_round,
        (SELECT COUNT(*) FROM proposals x WHERE x.request_id=p.request_id)::int AS total_proposals
      FROM proposals p JOIN requests r ON r.id=p.request_id
@@ -316,44 +317,19 @@ router.post('/agent/buyers/:id(\\d+)/propose', agent, async (req, res) => {
     return res.status(400).render('error', { title: 'Window closed', message: 'This proposal window has already closed.' });
   }
 
-  const comp_structure = ['pct', 'flat'].includes(req.body.comp_structure) ? req.body.comp_structure : 'pct';
-  // Shortfall policy (Paul, Sep 1 UX #2) replaces the old yes/no question:
-  //  buyer_pays — seller-paid compensation is credited toward the proposed
-  //              fee; the buyer covers any remaining amount.
-  //  min_fee   — the professional accepts the seller-paid amount, subject to
-  //              a REQUIRED minimum compensation figure.
-  // gap_responsibility is still stored (derived) so historical displays and
-  // analytics keep working.
-  const shortfall_policy = req.body.shortfall_policy === 'min_fee' ? 'min_fee' : 'buyer_pays';
-  const gap_responsibility = shortfall_policy === 'buyer_pays' ? 'Yes' : 'No';
-  const comp_amount = parseFloat(String(req.body.comp_amount).replace(/[^0-9.]/g, ''));
-  const min_fee = shortfall_policy === 'min_fee'
-    ? (String(req.body.min_fee || '').trim() === '' ? NaN : parseFloat(String(req.body.min_fee).replace(/[^0-9.]/g, '')))
-    : null; // Option A has no minimum-fee concept
-  let specialties = req.body.specialties || [];
-  if (!Array.isArray(specialties)) specialties = [specialties];
-  specialties = specialties.filter(s => H.BP_SPECIALTIES.includes(s));
-  const fields = {
-    // Tours-included and rebate are no longer collected (Paul, Sep 1 UX #1/#9)
-    // — the columns stay for historical proposals, new rows store NULL.
-    video_tours: req.body.video_tours === 'yes',
-    response_time: H.oneOf(req.body.response_time, H.BP_RESPONSE, H.BP_RESPONSE[1]),
-    seller_contribution: H.clean(req.body.seller_contribution, 300),
-    plan: H.clean(req.body.plan, 2000),
-  };
-
-  const badFee = !comp_amount || comp_amount <= 0 ||
-    (comp_structure === 'pct' && comp_amount > 10) ||
-    (comp_structure === 'flat' && comp_amount > 100000);
-  const badMin = shortfall_policy === 'min_fee' && (Number.isNaN(min_fee) || min_fee <= 0 || min_fee > 100000);
-  if (badFee || badMin) {
+  // Reading + checking the form lives in proposal-input.js (shared with
+  // the practice proposal, Sep 30) — same fields, same rules.
+  const parsed = PI.buyerProposal(req.body);
+  const { comp_structure, comp_amount, min_fee, shortfall_policy, gap_responsibility } = parsed.values;
+  const specialties = parsed.values.specialties;
+  const fields = { video_tours: parsed.values.video_tours, response_time: parsed.values.response_time,
+    seller_contribution: parsed.values.seller_contribution, plan: parsed.values.plan };
+  if (parsed.error) {
     return res.status(400).render('agent/buyer-opportunity', {
       title: 'Buyer opportunity', buyer, H,
-      proposal: { comp_structure, comp_amount: req.body.comp_amount, min_fee: req.body.min_fee, specialties: specialties.join(', '), shortfall_policy, gap_responsibility, ...fields },
+      proposal: parsed.form,
       blockedLicense: false, ...(await creditContext(req, buyer)),
-      error: badFee
-        ? 'Please enter a valid amount for the fee structure you chose (percentages up to 10, or a flat dollar amount in a reasonable range).'
-        : 'You chose "subject to a minimum fee" — please enter the minimum compensation you will accept (a dollar amount in a reasonable range).',
+      error: parsed.error,
     });
   }
 
@@ -581,13 +557,10 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
   const request = rows[0];
   if (!request) return res.status(400).render('error', { title: 'Window closed', message: 'This proposal window is not open.' });
 
-  const fee_type = req.body.fee_type === 'flat' ? 'flat' : 'pct';
-  const fee_amount = parseFloat(String(req.body.fee_amount).replace(/[^0-9.]/g, ''));
-  let services = req.body.services || [];
-  if (!Array.isArray(services)) services = [services];
-  services = services.filter(s => H.SERVICES.includes(s));
-  const marketing_plan = H.clean(req.body.marketing_plan, 2000);
-  const cancellation_terms = H.oneOf(req.body.cancellation_terms, H.CANCELLATION, H.CANCELLATION[0]);
+  // Reading + checking the form lives in proposal-input.js (shared with
+  // the practice proposal, Sep 30) — same fields, same rules.
+  const parsed = PI.sellerProposal(req.body);
+  const { fee_type, fee_amount, services, marketing_plan, cancellation_terms } = parsed.values;
 
   const mineBefore = await pool.query(
     `SELECT round FROM proposals WHERE request_id=$1 AND agent_id=$2`, [request.id, req.session.user.id]);
@@ -618,23 +591,15 @@ router.post('/agent/opportunities/:id(\\d+)/propose', agent, async (req, res) =>
     }
   }
 
-  const bad = !fee_amount || fee_amount <= 0 ||
-    (fee_type === 'pct' && fee_amount > 10) ||
-    (fee_type === 'flat' && fee_amount > 200000);
-  const noAck = req.body.listing_ack !== 'yes';
-  if (bad || noAck) {
+  if (parsed.error) {
     // (Fixed Sep 1: this re-render previously omitted credits/priority
     // context the template needs, so an invalid fee crashed instead of
     // showing the friendly message.)
     return res.status(400).render('agent/opportunity', {
       title: 'Opportunity', request, H,
-      proposal: { fee_type, fee_amount: req.body.fee_amount, services: services.join(', '), marketing_plan, cancellation_terms },
+      proposal: { ...parsed.form, listing_ack: undefined },
       blockedLicense: false, ...(await creditContext(req, request)),
-      error: bad
-        ? (fee_type === 'pct'
-          ? 'Please enter a percentage fee between 0.1 and 10.'
-          : 'Please enter a flat fee amount in dollars (up to $200,000).')
-        : 'Please confirm the listing-side compensation acknowledgement before submitting.',
+      error: parsed.error,
     });
   }
 

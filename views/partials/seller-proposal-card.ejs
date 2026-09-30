@@ -1,0 +1,39 @@
+<%# One listing proposal exactly as the HOMEOWNER sees it on their results
+    page. Shared by the live results page and the professional's practice
+    preview (Sep 30), so the preview can never drift from the real thing.
+    Locals: p (proposal + agent_name/brokerage/transactions), request,
+    preview (true = practice: buttons shown but inert). %>
+  <div class="card pcard">
+    <div class="grow">
+      <div class="agent-top">
+        <div class="avatar"><%= p.agent_name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() %></div>
+        <div><b><%= p.agent_name %></b><span class="brok"><%= p.brokerage %> · <span style="color:var(--good); font-weight:600;">✓ Verified</span></span></div>
+      </div>
+      <% if (p.transactions_seller_12mo !== null || p.transactions_buyer_12mo !== null) { %>
+        <p class="note" style="margin-top:6px;"><b>Last 12 months:</b> <%= p.transactions_seller_12mo ?? 0 %> seller-side · <%= p.transactions_buyer_12mo ?? 0 %> buyer-side transactions <span style="color:var(--muted);">(reported by the professional)</span></p>
+      <% } %>
+      <div class="complbl">Proposed listing-side compensation ⓘ</div>
+      <div><span class="fee"><%= H.feeLabel(p) %></span> <span class="est">Est. fee: <%= H.money(H.estFee(p, request.price_range)) %></span></div>
+      <% if (p.services) { %><div class="pillrow"><% p.services.split(', ').forEach(s => { %><span class="pill"><%= s %></span><% }) %></div><% } %>
+      <% if (p.marketing_plan) { %><p class="note" style="margin-top:9px;"><b>Marketing plan:</b> <%= p.marketing_plan %></p><% } %>
+      <p class="note"><b>Cancellation:</b> <%= p.cancellation_terms %></p>
+    </div>
+    <% if (preview) { %>
+    <%# Practice preview: the same buttons the homeowner sees, inert. %>
+    <div class="cardbtns" data-preview-buttons>
+      <button class="btn ghost" type="button" disabled title="Preview only" style="cursor:not-allowed;">☆ Shortlist</button>
+      <button class="btn" type="button" disabled title="Preview only" style="cursor:not-allowed;">Connect</button>
+    </div>
+    <% } else { %>
+    <div class="cardbtns">
+      <form method="POST" action="/requests/<%= request.id %>/shortlist/<%= p.id %>">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn ghost <%= p.shortlisted ? 'on' : '' %>" type="submit"><%= p.shortlisted ? '✓ Shortlisted' : '☆ Shortlist' %></button>
+      </form>
+      <form method="POST" action="/requests/<%= request.id %>/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.\n\nNote: choosing an agent may lead to a separate written listing agreement — review the compensation terms, including any buyer-agent compensation you authorize, before signing.');">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="btn" type="submit">Connect</button>
+      </form>
+    </div>
+    <% } %>
+  </div>

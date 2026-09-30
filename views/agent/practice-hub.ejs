@@ -1,0 +1,8 @@
+<%- include('../partials/head') %>
+<div class="narrow" style="max-width:720px;">
+  <a href="/agent" style="font-size:14px;">‹ Back to my dashboard</a>
+  <h1 style="margin-top:8px;">Practice proposals</h1>
+  <% if (pending) { %><p class="sub">While your license verification finishes, walk through both practice opportunities so you're ready the moment a real one arrives.</p><% } %>
+  <%- include('../partials/practice-callout') %>
+</div>
+<%- include('../partials/foot') %>

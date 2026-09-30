@@ -1,0 +1,37 @@
+<%# The buyer's side-by-side comparison table. Shared by the live compare
+    page and the professional's practice preview (Sep 30). Locals: proposals,
+    profile, preview (true = practice: Choose buttons inert). %>
+<div class="tblwrap">
+  <table class="cmp">
+    <tr><th></th><% proposals.forEach(p => { %><th><%= p.agent_name %></th><% }) %></tr>
+    <tr><td>Brokerage</td><% proposals.forEach(p => { %><td><%= p.brokerage %></td><% }) %></tr>
+    <tr><td>12-mo transactions*</td><% proposals.forEach(p => { %><td><%= (p.transactions_seller_12mo === null && p.transactions_buyer_12mo === null) ? '—' : ((p.transactions_buyer_12mo ?? 0) + ' buyer · ' + (p.transactions_seller_12mo ?? 0) + ' seller') %></td><% }) %></tr>
+    <tr><td>Proposed compensation</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.buyerFeeLabel(p) %></b></td><% }) %></tr>
+    <tr><td>Est. compensation</td><% proposals.forEach(p => { %><% const est = H.estBuyerFee(p, profile.price_range); %><td><% if (est === null) { %>—<% } else { %><b style="color:var(--navy); font-size:15px;"><%= H.money(est) %></b><% } %></td><% }) %></tr>
+    <%# Shortfall policy in plain English (Paul, Sep 1 UX #2), with the
+        example amounts computed at the buyer's range midpoint. Legacy
+        proposals map from the old yes/no answer. %>
+    <tr><td>If the seller pays less than the fee</td><% proposals.forEach(p => { %>
+      <% const sfp = p.shortfall_policy || (p.gap_responsibility === 'No' ? (p.min_fee ? 'min_fee' : 'no_gap') : (p.gap_responsibility === 'Yes' ? 'buyer_pays' : null)); %>
+      <% const sfEst = H.estBuyerFee(p, profile.price_range); %>
+      <td><% if (sfp === 'buyer_pays') { %><span class="exc">Seller-paid amounts are credited toward the fee — you'd pay any remainder<% if (sfEst !== null) { %> (e.g. seller pays <%= H.money(Math.round(sfEst / 2)) %> → you'd cover <%= H.money(sfEst - Math.round(sfEst / 2)) %>)<% } %></span>
+      <% } else if (sfp === 'min_fee' && p.min_fee) { %><span class="inc">✓ Accepts the seller-paid amount, subject to a <%= H.money(p.min_fee) %> minimum — you'd only pay what it takes to reach that minimum</span>
+      <% } else if (sfp === 'no_gap') { %><span class="inc">✓ Won't ask you to pay the difference</span><% } else { %>—<% } %></td>
+    <% }) %></tr>
+    <tr><td>Video tours</td><% proposals.forEach(p => { %><td><%- p.video_tours ? '<span class="inc">✓ Offered</span>' : '<span class="exc">—</span>' %></td><% }) %></tr>
+    <tr><td>Response time</td><% proposals.forEach(p => { %><td><%= p.response_time || '—' %></td><% }) %></tr>
+    <tr><td>Specialties</td><% proposals.forEach(p => { %><td><%= p.specialties || '—' %></td><% }) %></tr>
+    <% if (preview) { %>
+    <tr><td></td><% proposals.forEach(p => { %><td><button class="btn sm" type="button" disabled title="Preview only" style="cursor:not-allowed;">Choose</button></td><% }) %></tr>
+    <% } else if (profile.status === 'active' && profile.published) { %>
+    <tr><td></td><% proposals.forEach(p => { %>
+      <td>
+        <form method="POST" action="/buyer/connect/<%= p.id %>" onsubmit="return confirm('Release your name, email, and phone number to <%= p.agent_name %>? Only this professional receives your details.\n\nNote: selecting an agent may lead to a separate written representation agreement — review the compensation terms in that agreement before signing.');">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn sm" type="submit">Choose</button>
+        </form>
+      </td>
+    <% }) %></tr>
+    <% } %>
+  </table>
+</div>

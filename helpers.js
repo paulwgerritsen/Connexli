@@ -7,7 +7,6 @@ const BATHS = ['1', '2', '3', '4', '5+'];
 const SQFT = ['Under 1,500', '1,500–2,000', '2,000–2,500', '2,500–3,000', '3,000–4,000', '4,000+'];
 const YEARS = ['2020s', '2010–2019', '2000–2009', '1980–1999', 'Before 1980'];
 const CONDITIONS = ['Like new', 'Updated', 'Average', 'Needs work'];
-const PRIORITIES = ['Lowest listing fee', 'Most experienced', 'Fastest sale', 'Best marketing', 'Highest sale price'];
 const SERVICES = ['Professional photos', 'Drone video', 'Open house(s)', 'Social campaign', '3D tour', 'Staging consult', 'Print marketing'];
 const CANCELLATION = ['Cancel anytime, no fee', '30-day written notice', 'Locked for listing term'];
 
@@ -24,8 +23,30 @@ const PRICE_RANGES = {
 // most this many sealed proposals, then the window closes on the spot.
 const ROUND_CAP = 10;
 
-// Three windows (Paul, Aug 12): 72h removed; 48h is the single Recommended
-// option; 7 days explains its use cases without competing messaging.
+// Seller requests use ONE standard rule (Paul, Sep 30): up to 48 hours OR
+// until 10 proposals arrive, whichever comes first. Sellers no longer choose
+// a window, and there is no "What matters most?" question any more.
+const SELLER_WINDOW_HOURS = 48;
+// Seller-only switches (Sep 30): a seller request never gathers more than 10
+// proposals, and its window never runs past 48 hours — so the old "request
+// another round" and "keep it open 24 more hours" options are off for
+// sellers. Flip either to true to bring that option back. (Buyer requests
+// are unchanged and keep both options.)
+const SELLER_EXTRA_ROUNDS = false;
+const SELLER_EXTENSION = false;
+// The seller's "End the window early & reveal proposals" button. Kept ON
+// (Sep 30 didn't mention it) — set to false to remove it, so every seller
+// request runs the full 48 hours unless 10 proposals arrive first.
+const SELLER_END_EARLY = true;
+
+// Seller listing timeline (Sep 30). Same wording and time buckets as the
+// buyer's "When do you want to buy?" question (B_TIMELINE below), minus the
+// buyer-only "Within 30 days" bucket, so both sides read consistently.
+const SELLER_TIMELINE = ['ASAP', '1–3 months', '3–6 months', '6–12 months', 'Just researching'];
+
+// Buyer proposal windows. Three windows (Paul, Aug 12): 72h removed; 48h is
+// the single Recommended option; 7 days explains its use cases. Since Sep 30
+// these are used by the BUYER request only — sellers don't choose a window.
 const WINDOWS = [
   { hours: 24,  label: '24 hours', tag: 'Rush',        desc: 'Fastest turnaround. Many agents respond within hours.' },
   { hours: 48,  label: '48 hours', tag: 'Recommended', desc: 'Our recommendation. Fast answers, with enough time for thoughtful proposals.' },
@@ -175,8 +196,9 @@ function clean(s, max = 200) { return String(s || '').trim().slice(0, max); }
 function oneOf(value, list, fallback) { return list.includes(value) ? value : fallback; }
 
 module.exports = {
-  PROPERTY_TYPES, BEDS, BATHS, SQFT, YEARS, CONDITIONS, PRIORITIES, SERVICES,
+  PROPERTY_TYPES, BEDS, BATHS, SQFT, YEARS, CONDITIONS, SERVICES,
   CANCELLATION, PRICE_RANGES, WINDOWS, ROUND_CAP,
+  SELLER_WINDOW_HOURS, SELLER_EXTRA_ROUNDS, SELLER_EXTENSION, SELLER_END_EARLY, SELLER_TIMELINE,
   B_FINANCING, B_LENDER, B_DOWN, B_SITUATION, B_SELL_FIRST, B_TIMELINE,
   B_PURPOSE, B_BBA, B_PRIORITIES, B_EXPECTED_TOURS, BP_STRUCTURES, BP_RESPONSE, BP_SPECIALTIES, US_STATES,
   readiness, READINESS_LABELS, buyerFeeLabel,

@@ -21,8 +21,10 @@
     <div class="sumrow"><span>Size</span><span><%= p.sqft_range %> sq ft · <%= p.beds %> bd · <%= p.baths %> ba</span></div>
     <div class="sumrow"><span>Built / condition</span><span><%= p.year_built %> · <%= p.condition %> · HOA: <%= p.hoa %></span></div>
     <div class="sumrow"><span>Price range</span><span><%= p.price_range %></span></div>
-    <div class="sumrow"><span>Seller priorities</span><span><b style="color:var(--blue);"><%= p.priorities || 'Balanced' %></b></span></div>
-    <div class="sumrow"><span>Window</span><span><%= p.window_hours %> hours · <%= p.total_proposals %> total proposal<%= p.total_proposals === 1 ? '' : 's' %> received</span></div>
+    <% if (p.listing_timeline) { %><div class="sumrow"><span>Hoping to list</span><span><b style="color:var(--blue);"><%= p.listing_timeline %></b></span></div><% } %>
+    <%# Requests from before Sep 30 may still carry the retired "What matters most?" answer. %>
+    <% if (p.priorities) { %><div class="sumrow"><span>Seller priorities</span><span><%= p.priorities %></span></div><% } %>
+    <div class="sumrow"><span>Window</span><span><%= p.window_hours === 168 ? '7 days' : p.window_hours + ' hours' %> · <%= p.total_proposals %> total proposal<%= p.total_proposals === 1 ? '' : 's' %> received</span></div>
   </div>
 
   <div class="card">
@@ -35,7 +37,7 @@
   </div>
 
   <% if (!p.connected && p.request_status === 'connected') { %>
-    <p class="note">💡 A quick self-review that top professionals do: did the proposal speak to the seller's stated priorities (<b><%= p.priorities || 'Balanced' %></b>)? Sealed bidding rewards proposals tailored to what the client said mattered most. The homeowner's identity and contact information are never shared.</p>
+    <p class="note">💡 A quick self-review that top professionals do: did the proposal speak to this specific home<% if (p.listing_timeline) { %> and the seller's timeline (<b><%= p.listing_timeline %></b>)<% } %>? Sealed proposals reward plans tailored to the client's situation. The homeowner's identity and contact information are never shared.</p>
   <% } %>
 </div>
 <%- include('../partials/foot') %>

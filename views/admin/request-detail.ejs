@@ -19,7 +19,8 @@
 <div class="card">
   <div class="sumrow"><span>Size</span><span><%= request.sqft_range %> sq ft · <%= request.beds %> bd · <%= request.baths %> ba</span></div>
   <div class="sumrow"><span>Built</span><span><%= request.year_built %> · <%= request.condition %> · HOA: <%= request.hoa %></span></div>
-  <div class="sumrow"><span>Priorities</span><span><%= request.priorities || 'Balanced' %></span></div>
+  <% if (request.listing_timeline) { %><div class="sumrow"><span>Hoping to list</span><span><%= request.listing_timeline %></span></div><% } %>
+  <% if (request.priorities) { %><div class="sumrow"><span>Priorities (retired question)</span><span><%= request.priorities %></span></div><% } %>
   <div class="sumrow"><span>Window</span><span><%= request.window_hours === 168 ? '7 days' : request.window_hours + ' hours' %> · closes <%= new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %> (Mountain)</span></div>
   <div class="sumrow"><span>Created</span><span><%= new Date(request.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></span></div>
   <% if (followups.length) { %>

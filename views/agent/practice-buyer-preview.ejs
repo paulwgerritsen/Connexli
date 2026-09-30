@@ -1,0 +1,36 @@
+<%- include('../partials/head') %>
+<a href="/agent" style="font-size:14px;">‹ Back to my dashboard</a>
+<%- include('../partials/practice-banner', { practiceKind: 'buyer' }) %>
+<h1 style="margin-top:8px;">Preview: what the buyer sees</h1>
+<p class="sub">When the window closes, the buyer sees every proposal together. This is how yours would appear to them — first as a proposal card, then as a column in the side-by-side comparison. Other professionals' proposals would sit right next to yours. Estimates use the middle of their range (<b><%= H.money(H.midPrice(profile.price_range)) %></b>).</p>
+
+<h2 style="margin-top:22px;">On the buyer's proposals page</h2>
+<p class="note">ⓘ Each amount shown is that professional's <b>proposed buyer-agent compensation</b>. Sellers often contribute toward it — but if the seller does not cover the full amount you agree to with your agent, <b>you may be responsible for the remaining balance at closing</b>, depending on your written agreement. Each proposal states that agent's answer below. Review your agreement's terms before signing anything. Connexli does not set or recommend commissions.</p>
+<div class="cards" data-preview="buyer-card">
+  <%- include('../partials/buyer-proposal-card', { p, profile, preview: true }) %>
+</div>
+
+<h2 style="margin-top:22px;">In the side-by-side comparison</h2>
+<div data-preview="buyer-compare">
+  <%- include('../partials/buyer-compare-table', { proposals: [p], profile, preview: true }) %>
+</div>
+<p class="note">Buttons are shown for realism only — in practice they do nothing.</p>
+
+<div class="actions" style="margin-top:18px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+  <form method="POST" action="/agent/practice/buyer/edit" style="margin:0;">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="comp_structure" value="<%= form.comp_structure %>">
+    <input type="hidden" name="comp_amount" value="<%= form.comp_amount %>">
+    <input type="hidden" name="shortfall_policy" value="<%= form.shortfall_policy %>">
+    <input type="hidden" name="min_fee" value="<%= form.min_fee === null ? '' : form.min_fee %>">
+    <input type="hidden" name="video_tours" value="<%= form.video_tours ? 'yes' : '' %>">
+    <input type="hidden" name="response_time" value="<%= form.response_time %>">
+    <% form.specialties.forEach(s => { %><input type="hidden" name="specialties" value="<%= s %>"><% }) %>
+    <input type="hidden" name="seller_contribution" value="<%= form.seller_contribution %>">
+    <input type="hidden" name="plan" value="<%= form.plan %>">
+    <button class="btn ghost" type="submit" id="editPractice">‹ Edit my practice proposal</button>
+  </form>
+  <a class="btn" href="/agent" id="exitPractice">Exit to my dashboard</a>
+  <a href="/agent/practice/seller" style="font-weight:600;">Try the seller practice ›</a>
+</div>
+<%- include('../partials/foot') %>
