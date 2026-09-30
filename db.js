@@ -462,6 +462,13 @@ CREATE INDEX IF NOT EXISTS idx_credit_orders_paid ON credit_orders(paid_at) WHER
 
 -- v23: every Stripe webhook event id is recorded before it is acted on, so a
 -- redelivered event can never award credits (or reverse them) twice.
+-- v24 (Paul, Sep 28): marketing source attribution for the /fsbo page (and any
+-- future landing page). users.signup_source = the ?source= slug the visitor
+-- arrived with; requests.source = the source credited for that seller request
+-- (session source, else the account's signup source). Both nullable.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_source TEXT;
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS source TEXT;
+
 CREATE TABLE IF NOT EXISTS stripe_events (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL,

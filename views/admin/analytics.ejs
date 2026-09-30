@@ -45,6 +45,24 @@
   </div>
 </div>
 
+<%# Seller requests by marketing source (Paul, Sep 28): e.g. "fsbo" = came
+    through connexli.com/fsbo. Lets us see whether a landing page produces
+    real seller requests before investing more in that channel. %>
+<div class="card" id="by-source">
+  <h2 style="font-size:16px;">Seller requests by source</h2>
+  <p class="note" style="margin-top:2px;">Where seller accounts and requests came from. <b>fsbo</b> = arrived through connexli.com/fsbo. <b>(direct)</b> = no source recorded (regular site links, typed URL, or accounts created before tracking began). A request is credited to the source of the visit that created it, otherwise the source the account signed up with.</p>
+  <% if (!sourceStats.length) { %><p class="note">No seller accounts yet.</p><% } else { %>
+  <div class="tblwrap">
+    <table class="dt">
+      <tr><th>Source</th><th>Seller accounts</th><th>Seller requests</th><th>Requests · last 30 days</th><th>Connected</th></tr>
+      <% sourceStats.forEach(r => { %>
+        <tr data-source="<%= r.source %>"><td><b><%= r.source %></b></td><td><%= r.accounts %></td><td><%= r.requests %></td><td><%= r.last_30 %></td><td><%= r.connected %></td></tr>
+      <% }) %>
+    </table>
+  </div>
+  <% } %>
+</div>
+
 <div class="card">
   <h2 style="font-size:16px;">Buyer side ("Find Your Buyer's Agent")</h2>
   <p class="note" style="margin-top:2px;">Readiness mix shows lead quality; the lender counter is the hard evidence for the future lender vertical.</p>

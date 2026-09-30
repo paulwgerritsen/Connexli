@@ -40,6 +40,17 @@ app.use(session({
   },
 }));
 
+// Marketing source (Paul, Sep 28 — /fsbo page): a link like
+// /register?source=fsbo remembers where the visitor came from for the rest
+// of the session, so the account and the seller request can be attributed.
+// First touch wins; only short lowercase slugs are accepted. Nothing else
+// about registration or the seller request changes.
+app.use((req, res, next) => {
+  const src = typeof req.query.source === 'string' ? req.query.source.trim().toLowerCase() : '';
+  if (src && /^[a-z0-9][a-z0-9_-]{0,31}$/.test(src) && !req.session.leadSource) req.session.leadSource = src;
+  next();
+});
+
 // Make the logged-in user available to every template.
 app.use((req, res, next) => {
   res.locals.user = req.session.user || null;

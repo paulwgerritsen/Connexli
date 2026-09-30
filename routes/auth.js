@@ -243,8 +243,8 @@ router.post('/register', authLimiter, async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO users (role, name, email, phone, password_hash, email_verified) VALUES ($1,$2,$3,$4,$5,false) RETURNING id`,
-      [form.role, form.name, form.email, form.phone, hash]
+      `INSERT INTO users (role, name, email, phone, password_hash, email_verified, signup_source) VALUES ($1,$2,$3,$4,$5,false,$6) RETURNING id`,
+      [form.role, form.name, form.email, form.phone, hash, req.session.leadSource || null]
     );
     if (form.role === 'agent') {
       await client.query(

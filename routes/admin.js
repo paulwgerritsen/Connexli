@@ -163,6 +163,19 @@ router.get('/admin/analytics', admin, async (req, res) => {
       (SELECT COUNT(*) FROM proposals WHERE connected)::int AS connections
   `);
 
+  // Seller requests by marketing source (Paul, Sep 28 /fsbo): how many seller
+  // requests each landing page produced. "(direct)" = no source recorded.
+  const { rows: sourceStats } = await pool.query(`
+    WITH src AS (
+      SELECT COALESCE(signup_source, '(direct)') AS s FROM users WHERE role='seller'
+      UNION SELECT COALESCE(source, '(direct)') FROM requests)
+    SELECT src.s AS source,
+      (SELECT COUNT(*) FROM users u WHERE u.role='seller' AND COALESCE(u.signup_source, '(direct)') = src.s)::int AS accounts,
+      (SELECT COUNT(*) FROM requests r WHERE COALESCE(r.source, '(direct)') = src.s)::int AS requests,
+      (SELECT COUNT(*) FROM requests r WHERE COALESCE(r.source, '(direct)') = src.s AND r.created_at > now() - interval '30 days')::int AS last_30,
+      (SELECT COUNT(*) FROM requests r WHERE COALESCE(r.source, '(direct)') = src.s AND r.status='connected')::int AS connected
+    FROM src ORDER BY requests DESC, accounts DESC`);
+
   // Connection feedback rollup (Paul, Aug 25): structured survey responses
   // by role — connect rate, agreement rate, average ratings, recommend score.
   const { rows: feedbackStats } = await pool.query(`
@@ -193,7 +206,7 @@ router.get('/admin/analytics', admin, async (req, res) => {
   `);
 
   res.render('admin/analytics', {
-    title: 'Analytics', H,
+    title: 'Analytics', H, sourceStats,
     m: thirty.rows[0],
     weekly: weekly.rows.map(w => ({ ...w, week: new Date(w.week).toISOString().slice(0, 10) })),
     feeTrend,

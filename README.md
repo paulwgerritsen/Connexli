@@ -45,6 +45,16 @@ Environment variables:
 | STRIPE_TAX_ENABLED | `true` turns on Stripe Tax calculation in Checkout. Leave unset/false until tax collection is a business decision and Stripe Tax is enabled in the Stripe dashboard |
 | APP_URL | Public app URL used in emails and payment return links (default https://app.connexli.com) |
 
+### Marketing source attribution (?source=)
+
+Any app link can carry `?source=<slug>` (lowercase letters, digits, `-` or `_`, up to 32
+characters) — e.g. the connexli.com/fsbo page links to `/register?source=fsbo`. The first
+valid source in a browser session is remembered. It is saved on the account
+(`users.signup_source`) at registration and on each seller request (`requests.source`:
+the session's source, else the account's signup source). Registration and the seller
+request flow are otherwise unchanged. Admin → Analytics → "Seller requests by source"
+shows accounts, requests, last-30-day requests and connections per source.
+
 ### Payments (Stripe) — setup order
 
 1. Create the Stripe account (business details, bank account, EIN). Stay in **Test mode** in the Stripe dashboard.

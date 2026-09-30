@@ -141,13 +141,19 @@ router.post('/requests/new', seller, async (req, res) => {
      f.year_built, f.hoa, f.condition, f.price_range, priorities.join(' + '), f.window_hours,
      Math.round(PRIORITY_HOURS * 60), liveAt]
   );
+  // Attribution only (Paul, Sep 28 /fsbo): credit the marketing source this
+  // session arrived with, else the account's signup source. Separate update
+  // so the request insert itself is unchanged.
+  await pool.query(
+    `UPDATE requests SET source = COALESCE($2, (SELECT signup_source FROM users WHERE id=$3)) WHERE id=$1`,
+    [rows[0].id, req.session.leadSource || null, req.session.user.id]);
   const { rows: fullRows } = await pool.query(`SELECT * FROM requests WHERE id=$1`, [rows[0].id]);
   // Professionals are notified by the go-live sweep — immediately for a
   // daytime request, at 7:00 AM for an overnight one (§5: never overnight).
   golive.activateSoon();
   mailer.sellerRequestReceived(req.session.user.email, req.session.user.name, fullRows[0]); // instant confirmation
   logEvent('request_posted', { userId: req.session.user.id, requestId: rows[0].id,
-    meta: { zip: f.zip, city: f.city, price_range: f.price_range, window_hours: f.window_hours, scheduled_for: liveAt ? liveAt.toISOString() : null } });
+    meta: { zip: f.zip, city: f.city, price_range: f.price_range, window_hours: f.window_hours, scheduled_for: liveAt ? liveAt.toISOString() : null, source: fullRows[0].source || null } });
   res.redirect('/requests/' + rows[0].id);
 });
 
