@@ -556,6 +556,7 @@ router.get('/admin/buyers/:id(\\d+)', admin, async (req, res) => {
 
   res.render('admin/buyer-detail', {
     title: 'Buyer request', buyer, proposals, notifyRounds, H,
+    rounds: await require('../rounds').roundHistory('buyer', buyer),
     inRange, geoKnown, radius: mailer.RADIUS_MILES, followups,
   });
 });
@@ -689,6 +690,7 @@ router.get('/admin/requests/:id(\\d+)', admin, async (req, res) => {
 
   res.render('admin/request-detail', {
     title: 'Request detail', request, H,
+    rounds: await require('../rounds').roundHistory('seller', request),
     proposals: proposals.rows, inRange, zipKnown, radius: mailer.RADIUS_MILES,
     notifyRounds: notifyRoundsQ.rows, followups,
   });

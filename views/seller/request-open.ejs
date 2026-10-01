@@ -2,6 +2,7 @@
 <div class="narrow" style="max-width:720px;">
   <a href="/dashboard" style="font-size:14px;">‹ Back to my requests</a>
   <% const winHrs = request.window_hours === 168 ? '7-day' : request.window_hours + '-hour'; %>
+  <% const later = request.round > 1; %>
   <% if (scheduled) { %>
     <%# Overnight submission (Paul, Sep 2 §6): saved, opens at 7:00 AM Mountain. %>
     <h1 style="margin-top:8px;">Your request is ready<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
@@ -9,7 +10,7 @@
     <p class="sub">Opens for proposals <b><%= liveAtText %></b>. Your <%= winHrs %> proposal window starts at that moment — none of the overnight wait counts against it.</p>
   <% } else { %>
     <h1 style="margin-top:8px;">Your request is live<% if (request.round > 1) { %> — round <%= request.round %><% } %></h1>
-    <p class="sub">Verified professionals near your home can now send you proposals.<% if (request.round > 1) { %> This round is shown only to professionals who haven't proposed yet — your earlier proposals are saved.<% } %></p>
+    <p class="sub">Verified professionals near your home can now send you proposals.<% if (later) { %> This round is shown only to professionals who haven't proposed yet — your earlier proposals are below, and you can still choose any of them.<% } %></p>
   <% } %>
   <div class="checkrow"><span class="c">✓</span><span>Your address and contact info are hidden until you choose to share them.</span></div>
 
@@ -28,16 +29,21 @@
       <p style="margin-top:12px; font-size:15px;">Proposal window: <b><%= liveAtText %></b> until <b><%= new Date(request.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %> Mountain Time</b></p>
       <p class="note" style="margin-top:4px;">Nothing to do until then — this page updates itself when your request opens. Professionals then have up to <%= request.window_hours === 168 ? '7 days' : request.window_hours + ' hours' %> to respond, and if all <%= H.ROUND_CAP %> spots fill sooner, your proposals will be ready right away.</p>
     <% } else { %>
+    <% if (later) { %>
+    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= thisRound %></b> of <b><%= H.ROUND_CAP %></b> new proposal<%= H.ROUND_CAP === 1 ? '' : 's' %> received this round</p>
+    <% } else { %>
     <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= proposalCount %></b> of <b><%= roundCap %></b> proposal<%= roundCap === 1 ? '' : 's' %> received</p>
-    <p class="note" style="margin-top:4px;">If all <%= H.ROUND_CAP %> spots fill before the countdown ends, your proposals will be ready right away.</p>
+    <% } %>
+    <p class="note" style="margin-top:4px;">If all <%= H.ROUND_CAP %> spots fill before the countdown ends, your <%= later ? 'new ' : '' %>proposals will be ready right away.</p>
     <% } %>
     <div class="sealed">🔒 <span><b>Why wait?</b> Professionals can't see each other's proposals, so each one gives you their best offer, not the minimum needed to beat a rival. You'll see every proposal together, side by side, the moment the window closes.</span></div>
   </div>
 
+
   <% if (!scheduled && H.SELLER_END_EARLY) { %>
   <form method="POST" action="/requests/<%= request.id %>/close" onsubmit="return confirm('End the window now? Professionals will no longer be able to submit, and your proposals will be revealed.');">
     <input type="hidden" name="_csrf" value="<%= csrf %>">
-    <button class="btn ghost full" type="submit">End the window early &amp; reveal proposals</button>
+    <button class="btn ghost full" type="submit">End the <%= later ? 'round' : 'window' %> early &amp; reveal proposals</button>
   </form>
   <p class="note">Ending early is fine if you're satisfied with the number of proposals. Otherwise, sit tight. This page updates the moment the countdown ends.</p>
   <% } %>
@@ -48,6 +54,16 @@
     <a class="btn ghost sm" href="/buyer">Find my buyer's agent</a>
   </div>
 </div>
+  <% if (later && earlier.length) { %>
+  <%# Earlier rounds stay visible and selectable while this round runs. %>
+  <h2 style="margin-top:22px;" id="earlier-proposals">Proposals from earlier rounds (<%= earlier.length %>)</h2>
+  <p class="note">These are ready now. You can shortlist or connect with any of them while this round is open — connecting ends the request. Estimated fees assume a sale near the middle of your range (<b><%= H.money(H.midPrice(request.price_range)) %></b>).<% if (earlier.length >= 2) { %> <a href="/requests/<%= request.id %>/compare">Compare them side by side ›</a><% } %></p>
+  <div class="cards">
+    <% earlier.forEach(p => { %>
+      <%- include('../partials/seller-proposal-card', { p, request, preview: false }) %>
+    <% }) %>
+  </div>
+<% } %>
 <script>
 (function(){
   var el = document.getElementById('clock');

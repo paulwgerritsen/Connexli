@@ -1,0 +1,20 @@
+<%# Admin round history (2nd Sep 30 update #9) — one row per proposal round
+    on this same request. Local: rounds (from rounds.js). %>
+<% const fmtT = (d) => d ? new Date(d).toLocaleString('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'; %>
+<h2 style="margin-top:24px;">Round history</h2>
+<div class="tblwrap" id="round-history">
+  <table>
+    <tr><th>Round</th><th>Requested</th><th>Opened</th><th>Proposals</th><th>First / last proposal</th><th>Closed</th></tr>
+    <% rounds.forEach(r => { %>
+      <tr data-round-row="<%= r.round %>">
+        <td><b>Round <%= r.round %></b></td>
+        <td><%= r.round === 1 ? 'Original request' : fmtT(r.requested_at) %></td>
+        <td><%= fmtT(r.opened_at) %></td>
+        <td data-round-count><%= r.proposals %></td>
+        <td><%= r.proposals ? fmtT(r.first_at) + ' / ' + fmtT(r.last_at) : '—' %></td>
+        <td><% if (r.closed_at) { %><%= fmtT(r.closed_at) %> · <%= r.closed_how %><% } else if (r.closes_at && new Date(r.closes_at) > new Date()) { %>Open — closes <%= fmtT(r.closes_at) %><% } else { %>—<% } %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+<p class="note">Each round runs up to <%= H.ROUND_WINDOW_HOURS %> hours or until it receives <%= H.ROUND_CAP %> new proposals. Times are Mountain. Rounds from before Oct 1, 2026 may show "—" where the event wasn't recorded yet.</p>

@@ -214,21 +214,12 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2 style="font-size:16px;">Choose your proposal window</h2>
-      <p class="note" style="margin-top:2px;">Verified buyer's agents compete during this window. Proposals stay sealed until it closes — then you compare everything at once. If all 10 spots fill early, it closes right then and your comparison is ready sooner.</p>
-      <div class="optgrid">
-        <% H.WINDOWS.forEach(w => { %>
-          <label class="opt">
-            <input type="radio" name="window_hours" value="<%= w.hours %>" <%= (parseInt(form.window_hours) || 48) === w.hours ? 'checked' : '' %>>
-            <span class="tile"><span>
-              <% if (w.hours === 48) { %><span class="rec">RECOMMENDED</span><% } %>
-              <b><%= w.label %></b>
-              <span class="desc"><%= w.desc %></span>
-            </span></span>
-          </label>
-        <% }) %>
-      </div>
+    <%# One standard rule for every round (2nd Sep 30 update): up to 48 hours
+        OR 10 proposals, whichever comes first — nothing to choose. %>
+    <div class="card" id="get-proposals">
+      <h2 style="font-size:16px;">Get your proposals</h2>
+      <p class="sub" style="margin-bottom:0;">Agents have up to <%= H.ROUND_WINDOW_HOURS %> hours to respond. You'll receive up to <%= H.ROUND_CAP %> proposals to compare. If all <%= H.ROUND_CAP %> spots fill sooner, your proposals will be ready right away.</p>
+      <p class="note" style="margin-top:8px;">Proposals stay private until then — you'll see them all together, side by side. Want more after that? You can get <%= H.ROUND_CAP %> more proposals on the same request.</p>
     </div>
 
     <div class="card">

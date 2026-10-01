@@ -23,35 +23,27 @@ const PRICE_RANGES = {
 // most this many sealed proposals, then the window closes on the spot.
 const ROUND_CAP = 10;
 
-// Seller requests use ONE standard rule (Paul, Sep 30): up to 48 hours OR
-// until 10 proposals arrive, whichever comes first. Sellers no longer choose
-// a window, and there is no "What matters most?" question any more.
-const SELLER_WINDOW_HOURS = 48;
-// Seller-only switches (Sep 30): a seller request never gathers more than 10
-// proposals, and its window never runs past 48 hours — so the old "request
-// another round" and "keep it open 24 more hours" options are off for
-// sellers. Flip either to true to bring that option back. (Buyer requests
-// are unchanged and keep both options.)
-const SELLER_EXTRA_ROUNDS = false;
-const SELLER_EXTENSION = false;
+// One standard rule for EVERY proposal round, seller and buyer alike
+// (Paul, Sep 30 + the 2nd Sep 30 update): a round runs up to 48 hours OR
+// until it receives 10 NEW proposals, whichever comes first. Nobody chooses
+// a window any more.
+const ROUND_WINDOW_HOURS = 48;
+// "Get 10 more proposals" (2nd Sep 30 update): after a round closes, the
+// consumer can open another round on the SAME request — up to 10 more
+// proposals, shown only to professionals who haven't proposed yet. Earlier
+// proposals stay visible and selectable. Applies to sellers and buyers.
+const EXTRA_ROUNDS = true;
+// The old one-time "keep it open 24 more hours" extension stays OFF for
+// both sellers and buyers.
+const WINDOW_EXTENSION = false;
 // The seller's "End the window early & reveal proposals" button. Kept ON
-// (Sep 30 didn't mention it) — set to false to remove it, so every seller
-// request runs the full 48 hours unless 10 proposals arrive first.
+// (neither Sep 30 update mentioned it) — set to false to remove it.
 const SELLER_END_EARLY = true;
 
 // Seller listing timeline (Sep 30). Same wording and time buckets as the
 // buyer's "When do you want to buy?" question (B_TIMELINE below), minus the
 // buyer-only "Within 30 days" bucket, so both sides read consistently.
 const SELLER_TIMELINE = ['ASAP', '1–3 months', '3–6 months', '6–12 months', 'Just researching'];
-
-// Buyer proposal windows. Three windows (Paul, Aug 12): 72h removed; 48h is
-// the single Recommended option; 7 days explains its use cases. Since Sep 30
-// these are used by the BUYER request only — sellers don't choose a window.
-const WINDOWS = [
-  { hours: 24,  label: '24 hours', tag: 'Rush',        desc: 'Fastest turnaround. Many agents respond within hours.' },
-  { hours: 48,  label: '48 hours', tag: 'Recommended', desc: 'Our recommendation. Fast answers, with enough time for thoughtful proposals.' },
-  { hours: 168, label: '7 days',   tag: 'Extended',    desc: 'Useful for luxury homes, unique properties, and rural areas.' },
-];
 
 // ---------- buyer-side constants ----------
 const B_FINANCING = ['Cash', 'Conventional', 'FHA', 'VA', 'USDA', 'Not sure'];
@@ -177,7 +169,7 @@ function windowOpen(row) {
   return new Date(row.closes_at).getTime() > Date.now() && row.proposal_count < row.proposal_cap;
 }
 function spotsLeft(row) { return Math.max(0, row.proposal_cap - row.proposal_count); }
-function takenThisRound(row) { return Math.max(0, row.proposal_count - (row.proposal_cap - 10)); }
+function takenThisRound(row) { return Math.max(0, row.proposal_count - (row.proposal_cap - ROUND_CAP)); }
 
 function money(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
 
@@ -197,8 +189,8 @@ function oneOf(value, list, fallback) { return list.includes(value) ? value : fa
 
 module.exports = {
   PROPERTY_TYPES, BEDS, BATHS, SQFT, YEARS, CONDITIONS, SERVICES,
-  CANCELLATION, PRICE_RANGES, WINDOWS, ROUND_CAP,
-  SELLER_WINDOW_HOURS, SELLER_EXTRA_ROUNDS, SELLER_EXTENSION, SELLER_END_EARLY, SELLER_TIMELINE,
+  CANCELLATION, PRICE_RANGES, ROUND_CAP,
+  ROUND_WINDOW_HOURS, EXTRA_ROUNDS, WINDOW_EXTENSION, SELLER_END_EARLY, SELLER_TIMELINE,
   B_FINANCING, B_LENDER, B_DOWN, B_SITUATION, B_SELL_FIRST, B_TIMELINE,
   B_PURPOSE, B_BBA, B_PRIORITIES, B_EXPECTED_TOURS, BP_STRUCTURES, BP_RESPONSE, BP_SPECIALTIES, US_STATES,
   readiness, READINESS_LABELS, buyerFeeLabel,

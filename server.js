@@ -73,18 +73,18 @@ async function closeAndNotify() {
     for (const r of closed) {
       const { rows } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [r.seller_id]);
       if (rows[0]) mailer.sellerProposalsReady(rows[0].email, rows[0].name, r);
-      logEvent('request_closed', { userId: r.seller_id, requestId: r.id });
+      logEvent('request_closed', { userId: r.seller_id, requestId: r.id, meta: { round: r.round } });
     }
     // Buyer windows that just expired: notify each buyer exactly once that
     // their sealed proposals are ready (mirrors the seller flow).
     const { rows: endedBuyers } = await pool.query(
       `UPDATE buyer_profiles SET window_notified = true
        WHERE status='active' AND published AND window_notified = false AND closes_at <= now()
-       RETURNING id, user_id, search_areas`);
+       RETURNING id, user_id, search_areas, round`);
     for (const b of endedBuyers) {
       const { rows } = await pool.query(`SELECT email, name FROM users WHERE id=$1`, [b.user_id]);
       if (rows[0]) mailer.buyerProposalsReady(rows[0].email, rows[0].name, b);
-      logEvent('buyer_window_closed', { userId: b.user_id, meta: { profile_id: b.id } });
+      logEvent('buyer_window_closed', { userId: b.user_id, meta: { profile_id: b.id, round: b.round } });
     }
     await expireBuyerProfiles();
     // Post-connection follow-up emails (Paul, Aug 21): send whatever is due.
@@ -101,7 +101,7 @@ app.use(async (req, res, next) => { await closeAndNotify(); next(); });
 // Every feature area the app expects to serve. If a route file is missing the
 // server refuses to start with a clear message — a half-deployed update can
 // never boot silently with features missing.
-const APP_VERSION = '2026-09-30-seller-simplify-practice-proposals';
+const APP_VERSION = '2026-10-01-get-10-more-proposals-rounds';
 const ROUTE_MODULES = ['auth', 'seller', 'buyer', 'agent', 'practice', 'credits', 'admin'];
 for (const m of ROUTE_MODULES) {
   app.use('/', require('./routes/' + m));

@@ -46,6 +46,8 @@
   <% } %>
 </div>
 
+<%- include('../partials/round-history', { rounds }) %>
+
 <h2 style="margin-top:22px;">Proposals (<%= proposals.length %>)</h2>
 <% if (proposals.length === 0) { %>
   <div class="card"><p class="sub">No proposals yet.</p></div>

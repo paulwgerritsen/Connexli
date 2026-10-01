@@ -35,7 +35,7 @@ function sampleSellerRequest() {
     price_range: pick(Object.keys(H.PRICE_RANGES), '$750k–$1M'),
     listing_timeline: pick(H.SELLER_TIMELINE, '1–3 months'),
     comp_ack: 'yes',
-    window_hours: H.SELLER_WINDOW_HOURS,
+    window_hours: H.ROUND_WINDOW_HOURS,
     proposal_cap: H.ROUND_CAP,
     round: 1,
     status: 'open',

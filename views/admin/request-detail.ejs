@@ -33,19 +33,24 @@
   <% } %>
 </div>
 
-<h2 style="margin-top:24px;">Proposals<%= request.status === 'open' ? ' (contents sealed while the window is open)' : '' %></h2>
+<%- include('../partials/round-history', { rounds }) %>
+
+<h2 style="margin-top:24px;">Proposals<%= request.status === 'open' ? ' (current round sealed while the window is open)' : '' %></h2>
 <% if (proposals.length === 0) { %>
   <div class="card"><p class="sub">No proposals yet<%= request.status === 'open' ? ' — if this is still empty at the halfway mark, start calling professionals in the area' : '' %>.</p></div>
 <% } else { %>
   <div class="tblwrap">
     <table>
-      <tr><th>Professional</th><th>Brokerage</th><th>Submitted</th><% if (request.status !== 'open') { %><th>Fee</th><th>Outcome</th><% } %></tr>
+      <tr><th>Professional</th><th>Brokerage</th><th>Round</th><th>Submitted</th><th>Fee</th><th>Outcome</th></tr>
       <% proposals.forEach(p => { %>
-        <tr>
+        <%# Earlier rounds are already revealed to the seller, so they show even while a later round is open. %>
+        <% const revealed = request.status !== 'open' || p.round < request.round; %>
+        <tr data-proposal-round="<%= p.round %>">
           <td><a href="/admin/agents/<%= p.agent_id %>"><%= p.agent_name %></a></td>
           <td><%= p.brokerage %></td>
+          <td><%= p.round %></td>
           <td><%= new Date(p.created_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) %></td>
-          <% if (request.status !== 'open') { %>
+          <% if (!revealed) { %><td colspan="2" style="color:var(--muted);">sealed until this round closes</td><% } else { %>
             <td><%= H.feeLabel(p) %> (est. <%= H.money(H.estFee(p, request.price_range)) %>)</td>
             <td>
               <% if (p.connected) { %><span class="badge connected">selected <%= p.connected_at ? new Date(p.connected_at).toLocaleDateString('en-US') : '' %></span>

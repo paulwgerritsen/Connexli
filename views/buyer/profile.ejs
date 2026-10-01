@@ -10,6 +10,12 @@
 <% } %>
 
 <% const connectedProposal = proposals.find(p => p.connected); %>
+<% const later = profile.round > 1; %>
+<% if (typeof lockedNote !== 'undefined' && lockedNote) { %>
+  <div class="card" style="border-left:4px solid var(--blue); margin-bottom:14px;" data-locked-note>
+    <p class="sub" style="margin:0;"><b>Your request details are locked.</b> Professionals have already responded to this request, so its details stay the same for every round — that way every proposal answers the same information. If something important has changed, withdraw this request and start a new one.</p>
+  </div>
+<% } %>
 
 <% if (profile.status === 'connected' && connectedProposal) { %>
   <div class="narrow" style="max-width:640px; margin:0;">
@@ -60,8 +66,12 @@
       <p style="margin-top:12px; font-size:15px;">Proposal window: <b><%= liveAtText %></b> until <b><%= new Date(profile.closes_at).toLocaleString('en-US', { timeZone: 'America/Denver', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %> Mountain Time</b></p>
       <p class="note" style="margin-top:4px;">Your full <%= profile.window_hours >= 24 ? (profile.window_hours / 24) + '-day' : profile.window_hours + '-hour' %> window starts when it opens — none of the overnight wait counts against it. This page updates itself.</p>
     <% } else { %>
+    <% if (later) { %>
+    <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= H.takenThisRound(profile) %></b> of <b><%= H.ROUND_CAP %></b> new proposals received this round</p>
+    <% } else { %>
     <p style="margin-top:12px; font-size:15px;"><b style="color:var(--blue); font-size:19px;"><%= profile.proposal_count %></b> of <b><%= profile.proposal_cap %></b> sealed proposals received</p>
-    <p class="note" style="margin-top:4px;">If all 10 spots for this round fill before the countdown ends, the window closes early and your comparison is ready sooner.</p>
+    <% } %>
+    <p class="note" style="margin-top:4px;">Agents have up to <%= profile.window_hours === 168 ? '7 days' : profile.window_hours + ' hours' %>. If all <%= H.ROUND_CAP %> spots for this round fill before the countdown ends, the window closes early and your comparison is ready sooner.</p>
     <% } %>
     <div class="sealed">🔒 <span><b>Why sealed?</b> Agents can't see each other's offers, so each one gives you their best proposal, not the minimum needed to beat a rival. You'll see everything the moment the window closes.</span></div>
   </div>
@@ -83,7 +93,8 @@
   </script>
 <% } %>
 
-<% if (profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal && !profile.extended && profile.proposal_count < profile.proposal_cap) { %>
+<%# The one-time 24-hour extension stays off (H.WINDOW_EXTENSION). %>
+<% if (H.WINDOW_EXTENSION && profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal && !profile.extended && profile.proposal_count < profile.proposal_cap) { %>
   <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
     <h2 style="font-size:16px;">Your window ended with <%= profile.proposal_count %> proposal<%= profile.proposal_count === 1 ? '' : 's' %> — want to keep it open?</h2>
     <p class="sub" style="margin-bottom:10px;">Keep this same request open for an additional <b>24 hours</b> — agents who already proposed stay in, and new ones can still join until the extension ends or all <%= profile.proposal_cap %> spots fill. Available once per request.</p>
@@ -94,26 +105,19 @@
   </div>
 <% } %>
 
-<% if (profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal) { %>
-  <% const roundFull = profile.proposal_count >= profile.proposal_cap; %>
-  <div class="card" style="border-left:4px solid var(--blue); margin-top:14px;">
-    <h2 style="font-size:16px;">Want more options?</h2>
-    <p class="sub" style="margin-bottom:10px;">Receive <b>10 more proposals</b>: your request goes live again for <%= profile.window_hours >= 24 ? (profile.window_hours / 24) + ' day' + (profile.window_hours > 24 ? 's' : '') : profile.window_hours + ' hours' %>, and only verified agents who <b>haven't</b> proposed yet will see it. Every proposal you already have stays right here. This continues until you choose an agent — only then is your contact information released.</p>
-    <% if (roundFull) { %>
-      <form method="POST" action="/buyer/rebid" onsubmit="return confirm('Receive 10 more proposals? Your window reopens for additional agents (who haven\'t proposed yet), and your current proposals remain saved.');">
-        <input type="hidden" name="_csrf" value="<%= csrf %>">
-        <button class="btn ghost" type="submit">Receive 10 more proposals</button>
-      </form>
-    <% } else { %>
-      <button class="btn ghost" type="button" disabled style="opacity:.45; cursor:not-allowed;">Receive 10 more proposals</button>
-      <p class="note" style="margin-top:8px;">Another round becomes available after all <%= profile.proposal_cap %> proposal spots have been filled.<% if (!profile.extended) { %> Until then, the 24-hour extension above gives more agents time to propose.<% } %></p>
-    <% } %>
-  </div>
+<% if (H.EXTRA_ROUNDS && profile.status === 'active' && profile.published && !windowIsOpen && !connectedProposal) { %>
+  <%- include('../partials/get-more-proposals', { moreAction: '/buyer/rebid', haveCount: profile.proposal_count }) %>
 <% } %>
 
-<% if (profile.status === 'active' && !windowIsOpen) { %>
+<%# While a later round is open, earlier rounds' proposals stay visible and
+    selectable (2nd Sep 30 update #7); the current round is still private. %>
+<% if (profile.status === 'active' && (!windowIsOpen || (later && proposals.length > 0))) { %>
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:24px;">
+    <% if (windowIsOpen) { %>
+    <h2 style="margin:0;" id="earlier-proposals">Proposals from earlier rounds (<%= proposals.length %>)</h2>
+    <% } else { %>
     <h2 style="margin:0;">Proposals (<%= proposals.length %><% if (profile.round > 1) { %> across <%= profile.round %> rounds<% } %>)</h2>
+    <% } %>
     <% if (proposals.length >= 2) { %><a class="btn ghost sm" href="/buyer/requests/<%= profile.id %>/compare">Compare side by side</a><% } %>
   </div>
   <p class="note">ⓘ Each amount shown is that professional's <b>proposed buyer-agent compensation</b>. Sellers often contribute toward it — but if the seller does not cover the full amount you agree to with your agent, <b>you may be responsible for the remaining balance at closing</b>, depending on your written agreement. Each proposal states that agent's answer below. Review your agreement's terms before signing anything. Connexli does not set or recommend commissions.</p>
@@ -132,9 +136,9 @@
 <% if (profile.status === 'active') { %>
   <div class="card" style="margin-top:20px;">
     <h2 style="font-size:16px;">Manage my profile</h2>
-    <p class="sub" style="margin-bottom:10px;">Active until <%= new Date(profile.expires_at).toLocaleDateString('en-US') %>. <% if (!profile.priorities && !profile.property_prefs) { %>Complete profiles get stronger, more specific proposals.<% } %></p>
+    <p class="sub" style="margin-bottom:10px;">Active until <%= new Date(profile.expires_at).toLocaleDateString('en-US') %>. <% if (locked) { %>Your request details are locked now that professionals have responded, so every round answers the same information. Need different details? Withdraw and start a new request.<% } else if (!profile.priorities && !profile.property_prefs) { %>Complete profiles get stronger, more specific proposals.<% } %></p>
     <div class="actions">
-      <a class="btn ghost sm" href="/buyer/boost"><%= (profile.priorities || profile.property_prefs) ? 'Edit my preferences' : 'Boost my profile' %></a>
+      <% if (!locked) { %><a class="btn ghost sm" href="/buyer/boost"><%= (profile.priorities || profile.property_prefs) ? 'Edit my preferences' : 'Boost my profile' %></a><% } %>
       <form method="POST" action="/buyer/renew"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn ghost sm" type="submit">Renew 30 days</button></form>
       <form method="POST" action="/buyer/withdraw" onsubmit="return confirm('Withdraw your buyer profile? Agents will no longer see it.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="btn danger sm" type="submit">Withdraw</button></form>
     </div>

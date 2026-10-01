@@ -4,8 +4,11 @@ Sealed-proposal marketplace for real estate representation. Utah pilot.
 
 ## What this is
 
-- Homeowners create private listing requests. One standard rule (Sep 30): each request is open up to 48 hours
-  or until 10 proposals arrive, whichever comes first. Sellers also say when they're hoping to list.
+- Homeowners create private listing requests (sellers also say when they're hoping to list). One standard rule
+  for every round, seller and buyer: up to 48 hours or until 10 proposals arrive, whichever comes first. After a
+  round closes, "Get 10 more proposals" opens another round on the SAME request (up to 10 more, only for
+  professionals who haven't proposed; earlier proposals stay selectable; details can't be edited between rounds).
+  Admin request pages show a round history.
 - Professionals can practice both a seller and a buyer proposal from their dashboard (`/agent/practice`) —
   fictional requests, previews of what the consumer sees, and zero production effects (no records, credits,
   emails or events)

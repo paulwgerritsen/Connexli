@@ -99,7 +99,7 @@ router.post('/requests/new', seller, async (req, res) => {
   // up to 48 hours, closing early the moment 10 proposals arrive. The seller
   // no longer chooses a window, and "What matters most?" is no longer asked —
   // anything a stale browser tab still posts for either is ignored.
-  const windowHours = H.SELLER_WINDOW_HOURS;
+  const windowHours = H.ROUND_WINDOW_HOURS;
 
   if (!f.property_type || !f.zip.match(/^\d{5}$/) || !f.city || !f.price_range || !f.listing_timeline) {
     return res.status(400).render('seller/new-request', {
@@ -167,35 +167,51 @@ async function loadRequest(req, res) {
   return rows[0];
 }
 
-// Request detail: countdown while open, proposals after close
+// The proposals a seller may see right now. While a round is open, only
+// proposals from EARLIER rounds are visible (the current round stays private
+// until it closes); once it closes, every round's proposals are visible.
+async function visibleProposals(request, extraCols = '') {
+  const { rows } = await pool.query(
+    `SELECT p.*, u.name AS agent_name, ap.brokerage, ap.transactions_seller_12mo, ap.transactions_buyer_12mo${extraCols}
+     FROM proposals p
+     JOIN users u ON u.id = p.agent_id
+     JOIN agent_profiles ap ON ap.user_id = p.agent_id
+     WHERE p.request_id=$1 AND ($2::boolean OR p.round < $3)`,
+    [request.id, request.status !== 'open', request.round]);
+  return rows;
+}
+function sortProposals(proposals, request, sort) {
+  proposals.sort((a, b) => sort === 'fee'
+    ? H.estFee(a, request.price_range) - H.estFee(b, request.price_range)
+    : new Date(b.created_at) - new Date(a.created_at));
+  return proposals;
+}
+
+// Request detail: countdown while a round is open (plus every proposal from
+// earlier rounds, still selectable), all proposals once it closes.
 router.get('/requests/:id(\\d+)', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
+  const sort = ['fee', 'newest'].includes(req.query.sort) ? req.query.sort : 'fee';
 
   if (request.status === 'open') {
     const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
     // Scheduled = saved overnight, opens at 7:00 AM Mountain (Paul, Sep 2 §6).
     const scheduled = new Date(request.live_at).getTime() > Date.now();
+    // Earlier-round proposals stay visible and selectable while a later
+    // round runs (2nd Sep 30 update, #7).
+    const earlier = request.round > 1
+      ? sortProposals(await visibleProposals(request), request, sort) : [];
     return res.render('seller/request-open', {
       title: scheduled ? 'Your request is ready' : 'Your request is live', request, proposalCount: rows[0].n, H,
       roundCap: request.proposal_cap, // window auto-closes at this count
-      scheduled, liveAtText: schedule.describe(request.live_at),
+      thisRound: H.takenThisRound({ proposal_count: rows[0].n, proposal_cap: request.proposal_cap }),
+      scheduled, liveAtText: schedule.describe(request.live_at), earlier, sort,
     });
   }
 
-  const { rows: proposals } = await pool.query(
-    `SELECT p.*, u.name AS agent_name, u.email AS agent_email, u.phone AS agent_phone, ap.brokerage, ap.license_number,
-       ap.transactions_seller_12mo, ap.transactions_buyer_12mo
-     FROM proposals p
-     JOIN users u ON u.id = p.agent_id
-     JOIN agent_profiles ap ON ap.user_id = p.agent_id
-     WHERE p.request_id=$1`,
-    [request.id]
-  );
-  const sort = ['fee', 'newest'].includes(req.query.sort) ? req.query.sort : 'fee';
-  proposals.sort((a, b) => sort === 'fee'
-    ? H.estFee(a, request.price_range) - H.estFee(b, request.price_range)
-    : new Date(b.created_at) - new Date(a.created_at));
+  const proposals = sortProposals(await visibleProposals(request,
+    ', u.email AS agent_email, u.phone AS agent_phone, ap.license_number'), request, sort);
 
   // Has this seller already left feedback on this connection? (Paul, Aug 25)
   const { rows: fb } = await pool.query(
@@ -204,17 +220,15 @@ router.get('/requests/:id(\\d+)', seller, async (req, res) => {
 });
 
 // Compare table
+// While a later round is open, the comparison covers the earlier rounds'
+// proposals (the current round is still private).
 router.get('/requests/:id(\\d+)/compare', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
-  if (request.status === 'open') return res.redirect('/requests/' + request.id);
-  const { rows: proposals } = await pool.query(
-    `SELECT p.*, u.name AS agent_name, ap.brokerage, ap.transactions_seller_12mo, ap.transactions_buyer_12mo
-     FROM proposals p
-     JOIN users u ON u.id=p.agent_id JOIN agent_profiles ap ON ap.user_id=p.agent_id
-     WHERE p.request_id=$1 ORDER BY p.shortlisted DESC, p.created_at ASC`,
-    [request.id]
-  );
+  if (request.status === 'open' && request.round <= 1) return res.redirect('/requests/' + request.id);
+  const proposals = (await visibleProposals(request))
+    .sort((a, b) => (b.shortlisted - a.shortlisted) || (new Date(a.created_at) - new Date(b.created_at)));
+  if (!proposals.length) return res.redirect('/requests/' + request.id);
   const shortlisted = proposals.filter(p => p.shortlisted);
   res.render('seller/compare', {
     title: 'Compare proposals', request, H,
@@ -223,22 +237,17 @@ router.get('/requests/:id(\\d+)/compare', seller, async (req, res) => {
   });
 });
 
-// Request another round of proposals. Reopens the window for the same length
-// the seller originally chose, invites up to 10 MORE professionals, and hides
-// the request from everyone who already proposed in an earlier round (their
-// sealed proposals stay in the stack).
-// OFF since Sep 30 (H.SELLER_EXTRA_ROUNDS): a seller request now receives at
-// most 10 proposals. Kept in place so it can be switched back on in one line.
+// "Get 10 more proposals" (2nd Sep 30 update): once a round has closed, the
+// seller can open another round on this SAME request — no new request, no
+// edits to the details. Every round runs up to 48 hours or until it gets 10
+// NEW proposals (cap = proposals so far + 10, however many the last round
+// got). Professionals who already proposed are excluded: the go-live sweep
+// skips them when notifying, and they can't see or submit to the new round.
+// Earlier proposals stay in place and remain selectable.
 router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
-  if (!H.SELLER_EXTRA_ROUNDS) return res.redirect('/requests/' + request.id);
-  if (request.status !== 'closed') return res.redirect('/requests/' + request.id);
-  // Another round only unlocks once the current round actually FILLED
-  // (Paul, Aug 23). A round that closed with fewer than the cap uses the
-  // one-time 24-hour extension instead — same rule as the buyer side.
-  const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
-  if (cnt[0].n < request.proposal_cap) return res.redirect('/requests/' + request.id);
+  if (!H.EXTRA_ROUNDS || request.status !== 'closed') return res.redirect('/requests/' + request.id);
 
   // A fresh round becomes newly available to professionals who haven't
   // proposed, so the purchased-credit priority window restarts with it —
@@ -246,12 +255,13 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   // 7:00 AM Mountain (Paul, Sep 2 §11: buyer and seller work the same).
   const liveAt = schedule.goLiveAt(schedule.now(req));
   const { rows } = await pool.query(
-    `UPDATE requests SET round = round + 1, status='open',
+    `UPDATE requests SET round = round + 1, status='open', window_hours = $4,
        live_at = COALESCE($3::timestamptz, now()), live_notified = false,
-       closes_at = COALESCE($3::timestamptz, now()) + make_interval(hours => window_hours),
-       proposal_cap = (SELECT COUNT(*) FROM proposals WHERE request_id=$1) + 10,
+       closes_at = COALESCE($3::timestamptz, now()) + make_interval(hours => $4),
+       proposal_cap = (SELECT COUNT(*) FROM proposals WHERE request_id=$1) + $5,
        priority_until = COALESCE($3::timestamptz, now()) + make_interval(mins => $2)
-     WHERE id=$1 AND status='closed' RETURNING *`, [request.id, Math.round(PRIORITY_HOURS * 60), liveAt]);
+     WHERE id=$1 AND status='closed' RETURNING *`,
+    [request.id, Math.round(PRIORITY_HOURS * 60), liveAt, H.ROUND_WINDOW_HOURS, H.ROUND_CAP]);
   if (!rows[0]) return res.redirect('/requests/' + request.id);
 
   // Professionals who already proposed are excluded from the new-round
@@ -259,18 +269,19 @@ router.post('/requests/:id(\\d+)/rebid', seller, async (req, res) => {
   const { rows: prior } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
   golive.activateSoon();
   logEvent('request_new_round', { userId: req.session.user.id, requestId: request.id,
-    meta: { round: rows[0].round, prior_proposals: prior[0].n, scheduled_for: liveAt ? liveAt.toISOString() : null } });
+    meta: { round: rows[0].round, prior_proposals: prior[0].n, cap: rows[0].proposal_cap, closes_at: rows[0].closes_at,
+      scheduled_for: liveAt ? liveAt.toISOString() : null } });
   res.redirect('/requests/' + request.id);
 });
 
 // One-time 24-hour extension (Paul, Aug 12): if the window expired with fewer
 // than the cap, the seller can keep the SAME request open 24 more hours.
 // Round and cap are unchanged; agents who already proposed can still edit.
-// OFF since Sep 30 (H.SELLER_EXTENSION): the standard window is 48 hours.
+// OFF (H.WINDOW_EXTENSION): every round is a standard 48-hour round.
 router.post('/requests/:id(\\d+)/extend', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
-  if (!H.SELLER_EXTENSION) return res.redirect('/requests/' + request.id);
+  if (!H.WINDOW_EXTENSION) return res.redirect('/requests/' + request.id);
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM proposals WHERE request_id=$1`, [request.id]);
   if (request.status !== 'closed' || request.extended || cnt[0].n >= request.proposal_cap) {
     return res.redirect('/requests/' + request.id);
@@ -289,7 +300,7 @@ router.post('/requests/:id(\\d+)/close', seller, async (req, res) => {
     `UPDATE requests SET status='closed', closes_at=now() WHERE id=$1 AND seller_id=$2 AND status='open' RETURNING *`,
     [req.params.id, req.session.user.id]);
   if (rows[0]) {
-    logEvent('request_closed_early', { userId: req.session.user.id, requestId: parseInt(req.params.id) });
+    logEvent('request_closed_early', { userId: req.session.user.id, requestId: parseInt(req.params.id), meta: { round: rows[0].round } });
     // Email the written record too, so "your proposals are ready" always
     // lands in the inbox no matter how the window ended.
     mailer.sellerProposalsReady(req.session.user.email, req.session.user.name, rows[0]); // fire and forget
@@ -301,8 +312,10 @@ router.post('/requests/:id(\\d+)/close', seller, async (req, res) => {
 router.post('/requests/:id(\\d+)/shortlist/:pid(\\d+)', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
-  if (request.status === 'closed') {
-    await pool.query(`UPDATE proposals SET shortlisted = NOT shortlisted WHERE id=$1 AND request_id=$2`, [req.params.pid, request.id]);
+  // Closed: any proposal. Open later round: earlier-round proposals only.
+  if (request.status === 'closed' || request.status === 'open') {
+    await pool.query(`UPDATE proposals SET shortlisted = NOT shortlisted WHERE id=$1 AND request_id=$2 AND ($3::boolean OR round < $4)`,
+      [req.params.pid, request.id, request.status === 'closed', request.round]);
     logEvent('shortlist_toggled', { userId: req.session.user.id, requestId: request.id, proposalId: parseInt(req.params.pid) });
   }
   res.redirect('/requests/' + request.id + (req.body.from === 'compare' ? '/compare' : ''));
@@ -312,15 +325,18 @@ router.post('/requests/:id(\\d+)/shortlist/:pid(\\d+)', seller, async (req, res)
 router.post('/requests/:id(\\d+)/connect/:pid(\\d+)', seller, async (req, res) => {
   const request = await loadRequest(req, res);
   if (!request) return;
-  if (request.status !== 'closed') return res.redirect('/requests/' + request.id);
+  // Proposals are selectable once their round has closed: every proposal
+  // when the request is closed, earlier-round proposals while a later round
+  // is still open (2nd Sep 30 update, #7). Connecting ends the request.
+  if (request.status !== 'closed' && request.status !== 'open') return res.redirect('/requests/' + request.id);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { rowCount } = await client.query(
-      `UPDATE proposals SET connected=true, connected_at=now() WHERE id=$1 AND request_id=$2`,
-      [req.params.pid, request.id]
+      `UPDATE proposals SET connected=true, connected_at=now() WHERE id=$1 AND request_id=$2 AND ($3::boolean OR round < $4)`,
+      [req.params.pid, request.id, request.status === 'closed', request.round]
     );
-    if (rowCount) await client.query(`UPDATE requests SET status='connected' WHERE id=$1`, [request.id]);
+    if (rowCount) await client.query(`UPDATE requests SET status='connected' WHERE id=$1 AND status IN ('open','closed')`, [request.id]);
     await client.query('COMMIT');
     const { rows: winner } = await pool.query(
       `SELECT u.email, u.name FROM proposals p JOIN users u ON u.id=p.agent_id WHERE p.id=$1`, [req.params.pid]);
@@ -329,7 +345,7 @@ router.post('/requests/:id(\\d+)/connect/:pid(\\d+)', seller, async (req, res) =
       require('../db').scheduleFollowups('seller', request.id,
         { email: req.session.user.email, name: req.session.user.name }, winner[0]);
     }
-    if (rowCount) logEvent('connected', { userId: req.session.user.id, requestId: request.id, proposalId: parseInt(req.params.pid) });
+    if (rowCount) logEvent('connected', { userId: req.session.user.id, requestId: request.id, proposalId: parseInt(req.params.pid), meta: { round: request.round } });
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
   res.redirect('/requests/' + request.id);

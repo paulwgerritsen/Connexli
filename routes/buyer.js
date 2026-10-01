@@ -25,6 +25,17 @@ async function activeProfile(userId) {
 // The only thing that BLOCKS starting a new buying request: an OPEN one
 // (Paul, Aug 14 #2). A connected request is finished — its history stays on
 // the dashboard, and the buyer is free to start a fresh search.
+// Request details are frozen once any professional has responded (or a
+// later round exists) — 2nd Sep 30 update #5: every professional, in every
+// round, responds to materially identical information. Something materially
+// different = a new request (withdraw this one, then start fresh).
+async function detailsLocked(profile) {
+  if (!profile || !profile.published) return false;
+  if (profile.round > 1) return true;
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
+  return rows[0].n > 0;
+}
+
 async function openProfile(userId) {
   const { rows } = await pool.query(
     `SELECT * FROM buyer_profiles WHERE user_id=$1 AND status='active'
@@ -42,15 +53,18 @@ async function renderProfile(req, res, profile) {
   const scheduled = profile.status === 'active' && profile.published && new Date(profile.live_at).getTime() > Date.now();
   const open = profile.status === 'active' && profile.published && H.windowOpen(profile);
 
+  // While a round is open only EARLIER rounds' proposals are visible (and
+  // still selectable — 2nd Sep 30 update #7); the current round stays
+  // private until it closes. Once it closes, every proposal shows.
   let proposals = [];
-  if (!open) {
+  if (!open || profile.round > 1) {
     ({ rows: proposals } = await pool.query(
       `SELECT bp.*, u.name AS agent_name, u.email AS agent_email, u.phone AS agent_phone,
               ap.brokerage, ap.license_number, ap.transactions_seller_12mo, ap.transactions_buyer_12mo
        FROM buyer_proposals bp
        JOIN users u ON u.id = bp.agent_id
        JOIN agent_profiles ap ON ap.user_id = bp.agent_id
-       WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]));
+       WHERE bp.profile_id=$1 AND ($2::boolean OR bp.round < $3) ORDER BY bp.created_at ASC`, [profile.id, !open, profile.round]));
   }
   // Has this buyer already left feedback on this connection? (Paul, Aug 25)
   let feedbackGiven = false;
@@ -60,6 +74,7 @@ async function renderProfile(req, res, profile) {
     feedbackGiven = fb.length > 0;
   }
   res.render('buyer/profile', { title: 'My buyer profile', profile, proposals, windowIsOpen: open, H, existingNote: req.query.existing === '1', feedbackGiven,
+    locked: await detailsLocked(profile), lockedNote: req.query.locked === '1',
     scheduled, liveAtText: schedule.describe(profile.live_at) });
 }
 
@@ -89,17 +104,19 @@ router.get('/buyer/requests/:id(\\d+)/compare', consumer, async (req, res) => {
 
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
   profile.proposal_count = cnt[0].n;
-  if (profile.status === 'active' && profile.published && H.windowOpen(profile)) {
+  const open = profile.status === 'active' && profile.published && H.windowOpen(profile);
+  if (open && profile.round <= 1) {
     return res.redirect('/buyer/requests/' + profile.id); // still sealed
   }
 
+  // During a later round, compare the earlier rounds' proposals only.
   const { rows: proposals } = await pool.query(
     `SELECT bp.*, u.name AS agent_name,
             ap.brokerage, ap.transactions_seller_12mo, ap.transactions_buyer_12mo
      FROM buyer_proposals bp
      JOIN users u ON u.id = bp.agent_id
      JOIN agent_profiles ap ON ap.user_id = bp.agent_id
-     WHERE bp.profile_id=$1 ORDER BY bp.created_at ASC`, [profile.id]);
+     WHERE bp.profile_id=$1 AND ($2::boolean OR bp.round < $3) ORDER BY bp.created_at ASC`, [profile.id, !open, profile.round]);
   res.render('buyer/compare', { title: 'Compare proposals', profile, proposals, H });
 });
 
@@ -140,7 +157,10 @@ router.post('/buyer/new', consumer, async (req, res) => {
     purchase_purpose: H.oneOf(req.body.purchase_purpose, H.B_PURPOSE, 'Primary residence'),
     bba: H.oneOf(req.body.bba, H.B_BBA, 'No'),
     bba_expires: H.clean(req.body.bba_expires, 40),
-    window_hours: [24, 48, 168].includes(parseInt(req.body.window_hours)) ? parseInt(req.body.window_hours) : 48,
+    // One standard window for every round (2nd Sep 30 update #3): up to 48
+    // hours or 10 proposals. Buyers no longer choose; anything a stale
+    // browser tab still posts is ignored.
+    window_hours: H.ROUND_WINDOW_HOURS,
   };
   const fail = (msg) => res.status(400).render('buyer/new', { title: "Find Your Buyer's Agent", H, error: msg, form: { ...f, in_utah: f.in_utah ? 'yes' : 'no', video_tours: f.video_tours ? 'yes' : 'no' } });
 
@@ -223,12 +243,14 @@ router.post('/buyer/new', consumer, async (req, res) => {
 router.get('/buyer/boost', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile) return res.redirect('/buyer/new');
+  if (await detailsLocked(profile)) return res.redirect('/buyer?locked=1');
   res.render('buyer/boost', { title: 'Boost your profile', H, profile, error: null });
 });
 
 router.post('/buyer/boost', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile) return res.redirect('/buyer/new');
+  if (await detailsLocked(profile)) return res.redirect('/buyer?locked=1'); // server-side, not just a hidden button
 
   let priorities = req.body.priorities || [];
   if (!Array.isArray(priorities)) priorities = [priorities];
@@ -253,6 +275,7 @@ router.get('/buyer/get-ready', consumer, async (req, res) => {
 router.post('/buyer/upgrade', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile) return res.redirect('/buyer/new');
+  if (await detailsLocked(profile)) return res.redirect('/buyer?locked=1');
   // Publishing makes the profile live to professionals → verified email only.
   if (!profile.published && !(await assertEmailVerified(req, res))) return;
   const updated = { ...profile, lender_status: 'Yes — preapproved' };
@@ -265,10 +288,11 @@ router.post('/buyer/upgrade', consumer, async (req, res) => {
   const { rows: upd } = await pool.query(`UPDATE buyer_profiles SET lender_status='Yes — preapproved', readiness=$1, published=$2,
       live_at = CASE WHEN $2 AND NOT published THEN COALESCE($5::timestamptz, now()) ELSE live_at END,
       live_notified = CASE WHEN $2 AND NOT published THEN false ELSE live_notified END,
-      closes_at = CASE WHEN $2 AND NOT published THEN COALESCE($5::timestamptz, now()) + make_interval(hours => window_hours) ELSE closes_at END,
+      window_hours = CASE WHEN $2 AND NOT published THEN $6 ELSE window_hours END,
+      closes_at = CASE WHEN $2 AND NOT published THEN COALESCE($5::timestamptz, now()) + make_interval(hours => $6) ELSE closes_at END,
       priority_until = CASE WHEN $2 AND NOT published THEN COALESCE($5::timestamptz, now()) + make_interval(mins => $4) ELSE priority_until END
     WHERE id=$3 RETURNING *`,
-    [badge, published, profile.id, Math.round(PRIORITY_HOURS * 60), liveAt]);
+    [badge, published, profile.id, Math.round(PRIORITY_HOURS * 60), liveAt, H.ROUND_WINDOW_HOURS]);
   logEvent('buyer_upgraded_ready', { userId: req.session.user.id, meta: { readiness: badge } });
   if (published && !profile.published) {
     golive.activateSoon(); // notifies now, or at 7:00 AM for an overnight publish
@@ -278,20 +302,19 @@ router.post('/buyer/upgrade', consumer, async (req, res) => {
   res.redirect('/buyer');
 });
 
-// ---------- receive 10 more proposals ----------
-// Available whenever the window has CLOSED (time or cap) and no agent has
-// been chosen — mirrors the seller "request another round". Opens exactly 10
-// fresh slots (cap = current count + 10), restarts the same window length,
-// extends the profile, and notifies only agents who haven't proposed yet.
+// ---------- "Get 10 more proposals" ----------
+// 2nd Sep 30 update: once a round has closed (time or cap) and no agent has
+// been chosen, the buyer can open another round on this SAME request —
+// identical to the seller side. Every round runs up to 48 hours or until it
+// gets 10 NEW proposals (cap = proposals so far + 10, however many the last
+// round got). Agents who already proposed are excluded from the new round's
+// notifications and can't submit again; earlier proposals stay selectable.
 router.post('/buyer/rebid', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
-  if (!profile || profile.status !== 'active' || !profile.published) return res.redirect('/buyer');
+  if (!H.EXTRA_ROUNDS || !profile || profile.status !== 'active' || !profile.published) return res.redirect('/buyer');
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
   profile.proposal_count = cnt[0].n;
-  if (H.windowOpen(profile)) return res.redirect('/buyer'); // window still open — nothing to reopen
-  // Another round only unlocks once the current round FILLED (Paul, Aug 23);
-  // an unfilled round uses the one-time 24-hour extension instead.
-  if (cnt[0].n < profile.proposal_cap) return res.redirect('/buyer');
+  if (H.windowOpen(profile)) return res.redirect('/buyer'); // round still open — nothing to reopen
 
   // A fresh round becomes newly available to professionals who haven't
   // proposed, so the purchased-credit priority window restarts with it —
@@ -299,25 +322,29 @@ router.post('/buyer/rebid', consumer, async (req, res) => {
   // like a new request (Paul, Sep 2 §11).
   const liveAt = schedule.goLiveAt(schedule.now(req));
   const { rows } = await pool.query(
-    `UPDATE buyer_profiles SET round = round + 1, proposal_cap = $2 + 10, window_notified = false,
+    `UPDATE buyer_profiles SET round = round + 1, proposal_cap = $2::int + $6::int, window_notified = false, window_hours = $5,
        live_at = COALESCE($4::timestamptz, now()), live_notified = false,
-       closes_at = COALESCE($4::timestamptz, now()) + make_interval(hours => window_hours),
-       expires_at = COALESCE($4::timestamptz, now()) + interval '30 days',
+       closes_at = COALESCE($4::timestamptz, now()) + make_interval(hours => $5),
+       expires_at = GREATEST(expires_at, COALESCE($4::timestamptz, now()) + interval '30 days'),
        priority_until = COALESCE($4::timestamptz, now()) + make_interval(mins => $3)
-     WHERE id=$1 AND status='active' RETURNING *`, [profile.id, cnt[0].n, Math.round(PRIORITY_HOURS * 60), liveAt]);
+     WHERE id=$1 AND status='active' RETURNING *`,
+    [profile.id, cnt[0].n, Math.round(PRIORITY_HOURS * 60), liveAt, H.ROUND_WINDOW_HOURS, H.ROUND_CAP]);
   if (!rows[0]) return res.redirect('/buyer');
 
   golive.activateSoon(); // prior bidders are excluded by the sweep
   logEvent('buyer_new_round', { userId: req.session.user.id,
-    meta: { profile_id: profile.id, round: rows[0].round, prior_proposals: cnt[0].n, scheduled_for: liveAt ? liveAt.toISOString() : null } });
+    meta: { profile_id: profile.id, round: rows[0].round, prior_proposals: cnt[0].n, cap: rows[0].proposal_cap,
+      closes_at: rows[0].closes_at, scheduled_for: liveAt ? liveAt.toISOString() : null } });
   res.redirect('/buyer');
 });
 
 // ---------- one-time 24-hour extension ----------
 // If the window expired with fewer proposals than the cap, keep the same
-// request open 24 more hours — once (mirrors the seller flow).
+// request open 24 more hours — once. OFF (H.WINDOW_EXTENSION): every round
+// is a standard 48-hour round, buyers and sellers alike.
 router.post('/buyer/extend', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
+  if (!H.WINDOW_EXTENSION) return res.redirect('/buyer');
   if (!profile || profile.status !== 'active' || !profile.published || profile.extended) return res.redirect('/buyer');
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
   profile.proposal_count = cnt[0].n;
@@ -348,16 +375,19 @@ router.post('/buyer/withdraw', consumer, async (req, res) => {
 router.post('/buyer/connect/:pid(\\d+)', consumer, async (req, res) => {
   const profile = await activeProfile(req.session.user.id);
   if (!profile) return res.redirect('/buyer');
-  // Mirror the seller flow: connecting happens after the window closes.
+  // Mirror the seller flow: a proposal is selectable once its round has
+  // closed — any proposal after the window closes, earlier-round proposals
+  // while a later round is still open (2nd Sep 30 update #7).
+  if (profile.status !== 'active') return res.redirect('/buyer');
   const { rows: cnt } = await pool.query(`SELECT COUNT(*)::int AS n FROM buyer_proposals WHERE profile_id=$1`, [profile.id]);
   profile.proposal_count = cnt[0].n;
-  if (profile.published && H.windowOpen(profile)) return res.redirect('/buyer');
+  const open = profile.published && H.windowOpen(profile);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { rowCount } = await client.query(
-      `UPDATE buyer_proposals SET connected=true, connected_at=now() WHERE id=$1 AND profile_id=$2`,
-      [req.params.pid, profile.id]);
+      `UPDATE buyer_proposals SET connected=true, connected_at=now() WHERE id=$1 AND profile_id=$2 AND ($3::boolean OR round < $4)`,
+      [req.params.pid, profile.id, !open, profile.round]);
     if (rowCount) await client.query(`UPDATE buyer_profiles SET status='connected', published=false WHERE id=$1`, [profile.id]);
     await client.query('COMMIT');
     if (rowCount) {
@@ -368,7 +398,7 @@ router.post('/buyer/connect/:pid(\\d+)', consumer, async (req, res) => {
         require('../db').scheduleFollowups('buyer', profile.id,
           { email: req.session.user.email, name: req.session.user.name }, winner[0]);
       }
-      logEvent('buyer_connected', { userId: req.session.user.id, proposalId: parseInt(req.params.pid), meta: { profile_id: profile.id } });
+      logEvent('buyer_connected', { userId: req.session.user.id, proposalId: parseInt(req.params.pid), meta: { profile_id: profile.id, round: profile.round } });
     }
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }

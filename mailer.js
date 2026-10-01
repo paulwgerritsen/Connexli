@@ -242,7 +242,7 @@ function buyerNewProposal(email, name, count, roundFull = false) {
     template(roundFull ? 'All 10 proposals are in 🎉' : 'You have a new proposal 🎉', [
       `${name.split(' ')[0]}, a verified buyer's agent just submitted a sealed proposal for your home search.`,
       roundFull
-        ? `That fills all <b>10</b> proposal spots for this round — your full set is ready to compare now, sooner than expected. If you'd like even more options after reviewing, you can open another round anytime.`
+        ? `That fills all <b>10</b> proposal spots for this round — your full set is ready to compare now, sooner than expected. If you'd like even more options after reviewing, choose <b>Get 10 more proposals</b> to open another round on the same request.`
         : `You now have <b>${count}</b> proposal${count === 1 ? '' : 's'} to compare. Your name and contact info remain hidden until you choose to connect.`,
     ], 'Compare my proposals', APP_URL + '/buyer'));
 }
@@ -256,7 +256,7 @@ function buyerProposalsReady(email, name, profile, filledEarly = false) {
         ? `${name.split(' ')[0]}, your buyer request filled every proposal spot before the window even ended — so we closed it and your proposals are ready now, sooner than expected.`
         : `${name.split(' ')[0]}, the proposal window for your home search in ${profile.search_areas} has closed.`,
       'Log in to compare every sealed proposal side by side: compensation, experience, response times, and each agent\'s plan for you.',
-      'Want more options after reviewing? You can receive 10 more proposals — shown only to agents who haven\'t proposed yet. Your name and contact info stay hidden until you choose to connect.',
+      'Want more options after reviewing? Choose <b>Get 10 more proposals</b> to open another round on this same request — up to 48 hours, shown only to agents who haven\'t proposed yet. Every proposal you already have stays available. Your name and contact info stay hidden until you choose to connect.',
     ], 'Compare my proposals', APP_URL + '/buyer'));
 }
 
@@ -336,9 +336,9 @@ function sellerProposalsReady(email, name, request, filledEarly = false) {
         ? `${name.split(' ')[0]}, your ${request.property_type.toLowerCase()} in ${request.city} filled all 10 proposal spots before the window even ended — so we closed it and your proposals are ready now, sooner than expected.`
         : `${name.split(' ')[0]}, the proposal window for your ${request.property_type.toLowerCase()} in ${request.city} has closed.`,
       'Log in to compare every proposal side by side: fees, services, marketing plans, and cancellation terms.',
-      // No "open another round" offer since Sep 30: a seller request
-      // receives at most 10 proposals (see H.SELLER_EXTRA_ROUNDS).
-      'Your address and contact info are still hidden until you choose to share them.',
+      // "Get 10 more proposals" (2nd Sep 30 update): another round on the
+      // same request, for professionals who haven't proposed yet.
+      'Want more options after reviewing? Choose <b>Get 10 more proposals</b> to open another round on this same request — up to 48 hours, shown only to professionals who haven\'t proposed yet. Every proposal you already have stays available. Your address and contact info are still hidden until you choose to share them.',
     ], 'Compare my proposals', APP_URL + '/requests/' + request.id));
 }
 

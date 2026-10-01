@@ -1,0 +1,14 @@
+<%# "Get 10 more proposals" (2nd Sep 30 update) — the same offer for sellers
+    and buyers once a round has closed. Starts another round on the SAME
+    request: up to 48 hours or 10 new proposals, shown only to professionals
+    who haven't proposed yet. Details can't be edited between rounds.
+    Locals: moreAction (POST URL), haveCount (proposals so far). %>
+<div class="card" id="get-more" style="border-left:4px solid var(--blue); margin-top:18px;">
+  <h2 style="font-size:16px;">Want more options?</h2>
+  <p class="sub" style="margin-bottom:10px;">Start another round on this same request. Verified professionals who <b>haven't</b> proposed yet get up to <%= H.ROUND_WINDOW_HOURS %> hours to respond, and you can receive up to <%= H.ROUND_CAP %> more proposals. <% if (haveCount > 0) { %>All <%= haveCount %> proposal<%= haveCount === 1 ? '' : 's' %> you already have stay right here, and you can still choose any of them.<% } %></p>
+  <form method="POST" action="<%= moreAction %>" onsubmit="return confirm('Get <%= H.ROUND_CAP %> more proposals? Your request goes live again for up to <%= H.ROUND_WINDOW_HOURS %> hours to professionals who haven\'t proposed yet. Your request details stay the same, and every proposal you already have is kept.');">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <button class="btn" type="submit" id="getMoreProposals">Get 10 more proposals</button>
+  </form>
+  <p class="note" style="margin-top:8px;">Your request details stay exactly the same in every round, so all professionals respond to the same information. If something important has changed, start a new request instead.</p>
+</div>

@@ -4,6 +4,7 @@
 <div class="tblwrap">
   <table class="cmp">
     <tr><th></th><% proposals.forEach(p => { %><th><%= p.agent_name %></th><% }) %></tr>
+    <% if (profile.round > 1) { %><tr><td>Round</td><% proposals.forEach(p => { %><td><%= p.round ? 'Round ' + p.round : '—' %></td><% }) %></tr><% } %>
     <tr><td>Brokerage</td><% proposals.forEach(p => { %><td><%= p.brokerage %></td><% }) %></tr>
     <tr><td>12-mo transactions*</td><% proposals.forEach(p => { %><td><%= (p.transactions_seller_12mo === null && p.transactions_buyer_12mo === null) ? '—' : ((p.transactions_buyer_12mo ?? 0) + ' buyer · ' + (p.transactions_seller_12mo ?? 0) + ' seller') %></td><% }) %></tr>
     <tr><td>Proposed compensation</td><% proposals.forEach(p => { %><td><b style="color:var(--navy); font-size:15px;"><%= H.buyerFeeLabel(p) %></b></td><% }) %></tr>

@@ -34,7 +34,7 @@
   <% if (proposals.length === 0) { %>
     <div class="card" style="text-align:center; padding:34px 20px;">
       <h2>No proposals this time</h2>
-      <p class="sub">This can happen in a brand-new market. Our team has been notified and will personally reach out to professionals in your area. You're welcome to create a new request whenever you're ready.</p>
+      <p class="sub">This can happen in a brand-new market. Our team has been notified and will personally reach out to professionals in your area. You can get more proposals on this same request below, or create a new request whenever you're ready.</p>
       <p style="margin-top:14px;"><a class="btn" href="/requests/new">Create a new request</a></p>
     </div>
   <% } else { %>
@@ -57,9 +57,8 @@
     <p class="note">Connecting releases your contact info to that one professional only. The listing agreement is signed with their brokerage, outside Connexli. No obligation.</p>
   <% } %>
 
-  <%# Seller extension and extra rounds are switched off since Sep 30 (one
-      standard rule: up to 48 hours or 10 proposals). See helpers.js. %>
-  <% if (H.SELLER_EXTENSION && request.status === 'closed' && !request.extended && proposals.length < request.proposal_cap) { %>
+  <%# The one-time 24-hour extension stays off (H.WINDOW_EXTENSION). %>
+  <% if (H.WINDOW_EXTENSION && request.status === 'closed' && !request.extended && proposals.length < request.proposal_cap) { %>
     <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
       <h2 style="font-size:16px;">Your window ended with <%= proposals.length %> proposal<%= proposals.length === 1 ? '' : 's' %> — want to keep it open?</h2>
       <p class="sub" style="margin-bottom:10px;">Keep this same request open for an additional <b>24 hours</b> — professionals who already proposed stay in, and new ones can still join until the extension ends or all <%= request.proposal_cap %> spots fill. Available once per request.</p>
@@ -70,21 +69,8 @@
     </div>
   <% } %>
 
-  <% if (H.SELLER_EXTRA_ROUNDS && request.status === 'closed') { %>
-    <% const roundFull = proposals.length >= request.proposal_cap; %>
-    <div class="card" style="border-left:4px solid var(--blue); margin-top:18px;">
-      <h2 style="font-size:16px;">Want more options?</h2>
-      <p class="sub" style="margin-bottom:10px;">Open another round: your request goes live again for <%= request.window_hours >= 24 ? (request.window_hours / 24) + ' day' + (request.window_hours > 24 ? 's' : '') : request.window_hours + ' hours' %> and up to 10 more verified professionals can propose — only agents who <b>haven't</b> proposed yet will see it. Every proposal you already have stays right here.</p>
-      <% if (roundFull) { %>
-        <form method="POST" action="/requests/<%= request.id %>/rebid" onsubmit="return confirm('Open a new proposal round? Up to 10 additional professionals (who haven\'t proposed yet) will be invited, and your current proposals remain saved.');">
-          <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <button class="btn ghost" type="submit">Request another round of proposals</button>
-        </form>
-      <% } else { %>
-        <button class="btn ghost" type="button" disabled style="opacity:.45; cursor:not-allowed;">Request another round of proposals</button>
-        <p class="note" style="margin-top:8px;">Another round becomes available after all <%= request.proposal_cap %> proposal spots have been filled.<% if (!request.extended) { %> Until then, the 24-hour extension above gives more professionals time to propose.<% } %></p>
-      <% } %>
-    </div>
+  <% if (H.EXTRA_ROUNDS && request.status === 'closed') { %>
+    <%- include('../partials/get-more-proposals', { moreAction: '/requests/' + request.id + '/rebid', haveCount: proposals.length }) %>
   <% } %>
 <% } %>
 <%- include('../partials/foot') %>

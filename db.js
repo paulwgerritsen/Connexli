@@ -597,7 +597,7 @@ async function init() {
 async function closeExpired() {
   const { rows } = await pool.query(
     `UPDATE requests SET status='closed' WHERE status='open' AND closes_at <= now() AND live_at <= now()
-     RETURNING id, seller_id, property_type, city, zip, price_range`);
+     RETURNING id, seller_id, property_type, city, zip, price_range, round`);
   return rows;
 }
 
