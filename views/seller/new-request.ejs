@@ -3,6 +3,10 @@
     shown read-only to a professional with the fictional practice answers.
     Nothing here can be submitted in that mode. %>
 <% const S = typeof sample !== 'undefined' && sample; %>
+<%# preview = public "See what Connexli asks" mode (Oct 1): the SAME form,
+    fully clickable, for visitors with no account. It has no submit action —
+    nothing is sent or saved — and ends with a "Create a Selling Request" card. %>
+<% const P = typeof preview !== 'undefined' && preview; %>
 <div class="narrow" style="max-width:640px;">
   <% if (S) { %>
     <a href="/agent/practice/seller" style="font-size:14px;">‹ Back to the practice opportunity</a>
@@ -11,6 +15,9 @@
       <b style="color:var(--navy);">See what the seller submitted</b>
       <span class="sub" style="display:inline;">Below is the exact form a homeowner completes on Connexli, filled in with this practice request's fictional answers (read-only). This is everything Connexli collects about the home before an opportunity reaches you — no address, name, or contact details.</span>
     </div>
+  <% } else if (P) { %>
+    <a href="https://connexli.com/selling.html" style="font-size:14px;">‹ Back to connexli.com</a>
+    <%- include('../partials/preview-banner', { previewKind: 'selling' }) %>
   <% } else { %>
   <a href="/dashboard" style="font-size:14px;">‹ Back to my requests</a>
   <% } %>
@@ -18,8 +25,8 @@
   <p class="sub">Professionals see only a general opportunity. Your address and contact info are hidden until you choose to share them.</p>
   <% if (error) { %><div class="error"><%= error %></div><% } %>
 
-  <form <% if (S) { %>onsubmit="return false;" aria-label="Sample seller request (read-only)"<% } else { %>method="POST" action="/requests/new"<% } %>>
-    <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <form <% if (S) { %>onsubmit="return false;" aria-label="Sample seller request (read-only)"<% } else if (P) { %>onsubmit="return false;" id="previewForm" aria-label="Selling request preview — nothing is submitted"<% } else { %>method="POST" action="/requests/new"<% } %>>
+    <% if (!P) { %><input type="hidden" name="_csrf" value="<%= csrf %>"><% } %>
     <fieldset <%= S ? 'disabled' : '' %> style="border:0; padding:0; margin:0; min-width:0;">
 
     <div class="card">
@@ -75,6 +82,8 @@
       </div>
       <% if (S) { %>
         <p class="note" style="margin-top:18px;">(The homeowner taps <b>Launch my request</b> here. Verified professionals nearby are then notified — that's when the opportunity reaches you.)</p>
+      <% } else if (P) { %>
+        <p class="note" style="margin-top:18px;">That's everything Connexli asks. In a real request, the next tap is <b>Launch my request</b> — in this preview there is nothing to submit.</p>
       <% } else { %>
       <button class="btn full" type="submit" style="margin-top:18px;">Launch my request</button>
       <% } %>
@@ -84,6 +93,10 @@
   </form>
   <% if (S) { %>
     <a class="btn full" href="/agent/practice/seller" style="margin-top:6px;">Back to the practice opportunity</a>
+  <% } %>
+  <% if (P) { %>
+    <%- include('../partials/preview-cta', { previewKind: 'selling' }) %>
+    <p class="note" style="text-align:center;">Buying too? <a href="/preview/buying">Preview the buying request ›</a></p>
   <% } %>
 </div>
 <%- include('../partials/foot') %>

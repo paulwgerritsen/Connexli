@@ -181,6 +181,7 @@ function regAttemptExceeded(key, max = 6, windowMs = 60 * 60 * 1000) {
 }
 const LICENSE_NUMBER_RE = /^[A-Za-z0-9][A-Za-z0-9 .\-\/]{1,39}$/;
 
+const H_ = require('../helpers');
 router.post('/register', authLimiter, async (req, res) => {
   const form = {
     role: req.body.role === 'agent' ? 'agent' : 'seller',
@@ -205,6 +206,14 @@ router.post('/register', authLimiter, async (req, res) => {
   if (overEmail || overLicense) {
     logEvent('registration_rate_limited', { meta: { role: form.role } });
     return res.status(429).render('register', { title: 'Create your account', error: 'Too many registration attempts. Please try again later.', form, H: require('../helpers'), turnstileSiteKey: turnstile.configured() ? turnstile.TURNSTILE_SITE_KEY : null });
+  }
+
+  // Utah suffix warning (Paul, Oct 1): a Utah license number with digits only
+  // is probably missing its suffix (e.g. -SA00). Warn BEFORE anything else
+  // happens — no account, no Turnstile token used — and let the applicant
+  // correct it or confirm it is complete. Never auto-appended; Utah only.
+  if (form.role === 'agent' && H_.utahLicenseMissingSuffix(form.license_state, form.license_number) && req.body.license_confirm !== 'yes') {
+    return res.status(400).render('register', { title: 'Create your account', error: null, licenseWarning: true, form, H: H_, turnstileSiteKey: turnstile.configured() ? turnstile.TURNSTILE_SITE_KEY : null });
   }
 
   // Human verification FIRST (Paul, Sep 1 §1): the Cloudflare Turnstile token

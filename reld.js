@@ -259,6 +259,9 @@ function brokeragesMatch(a, b) {
 const normEq = (a, b) => a && b &&
   String(a).toLowerCase().replace(/[^a-z0-9]/g, '') === String(b).toLowerCase().replace(/[^a-z0-9]/g, '');
 
+// Admin-facing note for a Utah "license not found" that goes to manual review.
+const UTAH_NOT_FOUND_NOTE = 'RELD could not find the submitted Utah license number. Check that the complete license number, including any applicable suffix, was entered correctly.';
+
 // Apply one verification result to a professional's stored record and return
 // the resulting verification_status. NEVER touches account status here —
 // account decisions (auto-approve/auto-reject) live in autoDecide below.
@@ -271,8 +274,26 @@ async function applyResult(userId, connexliName, connexliBrokerage, result, prev
     status = (prevStatus === 'needs_verification' || !prevStatus) ? 'unable_to_verify' : prevStatus;
     fields = { reld_error: result.error };
   } else if (!result.found) {
-    status = 'failed';
-    fields = { reld_error: 'License not found in RELD for this state and number' };
+    // Utah manual-review rule (Paul, Oct 1): a Utah applicant who is still
+    // PENDING and has never been verified is NOT failed/rejected just because
+    // RELD says "license not found" — the usual cause is a missing suffix
+    // (13529880 instead of 13529880-SA00). They go to Needs Review so an
+    // administrator (or the applicant) can correct the number and recheck.
+    // Everyone else — other states, accounts already decided, professionals
+    // who were verified before — keeps the existing "Failed" result.
+    const { rows: ctx } = await pool.query(
+      `SELECT license_state, status, reld_first_verified_at, license_override_at FROM agent_profiles WHERE user_id=$1`, [userId]);
+    const c = ctx[0] || {};
+    const utahReview = (c.license_state || 'UT') === 'UT' && c.status === 'pending' && !c.reld_first_verified_at;
+    // "Approve anyway" (Oct 2): an administrator already vouched for this
+    // license outside RELD, so a later not-found (recheck or audit) must not
+    // flip it to Failed and block their proposals. It stays Needs Review.
+    const overridden = !!c.license_override_at;
+    status = (utahReview || overridden) ? 'needs_review' : 'failed';
+    fields = {
+      reld_error: utahReview ? UTAH_NOT_FOUND_NOTE : 'License not found in RELD for this state and number',
+      reld_not_found: true, license_recheck_needed: false,
+    };
   } else {
     const active = isActive(result.licenseStatus);
     const nameRaw = namesMatch(connexliName, result.name);
@@ -289,7 +310,8 @@ async function applyResult(userId, connexliName, connexliBrokerage, result, prev
       reld_brokerage: result.brokerage, reld_city: result.city,
       reld_record_id: result.recordId ? String(result.recordId) : null,
       reld_last_verified: result.lastVerified ? String(result.lastVerified) : null,
-      reld_error: null, name_mismatch: !nameRaw, brokerage_mismatch: !brokRaw,
+      reld_error: null, name_mismatch: !nameRaw, brokerage_mismatch: !brokRaw, reld_not_found: false,
+      license_recheck_needed: false, // RELD has now answered for the number on file
     };
   }
   const verified = status === 'verified';
@@ -312,7 +334,7 @@ async function applyResult(userId, connexliName, connexliBrokerage, result, prev
 async function cachedResult(state, licenseNumber) {
   const { rows } = await pool.query(
     `SELECT verification_status, reld_name, reld_license_type, reld_license_status, reld_expiration,
-            reld_brokerage, reld_city, reld_record_id, reld_last_verified
+            reld_brokerage, reld_city, reld_record_id, reld_last_verified, reld_not_found
      FROM agent_profiles
      WHERE license_state=$1 AND LOWER(license_number)=LOWER($2)
        AND reld_checked_at > now() - interval '30 days'
@@ -320,7 +342,9 @@ async function cachedResult(state, licenseNumber) {
      ORDER BY reld_checked_at DESC LIMIT 1`, [state, licenseNumber]);
   const r = rows[0];
   if (!r) return null;
-  if (r.verification_status === 'failed') return { found: false, cached: true };
+  // A definitive "not found" is cached whether it was stored as Failed or as
+  // a Utah Needs Review (Oct 1), so a repeated wrong number costs no lookup.
+  if (r.verification_status === 'failed' || r.reld_not_found) return { found: false, cached: true };
   if (!r.reld_name && !r.reld_license_status) return null; // no usable registry data stored
   return {
     found: true, cached: true,
@@ -339,9 +363,23 @@ async function cachedResult(state, licenseNumber) {
 //  - expired / needs_review / unable_to_verify → no account change; an
 //    administrator (or a retry, for outages) decides. An API error can
 //    therefore never reject anyone.
-async function autoDecide(userId, status, result, p) {
+async function autoDecide(userId, status, result, p, approveOnly = false) {
   if (p.account_status !== 'pending') return;
   const mailer = require('./mailer');
+  // Utah "license not found" → manual review (Paul, Oct 1): the account stays
+  // Pending. Tell the applicant once (most can fix a missing suffix
+  // themselves) and tell the admin once that a license needs review.
+  if (status === 'needs_review' && !result.unavailable && result.found === false) {
+    const { rows: seen } = await pool.query(
+      `SELECT 1 FROM events WHERE event_type='agent_license_needs_review' AND user_id=$1 LIMIT 1`, [userId]);
+    logEvent('agent_license_needs_review', { userId, meta: { license: (p.license_state || 'UT') + '/' + p.license_number, cached: !!result.cached } });
+    if (!seen.length) {
+      mailer.agentLicenseNotFound(p.email, p.name, p.license_number); // fire and forget
+      mailer.adminLicenseReview(p); // fire and forget
+    }
+    console.log(`[reld] user=${userId} Utah license not found → needs review (account stays pending)`);
+    return;
+  }
   if (status === 'verified') {
     const { rowCount } = await pool.query(
       `UPDATE agent_profiles SET status='approved', reviewed_at=now(), reviewed_by='RELD auto-verification'
@@ -351,7 +389,7 @@ async function autoDecide(userId, status, result, p) {
       mailer.agentApproved(p.email, p.name); // fire and forget
       console.log(`[reld] auto-approved user=${userId} (active license, identity matched)`);
     }
-  } else if (status === 'failed' && !result.unavailable && result.found === false) {
+  } else if (!approveOnly && status === 'failed' && !result.unavailable && result.found === false) {
     const { rowCount } = await pool.query(
       `UPDATE agent_profiles SET status='rejected', reviewed_at=now(), reviewed_by='RELD auto-verification',
          rejection_reason='Automatically rejected — RELD returned license not found for the submitted state and license number.'
@@ -367,10 +405,13 @@ async function autoDecide(userId, status, result, p) {
 // Verify one professional by user id.
 // opts.useCache   — reuse a recent definitive result for this state+number
 //                   instead of spending an API lookup (signup/correction path).
-// opts.autoDecide — apply the automatic approve/reject rules above (ONLY the
+// opts.autoDecide — apply the automatic approve/reject rules above (the
 //                   post-email-verification signup path and the professional's
-//                   own license correction; NEVER admin recheck, NEVER the
-//                   batch audit, NEVER anything at deploy/boot).
+//                   own license correction). The value 'approve-only' is used
+//                   by the admin Recheck (Oct 1): a PENDING account that now
+//                   verifies is approved through the normal process, but an
+//                   admin recheck never rejects anyone. NEVER the batch
+//                   audit, NEVER anything at deploy/boot.
 async function verifyProfessional(userId, opts = {}) {
   const { rows } = await pool.query(
     `SELECT ap.license_state, ap.license_number, ap.brokerage, ap.verification_status,
@@ -384,7 +425,7 @@ async function verifyProfessional(userId, opts = {}) {
   const status = await applyResult(userId, p.name, p.brokerage, result, p.verification_status,
     { name: p.confirmed_reld_name, brokerage: p.confirmed_reld_brokerage });
   console.log(`[reld] verify user=${userId} license=${p.license_state}/${p.license_number} → ${status}${result.cached ? ' (cached — no API call)' : ''}`);
-  if (opts.autoDecide) await autoDecide(userId, status, result, p);
+  if (opts.autoDecide) await autoDecide(userId, status, result, p, opts.autoDecide === 'approve-only');
   return status;
 }
 
@@ -404,5 +445,5 @@ module.exports = {
   configured, verifyLicense, batchVerify, verifyProfessional, applyResult,
   namesMatch, brokeragesMatch, batchProblem, cleanState, cleanNumber,
   VERIFICATION_LABELS, VERIFICATION_BADGE, BLOCKING_STATUSES,
-  RELD_API_BASE_URL, BATCH_SIZE,
+  RELD_API_BASE_URL, BATCH_SIZE, UTAH_NOT_FOUND_NOTE,
 };

@@ -1,0 +1,19 @@
+<%# The applicant's own license-correction form (pending page). Rate-limited
+    and re-verified server-side (/agent/license-correction). Local: profile. %>
+<form method="POST" action="/agent/license-correction">
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <div class="grid2">
+    <div>
+      <label for="license_state">License state</label>
+      <select id="license_state" name="license_state">
+        <% H.LICENSE_STATES.forEach(s => { %><option value="<%= s[0] %>" <%= (profile.license_state || 'UT') === s[0] ? 'selected' : '' %>><%= s[1] %></option><% }) %>
+      </select>
+    </div>
+    <div>
+      <label for="license_number">License number</label>
+      <input type="text" id="license_number" name="license_number" value="<%= profile.license_number %>" required>
+    </div>
+  </div>
+  <%- include('license-number-help', { warnOnSubmit: true }) %>
+  <button class="btn full" type="submit" style="margin-top:14px;">Re-check my license</button>
+</form>

@@ -1,0 +1,50 @@
+<%# Utah license-number guidance (Paul, Oct 1). Used under every license
+    number field (registration, the applicant's correction form, the admin
+    edit form). Utah ONLY — other states get no suffix guidance, and nothing
+    is ever appended automatically.
+    Locals: warnOnSubmit (true = warn before a digits-only Utah number is
+    submitted; the person can correct it or confirm it is complete),
+    showWarning (server asked for confirmation), onlyWhen (optional JS
+    expression string that must be true for the warning to apply). %>
+<p class="note" data-ut-license-help style="margin-top:4px; display:none;">Enter your complete Utah real estate license number, including the suffix (example: 12345678-SA00).</p>
+<% if (typeof warnOnSubmit !== 'undefined' && warnOnSubmit) { %>
+<div class="error" data-ut-license-warn style="display:<%= (typeof showWarning !== 'undefined' && showWarning) ? 'block' : 'none' %>; margin-top:8px;">
+  <b>Please check your license number.</b> Utah license numbers may include a suffix such as -SA00. Enter the complete license number exactly as shown on your license.
+  <label style="display:flex; gap:8px; align-items:flex-start; margin-top:8px; font-weight:400; cursor:pointer;">
+    <input type="checkbox" name="license_confirm" value="yes" style="margin-top:3px; width:16px; height:16px; flex:none;">
+    <span>I've checked — this is my complete license number.</span>
+  </label>
+</div>
+<% } %>
+<script>
+(function(){
+  var script = document.currentScript, form = script.closest('form');
+  if (!form) return;
+  var state = form.querySelector('[name="license_state"]'), num = form.querySelector('[name="license_number"]');
+  var help = form.querySelector('[data-ut-license-help]'), warn = form.querySelector('[data-ut-license-warn]');
+  var utPlaceholder = 'e.g. 12345678-SA00', otherPlaceholder = 'Exactly as shown on your license';
+  function isUtah(){ return !state || state.value === 'UT'; }
+  // Digits only (spaces ignored) = no suffix. Nothing is ever added for them.
+  function missingSuffix(){ return isUtah() && /^\d+$/.test(String(num.value).replace(/\s+/g, '')); }
+  function applies(){ <% if (typeof onlyWhen !== 'undefined' && onlyWhen) { %>try { return !!(<%- onlyWhen %>); } catch (e) { return true; }<% } else { %>return true;<% } %> }
+  function refresh(){
+    if (help) help.style.display = isUtah() ? 'block' : 'none';
+    num.placeholder = isUtah() ? utPlaceholder : otherPlaceholder;
+    if (warn && !missingSuffix()) { warn.style.display = 'none'; var c = warn.querySelector('input'); if (c) c.checked = false; }
+  }
+  if (state) state.addEventListener('change', refresh);
+  num.addEventListener('input', refresh);
+  refresh();
+  <% if (typeof showWarning !== 'undefined' && showWarning) { %>if (warn && missingSuffix()) warn.style.display = 'block';<% } %>
+  if (warn) form.addEventListener('submit', function(e){
+    if (e.submitter && e.submitter.hasAttribute('formaction')) return;
+    if (!applies() || !missingSuffix()) return;
+    var c = warn.querySelector('input');
+    if (c.checked) return;            // they confirmed the number is complete
+    e.preventDefault();               // first time: stop, explain, let them fix it
+    warn.style.display = 'block';
+    num.focus();
+    warn.scrollIntoView({ block: 'center' });
+  });
+})();
+</script>

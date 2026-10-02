@@ -122,6 +122,27 @@ function agentApproved(email, name) {
     ], 'See open opportunities', APP_URL + '/agent'), true);
 }
 
+// Utah "license not found" → manual review (Paul, Oct 1). The applicant is
+// NOT rejected; most of the time the number is just missing its suffix, and
+// they can fix it themselves from their Connexli page.
+function agentLicenseNotFound(email, name, licenseNumber) {
+  return send(email, 'Please check your license number on Connexli',
+    template('One quick check on your license number', [
+      `${name.split(' ')[0]}, thanks for joining Connexli. We couldn't find the license number you entered (<b>${licenseNumber}</b>) in the Utah real estate license records.`,
+      'This is usually a formatting issue. Utah license numbers may include a suffix such as <b>-SA00</b> (example: 12345678-SA00). Please log in and enter your complete license number exactly as shown on your license — we\'ll check it again right away.',
+      'Your account is still open and under review — nothing has been rejected. If your number is already complete, just reply to this email and we\'ll take a look.',
+    ], 'Check my license number', APP_URL + '/login'), true);
+}
+
+function adminLicenseReview(agent) {
+  return send(ADMIN_EMAIL, 'Action needed: Utah license needs review',
+    template('License needs review', [
+      `<b>${agent.name}</b> (${agent.email}) is waiting in the verification queue as <b>Needs Review</b>.`,
+      `Submitted license: <b>${agent.license_number}</b> (${agent.license_state || 'UT'})`,
+      'RELD could not find the submitted Utah license number. Check that the complete license number, including any applicable suffix, was entered correctly. You can edit the license number on their profile and click Recheck license — or reject the account if it cannot be validated.',
+    ], 'Review in admin panel', APP_URL + '/admin'), true);
+}
+
 function agentRejected(email, name) {
   return send(email, 'About your Connexli verification',
     template('Verification unsuccessful', [
@@ -421,7 +442,7 @@ async function processFollowups() {
   }
 }
 
-module.exports = {
+module.exports = { agentLicenseNotFound, adminLicenseReview,
   adminNewAgent, agentApproved, agentRejected, agentsNewRequest, processFollowups, contactMessage,
   sellerRequestReceived, buyerProfileLive,
   sellerProposalsReady, agentWon, passwordReset, verifyEmail,

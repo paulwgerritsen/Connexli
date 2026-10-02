@@ -1,0 +1,6 @@
+<%# Public request preview (Paul, Oct 1): shown on every preview screen and
+    kept in view while scrolling, so it is always clear this is not a real
+    request. Local: previewKind ('selling' | 'buying'). %>
+<div data-preview-banner="<%= previewKind %>" style="position:sticky; top:0; z-index:20; background:#FFF8E6; border:1.5px dashed #D9A21B; border-radius:12px; padding:10px 14px; margin:10px 0 14px; color:#5C4300; font-size:14px; line-height:1.45; box-shadow:0 4px 14px rgba(10,27,51,.08);">
+  <b>Preview — nothing will be submitted.</b> This is the real <%= previewKind === 'buying' ? 'buying' : 'selling' %> request form. Try the questions; no account is needed and nothing is saved.
+</div>

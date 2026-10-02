@@ -1,0 +1,9 @@
+<%# End of a public request preview (Paul, Oct 1): replaces the normal
+    submit action and leads into the normal signup/request process.
+    Local: previewKind ('selling' | 'buying'). %>
+<div class="card" id="preview-cta" style="border-left:4px solid var(--blue); margin-top:14px; text-align:center; padding:26px 20px;">
+  <h2>Ready to get proposals?</h2>
+  <p class="sub" style="max-width:480px; margin:6px auto 16px;">Create your free request and let verified real estate professionals compete for your business.</p>
+  <a class="btn" id="previewCreate" href="/register?source=<%= previewKind === 'buying' ? 'preview-buying' : 'preview-selling' %>"><%= previewKind === 'buying' ? 'Create a Buying Request' : 'Create a Selling Request' %></a>
+  <p class="note" style="margin-top:12px;">Preview — nothing was submitted or saved. Creating a request starts with a free account; your <%= previewKind === 'buying' ? 'name and contact info stay' : 'address and contact info stay' %> hidden until you choose to share them.</p>
+</div>

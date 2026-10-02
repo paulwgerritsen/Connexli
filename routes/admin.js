@@ -335,7 +335,16 @@ router.get('/admin/agents/:id(\\d+)', admin, async (req, res) => {
     // last 60 seconds, so an accidental double-click can't burn two lookups.
     recentCheck: agent.reld_checked_at && (Date.now() - new Date(agent.reld_checked_at).getTime() < 60000),
     creditMsg: req.query.credit === 'saved' ? 'Credit adjustment recorded.' : (req.query.credit === 'error' ? 'Adjustment not saved — enter a whole-number amount (not zero) and a reason.' : null),
-    recheckMsg: req.query.recheck === 'done' ? 'License recheck complete — the result below is current.'
+    licenseEdits: (await pool.query(
+      `SELECT meta, created_at FROM events WHERE event_type='admin_license_edited' AND user_id=$1 ORDER BY created_at DESC LIMIT 10`, [req.params.id])).rows,
+    overrideMsg: { done: 'Approved by administrator override — recorded with your name and reason. The professional has been emailed.',
+      reason: 'Not approved — please enter a reason of at least 10 characters (for example where you confirmed the license).' }[req.query.override] || null,
+    licenseMsg: { saved: 'License number saved. Nothing has been verified yet — click Recheck license to check it with RELD.',
+      reopened: 'License number saved and the account was reopened to Pending. Nothing has been verified yet — click Recheck license to check it with RELD.',
+      invalid: 'License number not saved — use letters, numbers, spaces, dots, dashes or slashes only (2–40 characters).',
+      same: 'That is already the license on file — nothing changed.' }[req.query.license] || null,
+    recheckMsg: req.query.recheck === 'approved' ? 'License verified by RELD — the account met the normal approval rules and was approved automatically. The professional has been emailed.'
+      : req.query.recheck === 'done' ? 'License recheck complete — the result below is current.'
       : (req.query.recheck === 'skipped' ? 'A check ran less than a minute ago — result below is already current, no second lookup was spent.'
       : (req.query.recheck === 'unconfigured' ? 'RELD is not configured yet (RELD_API_KEY is not set), so no lookup was made.' : null)),
     reviewMsg: req.query.review === 'resolved' ? 'Identity confirmed — the review flag is cleared and this professional now shows as Verified.' : null,
@@ -352,11 +361,81 @@ router.post('/admin/agents/:id(\\d+)/recheck', admin, async (req, res) => {
   if (rows[0].reld_checked_at && Date.now() - new Date(rows[0].reld_checked_at).getTime() < 60000) {
     return res.redirect('/admin/agents/' + req.params.id + '?recheck=skipped');
   }
-  // Deliberate admin action: always a fresh API lookup (no cache), and NEVER
-  // an automatic account decision — the administrator is right here to decide.
-  const status = await reld.verifyProfessional(parseInt(req.params.id, 10), { useCache: false, autoDecide: false });
-  logEvent('reld_recheck', { userId: parseInt(req.params.id, 10), meta: { result: status } });
-  res.redirect('/admin/agents/' + req.params.id + '?recheck=done');
+  // Deliberate admin action: always a fresh API lookup (no cache). Since
+  // Oct 1 (Paul): if the account is still PENDING and the license now
+  // verifies, it is approved through the normal automatic process (same
+  // rules as signup). A recheck NEVER rejects anyone, and it never changes
+  // an account that is already approved, suspended or rejected.
+  const before = await pool.query(`SELECT status FROM agent_profiles WHERE user_id=$1`, [req.params.id]);
+  const status = await reld.verifyProfessional(parseInt(req.params.id, 10), { useCache: false, autoDecide: 'approve-only' });
+  const after = await pool.query(`SELECT status FROM agent_profiles WHERE user_id=$1`, [req.params.id]);
+  const approvedNow = before.rows[0].status === 'pending' && after.rows[0].status === 'approved';
+  logEvent('reld_recheck', { userId: parseInt(req.params.id, 10), meta: { result: status, by: req.session.user.email, auto_approved: approvedNow } });
+  res.redirect('/admin/agents/' + req.params.id + '?recheck=' + (approvedNow ? 'approved' : 'done'));
+});
+
+// ---------- approve anyway (Paul, Oct 2) ----------
+// Admin override for the rare case where RELD can't find a license that the
+// administrator has confirmed another way (e.g. the state's own lookup).
+// Only offered when normal Approve is hidden for a license reason. A written
+// reason is REQUIRED and is stored with who/when. The license check is shown
+// as Needs Review (never "Verified" — RELD did not verify it), which does
+// not block proposals, and a later RELD not-found will not undo the override.
+router.post('/admin/agents/:id(\\d+)/approve-override', admin, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ap.status, ap.verification_status, ap.reld_not_found, ap.license_recheck_needed, u.email, u.name
+     FROM agent_profiles ap JOIN users u ON u.id=ap.user_id WHERE ap.user_id=$1`, [req.params.id]);
+  const p = rows[0];
+  if (!p) return res.status(404).render('error', { title: 'Not found', message: 'That professional does not exist.' });
+  const blocked = p.verification_status === 'failed' || (p.verification_status === 'needs_review' && p.reld_not_found)
+    || (p.license_recheck_needed && p.verification_status === 'needs_verification');
+  if (!blocked || !['pending', 'rejected'].includes(p.status)) return res.redirect('/admin/agents/' + req.params.id);
+  const reason = H.clean(req.body.reason, 300);
+  if (reason.length < 10) return res.redirect('/admin/agents/' + req.params.id + '?override=reason');
+  await pool.query(
+    `UPDATE agent_profiles SET status='approved', reviewed_at=now(), reviewed_by=$1, rejection_reason=NULL,
+       verification_status='needs_review', license_recheck_needed=false,
+       license_override_at=now(), license_override_by=$2, license_override_reason=$3
+     WHERE user_id=$4`, [req.session.user.email + ' (manual override)', req.session.user.email, reason, req.params.id]);
+  logEvent('agent_approved_override', { userId: parseInt(req.params.id, 10), meta: { by: req.session.user.email, reason, was: p.status + '/' + p.verification_status } });
+  mailer.agentApproved(p.email, p.name); // fire and forget
+  res.redirect('/admin/agents/' + req.params.id + '?override=done');
+});
+
+// ---------- edit license number (Paul, Oct 1) ----------
+// Admin-only. Fixes a formatting error in the submitted license — e.g.
+// 13529880 → 13529880-SA00 — WITHOUT verifying anything: the license check
+// resets to "Not yet checked" and the admin then clicks Recheck license, so
+// RELD (not a person) decides. A rejected account is reopened to Pending so
+// a legitimate professional doesn't have to register again. Every edit is
+// recorded (who, old → new) in the event log.
+router.post('/admin/agents/:id(\\d+)/license', admin, async (req, res) => {
+  const { rows } = await pool.query(`SELECT license_state, license_number, status FROM agent_profiles WHERE user_id=$1`, [req.params.id]);
+  const p = rows[0];
+  if (!p) return res.status(404).render('error', { title: 'Not found', message: 'That professional does not exist.' });
+  const license_state = H.LICENSE_STATE_CODES.includes(req.body.license_state) ? req.body.license_state : (p.license_state || 'UT');
+  const license_number = H.clean(req.body.license_number, 40);
+  if (!/^[A-Za-z0-9][A-Za-z0-9 .\-\/]{1,39}$/.test(license_number)) {
+    return res.redirect('/admin/agents/' + req.params.id + '?license=invalid');
+  }
+  if (license_number === p.license_number && license_state === (p.license_state || 'UT')) {
+    return res.redirect('/admin/agents/' + req.params.id + '?license=same');
+  }
+  const reopen = p.status === 'rejected';
+  await pool.query(
+    `UPDATE agent_profiles SET license_state=$1, license_number=$2,
+       verification_status='needs_verification', reld_verified=false, reld_not_found=false, reld_error=NULL, reld_checked_at=NULL,
+       license_recheck_needed=true,
+       reld_name=NULL, reld_license_type=NULL, reld_license_status=NULL, reld_expiration=NULL, reld_brokerage=NULL,
+       reld_city=NULL, reld_record_id=NULL, reld_last_verified=NULL, name_mismatch=false, brokerage_mismatch=false,
+       status = CASE WHEN status='rejected' THEN 'pending' ELSE status END,
+       rejection_reason = CASE WHEN status='rejected' THEN NULL ELSE rejection_reason END,
+       reviewed_by = CASE WHEN status='rejected' THEN NULL ELSE reviewed_by END,
+       reviewed_at = CASE WHEN status='rejected' THEN NULL ELSE reviewed_at END
+     WHERE user_id=$3`, [license_state, license_number, req.params.id]);
+  logEvent('admin_license_edited', { userId: parseInt(req.params.id, 10),
+    meta: { by: req.session.user.email, from: (p.license_state || 'UT') + '/' + p.license_number, to: license_state + '/' + license_number, reopened: reopen } });
+  res.redirect('/admin/agents/' + req.params.id + '?license=' + (reopen ? 'reopened' : 'saved'));
 });
 
 // ---------- confirm identity / clear review (Paul, Sep 1 — PDF 2) ----------
@@ -415,7 +494,7 @@ router.post('/admin/reld-audit', admin, async (req, res) => {
       after = await reld.applyResult(p.user_id, p.name, p.brokerage, r, p.verification_status, { name: p.confirmed_reld_name, brokerage: p.confirmed_reld_brokerage });
       if (r.unavailable) { category = 'api_error'; note = r.error; summary.api_error++; }
       else if (after === 'verified') { category = 'verified'; summary.verified++; }
-      else if (after === 'needs_review') { category = 'needs_review'; note = 'Registry record found; name or brokerage differs'; summary.needs_review++; }
+      else if (after === 'needs_review') { category = 'needs_review'; note = r.found === false ? 'Utah license number not found — check for a missing suffix (manual review)' : 'Registry record found; name or brokerage differs'; summary.needs_review++; }
       else { category = 'failed'; note = after === 'expired' ? 'License found but not active' : 'License not found for this state and number'; summary.failed++; }
     }
     outcomes.push({ user_id: p.user_id, name: p.name, email: p.email, license: (p.license_state || 'UT') + ' ' + p.license_number, before: p.verification_status, after, category, note });

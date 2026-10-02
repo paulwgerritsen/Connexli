@@ -3,6 +3,10 @@
     read-only to a professional with the fictional practice answers. Nothing
     here can be submitted in that mode. %>
 <% const S = typeof sample !== 'undefined' && sample; %>
+<%# preview = public "See what Connexli asks" mode (Oct 1): the SAME form,
+    fully clickable, for visitors with no account. No submit action — nothing
+    is sent or saved — and it ends with a "Create a Buying Request" card. %>
+<% const P = typeof preview !== 'undefined' && preview; %>
 <div class="narrow" style="max-width:640px;">
   <% if (S) { %>
     <a href="/agent/practice/buyer" style="font-size:14px;">‹ Back to the practice opportunity</a>
@@ -11,6 +15,9 @@
       <b style="color:var(--navy);">See what the buyer submitted</b>
       <span class="sub" style="display:inline;">Below is the exact form a buyer completes on Connexli, filled in with this practice request's fictional answers (read-only). Step 2 shows the optional extra details. Buyers stay anonymous — no name or contact details are shared until they choose you.</span>
     </div>
+  <% } else if (P) { %>
+    <a href="https://connexli.com/buying.html" style="font-size:14px;">‹ Back to connexli.com</a>
+    <%- include('../partials/preview-banner', { previewKind: 'buying' }) %>
   <% } else { %>
   <%# Straight back to the dashboard (Paul, Aug 16) — never via the previous
       request's connected/success page. %>
@@ -20,8 +27,8 @@
   <p class="sub">About 2 minutes. Agents see an anonymous snapshot — your name and contact info stay hidden until you choose to connect.</p>
   <% if (error) { %><div class="error"><%= error %></div><% } %>
 
-  <form <% if (S) { %>onsubmit="return false;" aria-label="Sample buyer request (read-only)"<% } else { %>method="POST" action="/buyer/new"<% } %>>
-    <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <form <% if (S) { %>onsubmit="return false;" aria-label="Sample buyer request (read-only)"<% } else if (P) { %>onsubmit="return false;" id="previewForm" aria-label="Buying request preview — nothing is submitted"<% } else { %>method="POST" action="/buyer/new"<% } %>>
+    <% if (!P) { %><input type="hidden" name="_csrf" value="<%= csrf %>"><% } %>
     <fieldset <%= S ? 'disabled' : '' %> style="border:0; padding:0; margin:0; min-width:0;">
 
     <div class="card">
@@ -239,12 +246,18 @@
 
     <% if (S) { %>
       <p class="note" style="text-align:center;">(The buyer taps <b>Publish my buyer profile</b> here. Verified buyer's agents near their search areas are then notified.)</p>
+    <% } else if (P) { %>
+      <p class="note" style="text-align:center;">That's the buying request. In a real request, the next tap is <b>Publish my buyer profile</b> — in this preview there is nothing to submit.</p>
     <% } else { %>
     <button class="btn full" type="submit" style="margin-top:6px;">Publish my buyer profile</button>
     <% } %>
     <p class="note" style="text-align:center;">Free · anonymous until you connect · no obligation</p>
     </fieldset>
   </form>
+  <% if (P) { %>
+    <%- include('../partials/preview-cta', { previewKind: 'buying' }) %>
+    <p class="note" style="text-align:center;">After publishing, buyers can add a few optional details. <a href="/preview/buying/details" id="previewDetails">Preview those questions ›</a> · Selling too? <a href="/preview/selling">Preview the selling request ›</a></p>
+  <% } %>
   <% if (S) { %>
     <a class="btn full" href="/agent/practice/buyer/request/boost" id="sampleBoostNext">Next: the optional details this buyer added ›</a>
     <a class="btn ghost full" href="/agent/practice/buyer" style="margin-top:10px;">Back to the practice opportunity</a>

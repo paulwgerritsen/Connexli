@@ -693,9 +693,12 @@ const correctionLimiter = require('express-rate-limit')({
 router.post('/agent/license-correction', agent, correctionLimiter, async (req, res) => {
   const profile = await profileOf(req.session.user.id);
   if (!profile) return res.redirect('/agent');
-  // Only meaningful while the license is definitively failed (auto-rejected
-  // applicants) — everything else goes through normal admin channels.
-  if (profile.verification_status !== 'failed' || !['rejected', 'pending'].includes(profile.status)) {
+  // Only meaningful while RELD says the license was not found: auto-rejected
+  // applicants (Failed), and — since Oct 1 — Utah applicants waiting in
+  // manual review because their number wasn't found (usually a missing
+  // suffix). Everything else goes through normal admin channels.
+  const notFoundReview = profile.verification_status === 'needs_review' && profile.reld_not_found;
+  if (!(profile.verification_status === 'failed' || notFoundReview) || !['rejected', 'pending'].includes(profile.status)) {
     return res.redirect('/agent');
   }
   // Per-account cap: 3 corrections per rolling day, counted in the audit log.
@@ -712,7 +715,7 @@ router.post('/agent/license-correction', agent, correctionLimiter, async (req, r
   }
   await pool.query(
     `UPDATE agent_profiles SET license_state=$1, license_number=$2, verification_status='needs_verification',
-       status='pending', rejection_reason=NULL, reviewed_by=NULL, reviewed_at=NULL, reld_error=NULL
+       status='pending', rejection_reason=NULL, reviewed_by=NULL, reviewed_at=NULL, reld_error=NULL, reld_not_found=false, license_recheck_needed=false
      WHERE user_id=$3`, [license_state, license_number, req.session.user.id]);
   logEvent('license_correction', { userId: req.session.user.id, meta: { license_state, license_number } });
   const reld = require('../reld');

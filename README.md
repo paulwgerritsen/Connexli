@@ -9,6 +9,12 @@ Sealed-proposal marketplace for real estate representation. Utah pilot.
   round closes, "Get 10 more proposals" opens another round on the SAME request (up to 10 more, only for
   professionals who haven't proposed; earlier proposals stay selectable; details can't be edited between rounds).
   Admin request pages show a round history.
+- Public request previews (`/preview/selling`, `/preview/buying`): the real request forms, clickable with no
+  account. Mounted before sessions — they never touch the database (see `routes/preview.js`).
+- Utah license numbers: registration warns when the suffix (e.g. `-SA00`) looks missing (never auto-added). A Utah
+  "license not found" from RELD puts a pending applicant in manual review (Needs Review / Pending) instead of
+  auto-rejecting; admins can Edit license number then Recheck license (a pending account that verifies is approved
+  automatically; a recheck never rejects). Other states are unchanged.
 - Professionals can practice both a seller and a buyer proposal from their dashboard (`/agent/practice`) —
   fictional requests, previews of what the consumer sees, and zero production effects (no records, credits,
   emails or events)

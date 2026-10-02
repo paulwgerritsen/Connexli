@@ -29,10 +29,20 @@
 
 <div class="card">
   <h2 style="font-size:16px;">License verification</h2>
-  <% if (recheckMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:4px;"><%= recheckMsg %></p><% } %>
+  <% if (recheckMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:4px;" data-recheck-msg><%= recheckMsg %></p><% } %>
+  <% if (typeof licenseMsg !== 'undefined' && licenseMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:4px;" data-license-msg><%= licenseMsg %></p><% } %>
+  <% const overridden = !!agent.license_override_at && agent.status === 'approved'; %>
+  <% const notFoundReview = agent.verification_status === 'needs_review' && agent.reld_not_found && !overridden; %>
+  <% if (overridden && agent.verification_status !== 'verified') { %>
+    <div class="sealed" style="margin:8px 0 10px;">ℹ️ <span><b>Approved by administrator override.</b> RELD has not verified this license; <%= agent.license_override_by %> approved it on <%= new Date(agent.license_override_at).toLocaleDateString('en-US') %> — "<%= agent.license_override_reason %>". A later Recheck that succeeds will show it as Verified.</span></div>
+  <% } %>
+  <% if (notFoundReview) { %>
+    <div class="sealed" style="border-left:4px solid #D9A21B; margin:8px 0 10px;" data-license-review>⚠️ <span><b>License needs review.</b> RELD could not find the submitted <%= (agent.license_state || 'UT') === 'UT' ? 'Utah ' : '' %>license number. Check that the complete license number, including any applicable suffix (for example <b>-SA00</b>), was entered correctly. If it's a formatting error, use <b>Edit license number</b> below and then <b>Recheck license</b>. If the license cannot be validated, reject the account under Administrator actions.</span></div>
+  <% } %>
   <% if (typeof reviewMsg !== 'undefined' && reviewMsg) { %><p class="note" style="color:var(--good); font-weight:600; margin-top:4px;"><%= reviewMsg %></p><% } %>
   <div class="sumrow"><span>Verification status</span><span><span class="badge <%= VB[agent.verification_status] || 'pending' %>"><%= VL[agent.verification_status] || agent.verification_status %></span> <span class="meta">(separate from account status: <span class="badge <%= agent.status %>"><%= agent.status %></span>)</span></span></div>
-  <div class="sumrow"><span>License on file</span><span><%= agent.license_number %> (<%= agent.license_state || 'UT' %>)</span></div>
+  <div class="sumrow"><span>Submitted license number</span><span><b><%= agent.license_number %></b></span></div>
+  <div class="sumrow"><span>License state</span><span><%= (H.LICENSE_STATES.find(s => s[0] === (agent.license_state || 'UT')) || [])[1] || agent.license_state %> (<%= agent.license_state || 'UT' %>)</span></div>
   <% if (agent.reld_name) { %>
     <div class="sumrow"><span>Registry name</span><span><%= agent.reld_name %><% if (agent.name_mismatch && agent.verification_status === 'needs_review') { %> <b style="color:#B45309;">≠ "<%= agent.name %>" on Connexli — review</b><% } else if (agent.name_mismatch && agent.review_resolved_at) { %> <span class="meta" style="color:var(--good);">differs from preferred name — identity confirmed</span><% } %></span></div>
     <div class="sumrow"><span>Registry type / status</span><span><%= agent.reld_license_type || '—' %> · <%= agent.reld_license_status || '—' %></span></div>
@@ -41,7 +51,7 @@
     <% if (agent.reld_city) { %><div class="sumrow"><span>Registry city</span><span><%= agent.reld_city %></span></div><% } %>
     <% if (agent.reld_last_verified) { %><div class="sumrow"><span>RELD data as of</span><span><%= agent.reld_last_verified %></span></div><% } %>
   <% } %>
-  <% if (agent.reld_error) { %><div class="sumrow"><span>Last check note</span><span style="color:#B42318;"><%= agent.reld_error %></span></div><% } %>
+  <% if (agent.reld_error) { %><div class="sumrow"><span>RELD result / last check note</span><span style="color:#B42318;"><%= agent.reld_error %></span></div><% } %>
   <div class="sumrow"><span>Last checked</span><span><%= agent.reld_checked_at ? new Date(agent.reld_checked_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) + ' (Mountain)' : 'never' %></span></div>
   <% if (agent.review_resolved_at) { %>
     <div class="sumrow"><span>Identity review</span><span style="color:var(--good);">Confirmed by <%= agent.review_resolved_by %> on <%= new Date(agent.review_resolved_at).toLocaleDateString('en-US') %><% if (agent.review_resolution) { %> — <span class="meta"><%= agent.review_resolution %></span><% } %></span></div>
@@ -62,8 +72,33 @@
     <button class="btn sm" type="submit" <%= (reldConfigured && !recentCheck) ? '' : 'disabled' %>>Recheck license</button>
     <% if (!reldConfigured) { %><span class="meta"> RELD isn't configured yet (no RELD_API_KEY).</span>
     <% } else if (recentCheck) { %><span class="meta"> Checked less than a minute ago — the result above is current.</span>
-    <% } else { %><span class="meta"> Uses one RELD lookup. Verification status never changes account status by itself.</span><% } %>
+    <% } else if (agent.status === 'pending') { %><span class="meta"> Uses one RELD lookup. If RELD verifies this pending account and it meets the normal approval rules, it is approved automatically. A recheck never rejects anyone.</span>
+    <% } else { %><span class="meta"> Uses one RELD lookup. Verification status never changes the account status of an already-decided account.</span><% } %>
   </form>
+
+  <%# Edit license number (Paul, Oct 1): admin-only fix for formatting errors
+      such as a missing Utah suffix. Saving verifies NOTHING — the check
+      resets and the admin then runs Recheck license. %>
+  <h3 style="font-size:14px; margin:18px 0 4px;">Edit license number</h3>
+  <form method="POST" action="/admin/agents/<%= agent.user_id %>/license" id="editLicenseForm"
+        onsubmit="return confirm('Save this license number?<%= agent.status === 'rejected' ? ' The rejected account will be reopened to Pending.' : '' %> Nothing is verified by saving — run Recheck license afterwards.');">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+    <div><label style="font-size:13px;" for="edit_license_state">License state</label>
+      <select id="edit_license_state" name="license_state" style="width:auto;">
+        <% H.LICENSE_STATES.forEach(s => { %><option value="<%= s[0] %>" <%= (agent.license_state || 'UT') === s[0] ? 'selected' : '' %>><%= s[1] %></option><% }) %>
+      </select></div>
+    <div style="flex:1; min-width:220px;"><label style="font-size:13px;" for="edit_license_number">License number</label>
+      <input type="text" id="edit_license_number" name="license_number" value="<%= agent.license_number %>" maxlength="40" required></div>
+    <button class="btn sm ghost" type="submit">Save license number</button>
+    </div>
+    <%- include('../partials/license-number-help', { warnOnSubmit: false }) %>
+  </form>
+  <p class="note" style="margin-top:6px;">Saving does not mark anyone verified — it only corrects the number on file<%= agent.status === 'rejected' ? ' and reopens this rejected account to Pending' : '' %>. Then click <b>Recheck license</b> so RELD runs the normal verification.</p>
+  <% if (typeof licenseEdits !== 'undefined' && licenseEdits.length) { %>
+    <p class="note" style="margin-top:4px;" data-license-edits><b>License edits:</b>
+      <% licenseEdits.forEach((e, i) => { %><%= i ? ' · ' : ' ' %><%= e.meta.from %> → <%= e.meta.to %> by <%= e.meta.by %> on <%= new Date(e.created_at).toLocaleDateString('en-US') %><%= e.meta.reopened ? ' (account reopened)' : '' %><% }) %></p>
+  <% } %>
 </div>
 
 <div class="card">
@@ -144,11 +179,25 @@
       professional whose license RELD says doesn't exist. The record stays
       fully viewable for audit; a corrected license (or a Recheck that
       succeeds) restores the normal buttons. %>
-  <% const licenseFailed = agent.verification_status === 'failed'; %>
-  <% if (licenseFailed && agent.reviewed_by === 'RELD auto-verification') { %>
+  <%# Same rule for a license RELD could not find that is waiting in manual
+      review (Oct 1): correct the number + Recheck, or Reject — no manual
+      approval of a license that hasn't been found. %>
+  <%# …and while an admin-corrected number is still waiting for its RELD
+      recheck: saving a number never verifies anyone. %>
+  <% const awaitingRecheck = agent.license_recheck_needed && agent.verification_status === 'needs_verification'; %>
+  <% const licenseFailed = agent.verification_status === 'failed' || notFoundReview || awaitingRecheck; %>
+  <% if (agent.verification_status === 'failed' && agent.reviewed_by === 'RELD auto-verification') { %>
     <p class="note" style="color:#B42318; font-weight:600; margin-top:8px;">Automatically Rejected · Reason: License not found in RELD. Approval is disabled while the license check stands at Failed.</p>
+  <% } else if (awaitingRecheck) { %>
+    <p class="note" style="color:#B45309; font-weight:600; margin-top:8px;" data-awaiting-recheck>License number was corrected by an administrator — click Recheck license so RELD verifies it. Approval happens automatically when the check succeeds.</p>
+  <% } else if (notFoundReview) { %>
+    <p class="note" style="color:#B45309; font-weight:600; margin-top:8px;">License needs review — not found in RELD. Correct the license number and Recheck (a successful check approves the account automatically), or Reject if it cannot be validated.</p>
   <% } else if (licenseFailed) { %>
     <p class="note" style="color:#B42318; font-weight:600; margin-top:8px;">License check: Failed — license not found in RELD. Approval is disabled until a successful recheck or a corrected license.</p>
+  <% } %>
+  <% if (typeof overrideMsg !== 'undefined' && overrideMsg) { %><p class="note" style="color:var(--blue); font-weight:600; margin-top:8px;" data-override-msg><%= overrideMsg %></p><% } %>
+  <% if (agent.license_override_at) { %>
+    <p class="note" style="margin-top:8px;" data-override-record><b>Approved by administrator override</b> — <%= agent.license_override_by %> on <%= new Date(agent.license_override_at).toLocaleDateString('en-US') %>. Reason: <%= agent.license_override_reason %> <span class="meta">(RELD has not verified this license.)</span></p>
   <% } %>
   <div class="actions" style="margin-top:12px;">
     <% if (agent.status === 'pending') { %>
@@ -169,6 +218,19 @@
     <% } %>
     <form method="POST" action="/admin/agents/<%= agent.user_id %>/remove" onsubmit="return confirm('PERMANENTLY remove <%= agent.name %>? This deletes their account and all of their proposals. This cannot be undone.');"><input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="from" value="detail"><button class="btn danger sm" type="submit">Permanently remove</button></form>
   </div>
+  <% if (licenseFailed && ['pending', 'rejected'].includes(agent.status)) { %>
+    <%# Approve anyway (Paul, Oct 2): only when normal Approve is hidden for a
+        license reason. A reason is required and kept on the record. %>
+    <div style="border:1.5px dashed #D9A21B; border-radius:12px; padding:12px 14px; margin-top:14px; background:#FFFBF0;" id="approveOverride">
+      <b style="color:#5C4300;">Approve anyway</b>
+      <p class="note" style="margin:4px 0 8px;">Only for a license you have confirmed another way — for example on the <a href="https://secure.utah.gov/llv/search/index.html" target="_blank" rel="noopener">Utah license lookup ↗</a> — that RELD doesn't have. Try <b>Edit license number</b> and <b>Recheck license</b> first. Your name and reason are kept on the record.</p>
+      <form method="POST" action="/admin/agents/<%= agent.user_id %>/approve-override" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;" onsubmit="return confirm('Approve <%= agent.name %> even though RELD has not verified this license? Your name and reason will be recorded.');">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input type="text" name="reason" minlength="10" maxlength="300" required placeholder="Reason (required) — e.g. confirmed active on the Utah DRE lookup, 10/2" style="flex:1; min-width:260px; margin:0;">
+        <button class="btn sm ghost" type="submit">Approve anyway</button>
+      </form>
+    </div>
+  <% } %>
   <p class="note">Suspending blocks access immediately but keeps all history. Removal is permanent and deletes their proposals too.</p>
 </div>
 

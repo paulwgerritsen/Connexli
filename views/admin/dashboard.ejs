@@ -17,7 +17,8 @@
   <div class="stat"><b><%= m.buyer_connections %></b><span>Buyer connections</span></div>
 </div>
 
-<details class="sect" open><summary><h2>Verification queue<% if (pending.length) { %> · <%= pending.length %> waiting<% } %></h2></summary>
+<% const licenseReviews = pending.filter(a => a.verification_status === 'needs_review' && a.reld_not_found).length; %>
+<details class="sect" open><summary><h2>Verification queue<% if (pending.length) { %> · <%= pending.length %> waiting<% } %><% if (licenseReviews) { %> · <span style="color:#B45309;"><%= licenseReviews %> license<%= licenseReviews === 1 ? '' : 's' %> need<%= licenseReviews === 1 ? 's' : '' %> review</span><% } %></h2></summary>
 <% if (pending.length === 0) { %>
   <div class="card"><p class="sub">No professionals waiting for review. 🎉</p></div>
 <% } else { %>
@@ -27,6 +28,8 @@
           the pipeline. Auto-rejected applications never appear here at all —
           they land in Rejected professionals. %>
       <% const stage = !a.email_verified ? 'Awaiting email verification'
+           : (a.verification_status === 'needs_review' && a.reld_not_found) ? 'License needs review — not found'
+           : (a.license_recheck_needed && a.verification_status === 'needs_verification') ? 'License corrected — recheck needed'
            : a.verification_status === 'needs_review' ? 'Needs review'
            : ['needs_verification', 'unable_to_verify'].includes(a.verification_status) ? 'Awaiting license verification'
            : null; %>
@@ -38,7 +41,10 @@
           <div class="meta"><a href="https://secure.utah.gov/llv/search/index.html" target="_blank" rel="noopener">Check license in the Utah license lookup ↗</a> (verify: active status, name matches, brokerage matches)</div>
         </div>
         <div class="actions">
-          <% if (a.verification_status === 'failed') { %>
+          <% if ((a.verification_status === 'needs_review' && a.reld_not_found) || (a.license_recheck_needed && a.verification_status === 'needs_verification')) { %>
+            <%# Utah license not found → manual review (Paul, Oct 1): fix the number + recheck on the profile, or reject. %>
+            <a class="btn sm" href="/admin/agents/<%= a.user_id %>" data-review-license="<%= a.user_id %>">Review license</a>
+          <% } else if (a.verification_status === 'failed') { %>
             <span class="meta" style="color:#B42318; font-weight:600;">License not found — cannot approve</span>
           <% } else { %>
             <form method="POST" action="/admin/agents/<%= a.user_id %>/approve">
@@ -133,6 +139,7 @@
 <% if (rejected.length === 0) { %>
   <div class="card"><p class="sub">No rejected registrations.</p></div>
 <% } else { %>
+<p class="note">Rejected for a license formatting error (for example a Utah number missing its -SA00 suffix)? Open the professional, use <b>Edit license number</b>, then <b>Recheck license</b> — the account reopens and is approved automatically if RELD verifies it. No new registration needed.</p>
 <div class="tblwrap">
   <table class="dt">
     <tr><th>Name / Email</th><th>License</th><th>License verification</th><th>Brokerage</th><th>Registered</th><th>Rejected</th><th>Reason</th></tr>

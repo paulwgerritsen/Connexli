@@ -183,6 +183,14 @@ function feeLabel(proposal) {
   return proposal.fee_type === 'pct' ? amt + '%' : money(amt) + ' flat';
 }
 
+// Utah license numbers normally carry a license-type suffix (12345678-SA00).
+// True when a UTAH number is digits only — i.e. the suffix looks missing.
+// Used only to WARN the person (Paul, Oct 1); nothing is ever appended, and
+// no other state has suffix rules applied to it.
+function utahLicenseMissingSuffix(state, licenseNumber) {
+  return (state || 'UT') === 'UT' && /^\d+$/.test(String(licenseNumber || '').replace(/\s+/g, ''));
+}
+
 // Basic input guards
 function clean(s, max = 200) { return String(s || '').trim().slice(0, max); }
 function oneOf(value, list, fallback) { return list.includes(value) ? value : fallback; }
@@ -197,5 +205,5 @@ module.exports = {
   midPrice, money, estFee, feeLabel, clean, oneOf,
   estBuyerFee, windowOpen, spotsLeft, takenThisRound,
   UT_CITIES, utCity, geoMiles,
-  LICENSE_STATES, LICENSE_STATE_CODES,
+  LICENSE_STATES, LICENSE_STATE_CODES, utahLicenseMissingSuffix,
 };

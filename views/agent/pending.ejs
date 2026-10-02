@@ -17,22 +17,7 @@
       <div class="card">
         <h2 style="font-size:16px;">Correct your license details</h2>
         <p class="sub">A single typo is the most common cause. Enter your license exactly as it appears on your real estate license, and we'll check it again.</p>
-        <form method="POST" action="/agent/license-correction">
-          <input type="hidden" name="_csrf" value="<%= csrf %>">
-          <div class="grid2">
-            <div>
-              <label for="license_state">License state</label>
-              <select id="license_state" name="license_state">
-                <% H.LICENSE_STATES.forEach(s => { %><option value="<%= s[0] %>" <%= (profile.license_state || 'UT') === s[0] ? 'selected' : '' %>><%= s[1] %></option><% }) %>
-              </select>
-            </div>
-            <div>
-              <label for="license_number">License number</label>
-              <input type="text" id="license_number" name="license_number" value="<%= profile.license_number %>" required>
-            </div>
-          </div>
-          <button class="btn full" type="submit" style="margin-top:14px;">Re-check my license</button>
-        </form>
+        <%- include('../partials/license-correction-form', { profile }) %>
         <p class="note" style="margin-bottom:0;">Still stuck? Contact us at hello@connexli.com and we'll take a look together.</p>
       </div>
     <% } %>
@@ -46,7 +31,23 @@
         <a href="/verify-notice" style="font-weight:600;">Resend the email ›</a>
       </div>
     <% } %>
-    <p class="sub">Your license is being verified with the Utah Division of Real Estate. Most professionals are approved within one business day.</p>
+    <% const needsNumberCheck = profile.status === 'pending' && profile.verification_status === 'needs_review' && profile.reld_not_found; %>
+    <% if (needsNumberCheck) { %>
+      <%# Utah "license not found" → manual review (Paul, Oct 1): not rejected.
+          Most of the time the suffix is missing, so the applicant can fix it
+          right here; an administrator is reviewing it either way. %>
+      <div class="card" style="border-left:4px solid #D9A21B;" data-license-check>
+        <h2 style="font-size:16px;">Please check your license number</h2>
+        <p class="sub">We couldn't find <b><%= profile.license_number %></b> in the license records, so your account is waiting for a manual review — nothing has been rejected. Utah license numbers may include a suffix such as <b>-SA00</b>. If yours is missing, enter the complete number exactly as shown on your license and we'll check it again right away.</p>
+        <% if (typeof corrected !== 'undefined' && corrected) { %><p class="note" style="color:#B45309; font-weight:600;">We checked the updated number and still couldn't find it. Please compare it against your license, or email hello@connexli.com and we'll help.</p><% } %>
+        <% if (typeof correctLimit !== 'undefined' && correctLimit) { %>
+          <p class="note">You've reached today's limit for license updates. Our team is reviewing your account — or email hello@connexli.com and we'll help directly.</p>
+        <% } else { %>
+          <%- include('../partials/license-correction-form', { profile }) %>
+        <% } %>
+      </div>
+    <% } %>
+    <p class="sub"><%= needsNumberCheck ? 'Once your license number checks out, your account is activated automatically.' : 'Your license is being verified with the Utah Division of Real Estate. Most professionals are approved within one business day.' %></p>
     <div class="checkrow"><span class="c">✓</span><span>We'll notify you by email at <b><%= user.email %></b> as soon as you're ready to receive homeowner opportunities.</span></div>
     <div class="card">
       <div class="sumrow"><span>License number</span><span><%= profile.license_number %> (<%= profile.license_state || 'UT' %>)</span></div>

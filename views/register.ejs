@@ -50,9 +50,10 @@
           </div>
           <div>
             <label for="license_number">Real estate license number</label>
-            <input type="text" id="license_number" name="license_number" value="<%= form.license_number || '' %>" placeholder="e.g. 9876543-SA00">
+            <input type="text" id="license_number" name="license_number" value="<%= form.license_number || '' %>" placeholder="e.g. 12345678-SA00">
           </div>
         </div>
+        <%- include('partials/license-number-help', { warnOnSubmit: true, showWarning: (typeof licenseWarning !== 'undefined' && licenseWarning), onlyWhen: "document.querySelector('input[name=\"role\"][value=\"agent\"]').checked" }) %>
         <label for="brokerage">Brokerage</label>
         <input type="text" id="brokerage" name="brokerage" value="<%= form.brokerage || '' %>">
         <label for="service_zip">Primary service ZIP code <span class="hint">(the center of the area you serve)</span></label>

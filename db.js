@@ -429,6 +429,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_orders_session ON credit_orders(pro
 -- this is NULL — a later outage or failed recheck can never make a real,
 -- once-verified professional eligible for deletion.
 ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_first_verified_at TIMESTAMPTZ;
+-- Oct 1: RELD answered "license not found" for the number on file. Kept as
+-- its own flag because a Utah not-found is stored as Needs Review (manual
+-- review), not Failed. Existing Failed rows are backfilled so the flag means
+-- the same thing everywhere.
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS reld_not_found BOOLEAN NOT NULL DEFAULT false;
+UPDATE agent_profiles SET reld_not_found = true WHERE verification_status = 'failed' AND reld_not_found = false;
+-- Oct 1: an admin corrected the license number and RELD has not re-checked
+-- it yet. While true, manual Approve is hidden — RELD decides, not a person.
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS license_recheck_needed BOOLEAN NOT NULL DEFAULT false;
+-- Oct 2: "Approve anyway" — an administrator approved the account although
+-- RELD could not find the license (e.g. confirmed on the state's own lookup).
+-- Who, when and why are kept on the record.
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS license_override_at TIMESTAMPTZ;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS license_override_by TEXT;
+ALTER TABLE agent_profiles ADD COLUMN IF NOT EXISTS license_override_reason TEXT;
 UPDATE agent_profiles SET reld_first_verified_at = COALESCE(reld_checked_at, review_resolved_at, reviewed_at, created_at)
   WHERE reld_first_verified_at IS NULL
     AND (reld_verified OR verification_status = 'verified' OR confirmed_reld_name IS NOT NULL);

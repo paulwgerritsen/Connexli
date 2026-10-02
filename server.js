@@ -27,6 +27,11 @@ app.post('/webhooks/stripe', express.raw({ type: '*/*', limit: '1mb' }), require
 app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Public request previews (Paul, Oct 1): mounted BEFORE sessions, CSRF and
+// the marketplace sweeps on purpose — a preview visit creates no session and
+// touches no database table. See routes/preview.js.
+app.use(require('./routes/preview'));
+
 app.use(session({
   store: new PgSession({ pool, createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET || 'dev-only-secret',
@@ -101,7 +106,7 @@ app.use(async (req, res, next) => { await closeAndNotify(); next(); });
 // Every feature area the app expects to serve. If a route file is missing the
 // server refuses to start with a clear message — a half-deployed update can
 // never boot silently with features missing.
-const APP_VERSION = '2026-10-01-get-10-more-proposals-rounds';
+const APP_VERSION = '2026-10-02-utah-license-review-previews-approve-override';
 const ROUTE_MODULES = ['auth', 'seller', 'buyer', 'agent', 'practice', 'credits', 'admin'];
 for (const m of ROUTE_MODULES) {
   app.use('/', require('./routes/' + m));
@@ -110,7 +115,7 @@ console.log(`Connexli ${APP_VERSION} — mounted routes: ${ROUTE_MODULES.join(',
 
 // One-glance deploy check: visit /healthz after every deploy. If "buyer" (or
 // any module) is missing from this list, the deploy is incomplete.
-app.get('/healthz', (req, res) => res.json({ ok: true, version: APP_VERSION, routes: ROUTE_MODULES }));
+app.get('/healthz', (req, res) => res.json({ ok: true, version: APP_VERSION, routes: [...ROUTE_MODULES, 'preview'] }));
 
 app.get('/', (req, res) => {
   const u = req.session.user;
